@@ -55,7 +55,7 @@ Retained reads perform no tmux command and report loading, ready, stale, or
 disconnected status. Refresh is explicit and bounded. Updates carry their
 connection epoch so late results cannot modify a replacement connection.
 
-Notifications and format subscriptions are incomplete, sampled observations.
+Notifications cover only some changes; format subscriptions sample values.
 Only qualified, line-safe subscriptions may update authoritative state;
 free-form values require a proven encoding or explicit capture. Reconcile
 missing coverage within finite work and buffer budgets.
