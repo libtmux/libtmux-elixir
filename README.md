@@ -12,18 +12,20 @@ does not yet provide a tmux API, executable examples, or a supported release.
 | Component | Current scope |
 | --- | --- |
 | Mix application | `:libtmux`, version `0.1.0-dev`; unpublished |
-| Development toolchain | Elixir `1.20.4` on Erlang/OTP `29.1.2` |
+| Development toolchain | Elixir `1.20.x` (at least `1.20.4`) on Erlang/OTP `29.x` |
 | Planned tmux floor | `3.3`; compatibility tests do not exist yet |
 | Runtime dependencies | No third-party dependencies |
 | Platforms | No runtime support matrix has been qualified |
 
-[`.tool-versions`](.tool-versions) pins the development toolchain. tmux is
-not required for the scaffold checks. A future implementation will require
-an external tmux executable and its own compatibility evidence.
+[`.tool-versions`](.tool-versions) selects the development toolchain ranges
+for mise and CI. See [setup](.github/CONTRIBUTING.md#setup) for installation
+and upgrades. tmux is not required for the scaffold checks. A future
+implementation will require an external tmux executable and its own
+compatibility evidence.
 
 ## Check the scaffold
 
-From the checkout, with the pinned toolchain on `PATH`, check formatting:
+From the checkout, with the development toolchain on `PATH`, check formatting:
 
 ```console
 $ mix format --check-formatted

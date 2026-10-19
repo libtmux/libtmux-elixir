@@ -5,11 +5,11 @@ names describe proposed responsibilities; no tmux API exists yet.
 
 ## Values and explicit observation
 
-Use Elixir `1.20.4` and OTP `29.1.2` as the initial reference toolchain, and
-tmux `3.3` as the proposed compatibility floor. Keep the core free of
-third-party runtime dependencies. Use [standard-library JSON][elixir-json]
-and OTP processes where their contracts fit; development dependencies are
-separate.
+Use Elixir `1.20.x` (at least `1.20.4`) and OTP `29.x` as the development
+toolchain, and tmux `3.3` as the proposed compatibility floor. Keep the core
+free of third-party runtime dependencies. Use
+[standard-library JSON][elixir-json] and OTP processes where their contracts
+fit; development dependencies are separate.
 
 | Responsibility | Planned contract |
 | --- | --- |

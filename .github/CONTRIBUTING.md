@@ -6,13 +6,35 @@ or test suite. [WRITING.md](WRITING.md) governs prose, comments, and commits.
 
 ## Setup
 
-Use the versions pinned in [`.tool-versions`](../.tool-versions): Elixir
-`1.20.4` built for OTP `29`, with Erlang/OTP `29.1.2`. Install the toolchain
-with your version manager before timing checks, then verify it:
+Use mise with the ranges in [`.tool-versions`](../.tool-versions): Erlang/OTP
+`29.x` and Elixir `1.20.x`. The Mix project requires at least Elixir `1.20.4`.
+Install the toolchain before timing checks:
+
+```console
+$ mise install
+```
+
+To install newer releases within those ranges without editing the file:
+
+```console
+$ mise upgrade erlang elixir
+```
+
+With mise active in your shell, verify that Elixir runs on OTP `29` and was
+compiled for OTP `29`:
 
 ```console
 $ elixir --version
 ```
+
+Mise selects the newest OTP build for an Elixir prefix; the prefix does not
+lock the OTP suffix. If a future `1.20` patch adds a newer OTP build, select
+its exact `1.20.x-otp-29` version. asdf requires exact versions and cannot
+consume these floating ranges directly.
+
+CI reads both ranges from `.tool-versions` and passes them to `setup-beam`
+in loose mode, which selects the Elixir build for the installed OTP major.
+The action's direct `version-file` mode requires exact versions.
 
 Hex is required only for package archive checks. Install it separately from
 the check loops if it is missing:
