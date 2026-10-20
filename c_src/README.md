@@ -14,11 +14,12 @@ with at most 8,192 data bytes. The fixed output queue has eight slots.
 
 | Input | Payload after type |
 |---|---|
-| `O` | Version `2`, stdin-open byte, timeout milliseconds (u32), cwd string, argv count (u16) and strings, environment count (u16) and `key=value` strings |
+| `O` | Version `3`, stdin-open byte, timeout milliseconds (u32), cwd string, argv count (u16) and strings, environment count (u16) and `key=value` strings |
 | `R` | Stream byte (`1` stdout, `2` stderr), credit bytes (u16) |
 | `W` | Request ID (u32), one nonempty bounded write |
 | `C` | Close child stdin after the acknowledged write |
 | `Q` | Stop and retire the owned tree |
+| `T` | Acknowledge terminal `E` or `F` kind 1–3; send no further input |
 
 Strings use a u16 byte length and reject NUL. The whole initialization
 payload has a 32 KiB ceiling. Target environment values pass directly to
@@ -36,9 +37,19 @@ not configure the helper's startup.
 | `F` + kind + errno (u32) | Kind `1` protocol/setup, `2` exec, `3` I/O; kind `4` reports incomplete cleanup |
 
 `E` and `F` kinds 1–3 follow child retirement. Kind 4 does not prove
-retirement. No frame follows a terminal frame. Exit 124 reports undelivered
-terminal evidence only after child retirement. A helper exit alone is not
-a successful command result.
+retirement and must not be acknowledged. After terminal proof the helper
+discards earlier credits, writes and stops, keeping its input open until
+`T` arrives. The owner then sends no further input and waits for the actual
+helper exit. This prevents a late cancellation from racing helper exit and
+destroying the Port's exit-status evidence. No output frame follows terminal
+proof. Exit 124 reports missing terminal delivery or acknowledgement after
+the existing 750 ms delivery allowance. A helper exit alone is not a
+successful command result.
+
+A zero or oversized length is a fatal protocol error. The helper discards
+that invalid two-byte header and resets to a fresh header so the owner can
+acknowledge terminal proof. It does not recover the rejected payload or
+resume child I/O. Further malformed data cannot extend the delivery deadline.
 
 ## Ownership limits
 

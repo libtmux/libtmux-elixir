@@ -198,7 +198,7 @@ defmodule LibTmux.Transport.OneShot do
 
           cond do
             remaining == 0 -> abort(state, :timeout, :admission, %{}, :no_write)
-            send_port(port, [<<?O, 2, 0, remaining::32>>, spec.payload]) -> await(state)
+            send_port(port, [<<?O, 3, 0, remaining::32>>, spec.payload]) -> await(state)
             true -> abort(state, :resource_limit, :write, %{reason: :helper_busy}, :no_write)
           end
         after
@@ -237,8 +237,14 @@ defmodule LibTmux.Transport.OneShot do
       {^port, {:exit_status, status}} ->
         failure(state, :transport_closed, :capture, %{helper_status: status, cleanup: :unknown})
 
-      {:EXIT, ^port, _reason} ->
+      {:EXIT, ^port, :normal} ->
         await(state)
+
+      {:EXIT, ^port, reason} ->
+        failure(state, :transport_closed, :capture, %{
+          reason: classify_exit(reason),
+          cleanup: :unknown
+        })
 
       {:DOWN, ^parent, :process, _caller, _reason} ->
         abort(state, :cancelled, :capture)
@@ -269,6 +275,7 @@ defmodule LibTmux.Transport.OneShot do
   defp frame(state, <<?Z, stream>>) when stream in [1, 2], do: await(state)
 
   defp frame(state, <<?E, reason, status::32>>) when reason in 0..3 do
+    send_port(state.port, "T")
     cleanup = retire(state.port, Deadline.new(@cleanup_ms), true)
 
     if cleanup == :retired and reason == 0 and Deadline.remaining(state.deadline) > 0 do
@@ -287,6 +294,7 @@ defmodule LibTmux.Transport.OneShot do
   end
 
   defp frame(state, <<?F, kind, number::32>>) when kind in 1..4 do
+    if kind != 4, do: send_port(state.port, "T")
     cleanup = retire(state.port, Deadline.new(@cleanup_ms), kind != 4)
 
     if kind == 2,
@@ -348,9 +356,11 @@ defmodule LibTmux.Transport.OneShot do
   defp retire(port, deadline, evidence) do
     receive do
       {^port, {:data, <<?E, _reason, _status::32>>}} ->
+        send_port(port, "T")
         retire(port, deadline, true)
 
       {^port, {:data, <<?F, kind, _number::32>>}} when kind in 1..4 ->
+        if kind != 4, do: send_port(port, "T")
         retire(port, deadline, evidence or kind != 4)
 
       {^port, {:data, _data}} ->
@@ -359,8 +369,11 @@ defmodule LibTmux.Transport.OneShot do
       {^port, {:exit_status, _status}} ->
         if(evidence, do: :retired, else: :unknown)
 
-      {:EXIT, ^port, _reason} ->
+      {:EXIT, ^port, :normal} ->
         retire(port, deadline, evidence)
+
+      {:EXIT, ^port, _reason} ->
+        :unknown
     after
       Deadline.remaining(deadline) -> :unknown
     end

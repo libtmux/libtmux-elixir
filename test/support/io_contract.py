@@ -30,7 +30,7 @@ class Owned:
         self.selector = selectors.DefaultSelector()
         self.selector.register(self.process.stdout, selectors.EVENT_READ)
         self.buffer = bytearray()
-        self.send(b"O\x02" + bytes([stdin]) + struct.pack("!I", timeout) +
+        self.send(b"O\x03" + bytes([stdin]) + struct.pack("!I", timeout) +
                   string(Path.cwd()) + struct.pack("!H", len(args)) + b"".join(map(string, args)) + b"\0\0")
         ready = self.receive()
         if ready[:1] != b"S":
@@ -83,7 +83,9 @@ class Owned:
         self.finish()
         return message
 
-    def finish(self):
+    def finish(self, terminal_received=True):
+        if terminal_received:
+            self.send(b"T")
         assert self.process.wait(timeout=0.75) == 0, self.process.stderr.read()
         tail = bytes(self.buffer) + self.process.stdout.read()
         assert not tail, ("frames followed terminal", tail)
@@ -95,6 +97,33 @@ def round_trip():
     output, terminal = child.drain()
     assert output == {1: b"out\0\xff", 2: b"err"}, output
     assert terminal == b"E\x00" + struct.pack("!I", 7), terminal
+
+
+def terminal_ack():
+    child = Owned(["/bin/true"])
+    helper_fd = os.pidfd_open(child.process.pid)
+    watched = selectors.DefaultSelector()
+    watched.register(helper_fd, selectors.EVENT_READ)
+    try:
+        child.grant(1)
+        child.grant(2)
+        while (message := child.receive())[:1] != b"E":
+            assert message[:1] == b"Z", message
+        assert not watched.select(0.02), "helper exited before terminal acknowledgement"
+        # Credits and cancellation already admitted by the owner may trail the proof.
+        child.grant(1)
+        child.send(b"Q")
+        child.send(b"T")
+        assert watched.select(0.75), "acknowledged helper did not exit"
+        assert child.process.wait(timeout=0.75) == 0
+        assert not bytes(child.buffer) + child.process.stdout.read(), "post-terminal output"
+    finally:
+        child.process.stdin.close()
+        child.process.stdout.close()
+        child.process.wait(timeout=0.75)
+        child.selector.close()
+        watched.close()
+        os.close(helper_fd)
 
 
 def credit_and_blocked_write():
@@ -142,7 +171,7 @@ while True: signal.pause()
     grandfd = os.pidfd_open(grandchild)
     if parent_eof:
         child.process.stdin.close()
-        child.finish()
+        child.finish(terminal_received=False)
     else:
         child.cancel()
     watched = selectors.DefaultSelector()
@@ -188,9 +217,9 @@ def late_write():
 
 
 def failures():
-    frames = [b"\0\x01X", struct.pack("!H", 32769)]
+    frames = [b"\0\x01X", b"\0\0", struct.pack("!H", 32769)]
     for cwd, executable in [("/missing-cwd", PYTHON), (Path.cwd(), "/missing-executable")]:
-        payload = b"O\x02\0" + struct.pack("!I", 500) + string(cwd) + struct.pack("!H", 1) + string(executable) + b"\0\0"
+        payload = b"O\x03\0" + struct.pack("!I", 500) + string(cwd) + struct.pack("!H", 1) + string(executable) + b"\0\0"
         frames.append(struct.pack("!H", len(payload)) + payload)
     for frame in frames:
         peer = Owned.__new__(Owned)
@@ -198,11 +227,22 @@ def failures():
         peer.selector = selectors.DefaultSelector()
         peer.selector.register(peer.process.stdout, selectors.EVENT_READ)
         peer.buffer = bytearray()
-        peer.process.stdin.write(frame)
-        message = peer.receive()
-        assert message[:1] == b"F", message
-        assert peer.process.wait(timeout=0.75) == 0, peer.process.stderr.read()
-        peer.selector.close()
+        helper_fd = os.pidfd_open(peer.process.pid)
+        watched = selectors.DefaultSelector()
+        watched.register(helper_fd, selectors.EVENT_READ)
+        try:
+            peer.process.stdin.write(frame)
+            message = peer.receive()
+            assert message[:1] == b"F", message
+            peer.send(b"Q")
+            assert not watched.select(0.02), "invalid header bypassed terminal acknowledgement"
+            peer.finish()
+        finally:
+            peer.process.stdin.close()
+            peer.process.stdout.close()
+            peer.process.wait(timeout=0.75)
+            watched.close()
+            os.close(helper_fd)
 
     child = Owned([PYTHON, "-c", "import signal;signal.pause()"])
     child.grant(1)
@@ -213,6 +253,7 @@ def failures():
 
 if __name__ == "__main__":
     started = time.monotonic()
+    terminal_ack()
     round_trip()
     metrics = credit_and_blocked_write()
     detached_descendant()

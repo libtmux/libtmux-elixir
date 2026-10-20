@@ -28,7 +28,7 @@ def stalled_reader():
     peer.selector.register(process.stdout, selectors.EVENT_READ)
     peer.buffer = bytearray()
     args = [PYTHON, "-c", "import os\nwhile True:os.write(1,b'x'*8192)"]
-    peer.send(b"O\2\0" + struct.pack("!I", 80) + string(os.getcwd()) +
+    peer.send(b"O\3\0" + struct.pack("!I", 80) + string(os.getcwd()) +
               struct.pack("!H", len(args)) + b"".join(map(string, args)) + b"\0\0")
     assert peer.receive()[:1] == b"S"
     peer.grant(1)
@@ -41,6 +41,21 @@ def stalled_reader():
         peer.selector.close()
 
 
+def missing_terminal_ack():
+    peer = Owned(["/bin/true"])
+    peer.grant(1)
+    peer.grant(2)
+    try:
+        while (message := peer.receive())[:1] != b"E":
+            assert message[:1] == b"Z", message
+        assert peer.process.wait(timeout=0.95) == 124, "missing acknowledgement leaked helper"
+    finally:
+        peer.process.stdin.close()
+        peer.process.stdout.close()
+        peer.process.wait(timeout=0.75)
+        peer.selector.close()
+
+
 def startup_and_late_credit():
     for timeout in [1, 2, 10, 40]:
         peer = Owned.__new__(Owned)
@@ -50,7 +65,7 @@ def startup_and_late_credit():
         peer.selector.register(peer.process.stdout, selectors.EVENT_READ)
         peer.buffer = bytearray()
         args = [PYTHON, "-c", "import signal;signal.pause()"]
-        init = b"O\2\0" + struct.pack("!I", timeout) + string(os.getcwd()) + struct.pack("!H", len(args)) + b"".join(map(string,args)) + b"\0\0"
+        init = b"O\3\0" + struct.pack("!I", timeout) + string(os.getcwd()) + struct.pack("!H", len(args)) + b"".join(map(string,args)) + b"\0\0"
         frame = struct.pack("!H", len(init)) + init + b"\0\1Q\0\4R\1\x20\0"
         peer.process.stdin.write(frame)
         terminal = None
@@ -60,6 +75,7 @@ def startup_and_late_credit():
                 if message[:1] == b"E": terminal = message
                 else: assert message[:1] == b"S", message
             assert terminal[1] in [1, 2], terminal
+            peer.send(b"T")
             assert peer.process.wait(timeout=0.75) == 0
             assert not bytes(peer.buffer) + peer.process.stdout.read(), "post-terminal frames"
         finally:
@@ -71,6 +87,7 @@ def startup_and_late_credit():
 
 results = []
 for name, function in [("closed_reader", closed_reader), ("stalled_reader", stalled_reader),
+                       ("missing_terminal_ack", missing_terminal_ack),
                        ("startup_and_late_credit", startup_and_late_credit)]:
     start = time.monotonic()
     try:

@@ -40,7 +40,7 @@ open() ->
            "while True: signal.pause()\n",
     Args = ["/usr/bin/python3", "-c", Code],
     {ok, Cwd} = file:get_cwd(),
-    true = port_command(Port, [<<$O,2,0,0:32>>, string(Cwd),
+    true = port_command(Port, [<<$O,3,0,0:32>>, string(Cwd),
                                <<(length(Args)):16>>, [string(A) || A <- Args], <<0:16>>]),
     Child = receive {Port, {data, <<$S, Pid:32>>}} -> Pid
             after 750 -> error(helper_startup) end,

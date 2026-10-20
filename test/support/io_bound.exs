@@ -10,18 +10,19 @@ string = fn value -> <<byte_size(value)::16, value::binary>> end
 
     true =
       Port.command(port, [
-        <<?O, 2, 0, 0::32>>,
+        <<?O, 3, 0, 0::32>>,
         string.(File.cwd!()),
         <<length(args)::16>>,
         Enum.map(args, string),
         <<0::16>>
       ])
 
-    receive do
-      {^port, {:data, <<?S, _child::32>>}} -> :ok
-    after
-      750 -> raise "helper did not launch"
-    end
+    child =
+      receive do
+        {^port, {:data, <<?S, child::32>>}} -> child
+      after
+        750 -> raise "helper did not launch"
+      end
 
     true = Port.command(port, <<?R, 1, 8192::16>>)
     true = Port.command(port, <<?R, 2, 8192::16>>)
@@ -40,25 +41,45 @@ string = fn value -> <<byte_size(value)::16, value::binary>> end
     [1, 2] = Enum.sort(streams)
     :erlang.garbage_collect()
     {:os_pid, pid} = Port.info(port, :os_pid)
-    send(parent, {:ready, self(), port, pid})
+    send(parent, {:ready, self(), port, pid, child})
 
     receive do
       :finish -> :ok
     end
+
+    retire = fn recur ->
+      receive do
+        {^port, {:data, <<?E, _reason, _status::32>>}} ->
+          true = Port.command(port, "T")
+
+          receive do
+            {^port, {:exit_status, 0}} -> :ok
+          after
+            750 -> raise "acknowledged helper did not exit"
+          end
+
+        {^port, {:data, _bytes}} ->
+          recur.(recur)
+      after
+        750 -> raise "helper did not prove retirement"
+      end
+    end
+
+    retire.(retire)
   end)
 
 try do
   receive do
-    {:ready, ^owner, port, helper_pid} ->
+    {:ready, ^owner, port, helper_pid, child_pid} ->
       script =
-        "import os,select,sys;f=os.pidfd_open(int(sys.argv[1]));p=select.poll();p.register(f,select.POLLIN);print('watching',flush=True);assert p.poll(750);print('exited',flush=True)"
+        "import os,select,sys;h=os.pidfd_open(int(sys.argv[1]));c=os.pidfd_open(int(sys.argv[2]));p=select.poll();p.register(c,select.POLLIN);print('watching',flush=True);assert p.poll(750);print('child-exited',flush=True);p.unregister(c);p.register(h,select.POLLIN);assert p.poll(750);print('exited',flush=True)"
 
       watcher =
         Port.open({:spawn_executable, System.find_executable("python3")}, [
           :binary,
           :exit_status,
           {:line, 128},
-          {:args, ["-c", script, Integer.to_string(helper_pid)]}
+          {:args, ["-c", script, Integer.to_string(helper_pid), Integer.to_string(child_pid)]}
         ])
 
       receive do
@@ -73,15 +94,9 @@ try do
       true = Port.command(port, "Q")
 
       receive do
-        {^watcher, {:data, {:eol, "exited"}}} -> :ok
+        {^watcher, {:data, {:eol, "child-exited"}}} -> :ok
       after
-        750 -> raise "helper did not retire"
-      end
-
-      receive do
-        {^watcher, {:exit_status, 0}} -> :ok
-      after
-        750 -> raise "watcher did not exit"
+        750 -> raise "producer did not retire"
       end
 
       {:message_queue_len, messages} = Process.info(owner, :message_queue_len)
@@ -95,6 +110,18 @@ try do
       IO.puts(JSON.encode!(%{messages: messages, binary_bytes: bytes, streams: 2}))
       true = :erlang.resume_process(owner)
       send(owner, :finish)
+
+      receive do
+        {^watcher, {:data, {:eol, "exited"}}} -> :ok
+      after
+        750 -> raise "helper did not retire"
+      end
+
+      receive do
+        {^watcher, {:exit_status, 0}} -> :ok
+      after
+        750 -> raise "watcher did not exit"
+      end
   after
     950 -> raise "owner did not report live flood"
   end

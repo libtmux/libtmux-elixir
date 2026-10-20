@@ -31,7 +31,7 @@ struct state {
     int child_in, streams[2], exec_fd, signals[2];
     unsigned credits[2];
     int eof[2], configured, ready, parent_gone, stopping, reason;
-    int retired, terminal, fatal, fatal_errno, wait_status, leader_reaped;
+    int retired, terminal, terminal_ack, fatal, fatal_errno, wait_status, leader_reaped;
     int cleanup_warned;
     pid_t child;
     int64_t deadline, cleanup_deadline, delivery_deadline;
@@ -129,7 +129,7 @@ static void launch(struct state *s, const unsigned char *body, size_t size) {
     char *cwd = NULL, *args[ARGC_MAX + 1] = {0}, *environment[ARGC_MAX + 1] = {0};
     int pipes[4][2] = {{-1,-1},{-1,-1},{-1,-1},{-1,-1}};
     int error = EINVAL;
-    if (size < 11 || body[0] != 'O' || body[1] != 2 || body[2] > 1) goto bad;
+    if (size < 11 || body[0] != 'O' || body[1] != 3 || body[2] > 1) goto bad;
     int input_open = body[2];
     uint32_t timeout = get32(body + 3);
     if (timeout > 600000) goto bad;
@@ -201,8 +201,12 @@ out:
 }
 
 static void input_packet(struct state *s, const unsigned char *body, size_t size) {
+    if (s->terminal) {
+        if (size == 1 && body[0] == 'T') s->terminal_ack = 1;
+        return;
+    }
     /* A closing lane may still contain earlier credits or write fragments. */
-    if (s->terminal || (s->stopping && s->reason != 0)) return;
+    if (s->stopping && s->reason != 0) return;
     if (!s->configured && !s->stopping) { launch(s, body, size); return; }
     if (size == 1 && body[0] == 'Q') { stop_child(s, 1); return; }
     if (s->fatal || !s->ready) { fail(s, 1, EPROTO); return; }
@@ -233,7 +237,11 @@ static void read_parent(struct state *s) {
     if (s->input_have != s->input_need) return;
     if (s->input_need == 2) {
         size_t size = get16(s->input);
-        if (!size || size > INPUT_MAX) { fail(s, 1, EMSGSIZE); return; }
+        if (!size || size > INPUT_MAX) {
+            fail(s, 1, EMSGSIZE);
+            s->input_have = 0; s->input_need = 2;
+            return;
+        }
         s->input_need += size;
     } else {
         input_packet(s, s->input + 2, s->input_need - 2);
@@ -373,7 +381,7 @@ int main(void) {
     for (;;) {
         lifecycle(&s);
         if (s.parent_gone && s.retired) break;
-        if (s.terminal && s.count == 0) break;
+        if (s.terminal && s.terminal_ack && s.count == 0) break;
         if (s.retired && s.delivery_deadline && now_ms() >= s.delivery_deadline) return 124;
         struct pollfd fds[7] = {
             {STDIN_FILENO, POLLIN, 0}, {STDOUT_FILENO, s.count ? POLLOUT : 0, 0},

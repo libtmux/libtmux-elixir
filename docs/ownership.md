@@ -34,6 +34,12 @@ bounded prefix. `cleanup: :retired` requires private child-retirement evidence
 and helper exit. Missing proof stays `:unknown`. An exit status or retryable
 error never authorizes replay.
 
+The worker acknowledges terminal child-retirement proof before the helper
+exits. The helper keeps its input open while earlier cancellation or read
+credits drain; after acknowledgement the worker writes nothing further.
+This preserves the helper's separate exit-status evidence. Missing
+acknowledgement uses the existing 750 ms delivery allowance.
+
 The worker monitors its caller. Caller death initiates cleanup; worker/VM
 death closes the helper's parent pipe. Caller settlement and retirement
 remain separate. Closing the reply alias also removes an already-delivered
