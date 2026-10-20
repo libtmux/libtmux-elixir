@@ -69,8 +69,12 @@ defmodule LibTmux.ControlManagerIntegrationTest do
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
 
     old = monitor_actors(first)
-    :ok = Control.request_close(control)
-    second = connect(first)
+    :ok = Control.close(control, timeout: 800)
+    assert {:ok, %{phase: :retired}} = Control.status(control)
+    {:ok, replacement} = Control.reconnect(control, timeout: 800)
+    [{:connection, second}] = :ets.lookup(view, :connection)
+    assert {:ok, %{epoch: epoch, phase: :ready}} = Control.status(replacement)
+    assert epoch == second.epoch
     assert second.generation == first.generation + 1
     assert second.epoch != first.epoch
     assert second.instance == first.instance
@@ -102,6 +106,7 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     assert {"0\n", 0} =
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
 
+    assert :ok = Control.close(replacement, timeout: 800)
     assert :sys.get_state(manager, 500).phase in [:closing, :closed]
   end
 

@@ -3,6 +3,25 @@ defmodule LibTmux.ControlTest do
   alias LibTmux.{Control, Deadline, Error, Operation, Ref}
   alias LibTmux.Control.{Admission, Births, Inbox, Lifetime, Records, Request, Waiters}
 
+  @tag lifecycle_api: true
+  test "awaited close reports overload while reserved closure still takes effect" do
+    {control, endpoint, _view} = connection()
+
+    {:ok, held} =
+      Inbox.publish(endpoint.inbox, endpoint.epoch, Deadline.new(500), {:reconnect, nil})
+
+    try do
+      assert {:error, %Error{kind: :resource_limit, phase: :close, certainty: :unknown}} =
+               Control.close(control, timeout: 100)
+
+      assert %{phase: :closing} = Lifetime.status(endpoint.lifetime)
+      assert :ok = Lifetime.retired(endpoint.lifetime, endpoint.generation)
+      assert :ok = Control.close(control, timeout: 100)
+    after
+      Inbox.close(endpoint.inbox, held)
+    end
+  end
+
   test "submission owns request binaries and returns a pinned unpublished operation" do
     {control, endpoint, _view} = connection()
     parent = :binary.copy("x", 1_000_000)
@@ -124,7 +143,7 @@ defmodule LibTmux.ControlTest do
     :ok = Lifetime.ready(lifetime, generation)
     pool = Admission.new(1)
     records = Records.new(pool)
-    inbox = Inbox.new(1, kinds: [:forget, :reconnect])
+    inbox = Inbox.new(1, kinds: [:forget, :reconnect, :connection])
     waiters = Waiters.new(records, 1)
 
     endpoint = %{

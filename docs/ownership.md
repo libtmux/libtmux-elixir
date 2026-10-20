@@ -262,8 +262,24 @@ acknowledge native retirement or roll back siblings. Repeated requests for
 the same closing or proven-retired generation succeed; old handles cannot
 follow replacement Managers or epochs. Status errors report unknown
 certainty about existing work; a rejected new, unadmitted submission reports
-no write. Public connection construction and awaited retirement remain open.
+no write. Public connection construction remains open.
 
-Public bounded connection startup and awaited retirement,
+`Control.close/2` waits for native and epoch-actor retirement plus the Host's
+epoch-child finalization acknowledgement under its original budget. An
+admitted metadata watcher retains its fixed Inbox cell
+through settlement, including after caller closure. Metadata settlement
+failure blocks replacement. Ready watches never start a failed or closed
+epoch. Accepted retirement watches settle before reconnect in the same batch,
+independent of slot order. Epoch reservation rechecks metadata and waiter
+storage; lost storage cannot authorize replacement.
+
+`Control.reconnect/2` returns the acknowledged endpoint directly. A delayed
+caller receives that epoch even if a newer one already exists; its handle
+then reports stale. It does not reread the latest view or replay operations.
+The Root and retained records outlive ordinary epoch closure. Public lifecycle
+errors preserve unknown certainty about existing effects; direct retirement
+proof must still be observed within the original close budget.
+
+Public bounded connection startup and factory retrieval,
 connection-wide accounting and authoritative subscriptions remain under
 implementation. These component checks do not qualify those contracts.

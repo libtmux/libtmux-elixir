@@ -16,6 +16,136 @@ defmodule LibTmux.ControlManagerTest do
   alias LibTmux.Test.NativeDriver
   @moduletag :capture_log
 
+  @tag lifecycle_waits: true
+  @tag ready_settlement: true
+  test "one failed readiness settlement prevents success for the next intact waiter" do
+    {_host, view, _lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    initial = endpoint(view)
+    first = metadata(initial, initial.epoch, {:connection, :ready})
+    second = metadata(initial, initial.epoch, {:connection, :ready})
+    assert [^second, ^first] = :sys.get_state(manager, 500).ready_waiting
+    :ets.delete(initial.inbox.table, second.slot)
+    peer = bootstrap(view)
+
+    try do
+      assert {:error, %Error{kind: :cleanup_unknown, certainty: :unknown}} =
+               result(initial, first)
+
+      assert %{phase: :unknown} = Lifetime.status(initial.lifetime)
+      assert %{phase: :unknown, metadata_fault: true} = :sys.get_state(manager, 500)
+    after
+      LibTmux.Transport.Reply.close(second.reply, second.token)
+      retire(peer)
+    end
+  end
+
+  for initial_phase <- [:closed, :unknown] do
+    @tag lifecycle_waits: true
+    @tag initial_wait_phase: initial_phase
+    test "readiness wait cannot start an inert #{initial_phase} lifetime", %{
+      initial_wait_phase: phase
+    } do
+      {host, view, lifetime, options} = setup_manager()
+
+      if phase == :closed do
+        {:ok, 1} = Lifetime.begin_epoch(lifetime)
+        :ok = Lifetime.revoke(lifetime, 1)
+        :ok = Lifetime.retired(lifetime, 1)
+      else
+        :ok = Lifetime.abandon_initial(lifetime)
+      end
+
+      before = Lifetime.status(lifetime)
+      start_supervised!({Manager, options})
+      current = endpoint(view)
+      ready = metadata(current, current.epoch, {:connection, :ready})
+      assert {:error, %Error{kind: kind, certainty: :unknown}} = result(current, ready)
+      assert kind == if(phase == :closed, do: :not_ready, else: :cleanup_unknown)
+      assert before == Lifetime.status(lifetime)
+      assert [] = Supervisor.which_children(host)
+      refute_receive {:driver_open, _, _}, 0
+    end
+  end
+
+  @tag lifecycle_waits: true
+  test "retirement waits require terminal native proof and actual actor exit" do
+    {_host, view, lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    initial = endpoint(view)
+    waiting = metadata(initial, initial.epoch, {:connection, :ready})
+    peer = bootstrap(view)
+    ready = result(initial, waiting)
+    early = metadata(ready, ready.epoch, {:connection, :retired})
+    assert {:error, %Error{kind: :not_closing}} = result(ready, early)
+    accounting_turn(manager)
+
+    assert :ok = Lifetime.revoke(lifetime, ready.generation)
+    retired = metadata(ready, ready.epoch, {:connection, :retired})
+    assert :sys.get_state(manager, 500).phase == :closing
+    assert :pending = Inbox.result(ready.inbox, retired)
+    %{guardian: guardian, handle: handle} = peer
+    monitor = Process.monitor(guardian)
+    assert_receive {:driver_command, ^guardian, ^handle, "Q"}, 200
+    send(guardian, {handle, {:data, <<?E, 1, 0::32>>}})
+    assert_receive {:driver_command, ^guardian, ^handle, "T"}, 200
+    assert :pending = Inbox.result(ready.inbox, retired)
+    send(guardian, {handle, {:exit_status, 0}})
+    assert_receive {:DOWN, ^monitor, :process, ^guardian, :normal}, 200
+    assert :ok = result(ready, retired)
+    assert %{phase: :retired} = Lifetime.status(lifetime)
+    assert :sys.get_state(manager, 500).phase == :closed
+  end
+
+  @tag lifecycle_waits: true
+  test "lost cleanup cannot settle a retirement watch as success" do
+    {_host, view, lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    initial = endpoint(view)
+    waiting = metadata(initial, initial.epoch, {:connection, :ready})
+    peer = bootstrap(view)
+    ready = result(initial, waiting)
+    assert :ok = Lifetime.revoke(lifetime, ready.generation)
+    retired = metadata(ready, ready.epoch, {:connection, :retired})
+    assert :sys.get_state(manager, 500).phase == :closing
+    monitor = Process.monitor(peer.guardian)
+    Process.exit(peer.guardian, :kill)
+    assert_receive {:DOWN, ^monitor, :process, _, :killed}, 200
+    assert {:error, %Error{kind: :cleanup_unknown, certainty: :unknown}} = result(ready, retired)
+    assert %{phase: :unknown} = Lifetime.status(lifetime)
+  end
+
+  @tag lifecycle_waits: true
+  test "a higher-slot retirement watch settles before a lower-slot reconnect" do
+    {_host, view, lifetime, options} = setup_manager()
+    {:ok, 1} = Lifetime.begin_epoch(lifetime)
+    :ok = Lifetime.revoke(lifetime, 1)
+    :ok = Lifetime.retired(lifetime, 1)
+    manager = start_supervised!({Manager, options})
+    old = endpoint(view)
+    :ok = :sys.suspend(manager, 500)
+
+    {reconnect, retired} =
+      try do
+        reconnect = metadata(old, old.epoch, {:reconnect, nil})
+        retired = metadata(old, old.epoch, {:connection, :retired})
+        assert reconnect.slot < retired.slot
+        {reconnect, retired}
+      after
+        :sys.resume(manager, 500)
+      end
+
+    assert :ok = result(old, retired)
+    peer = bootstrap(view)
+    ready = result(old, reconnect)
+    assert ready.generation == 2
+    accounting_turn(manager)
+    assert :ok = Lifetime.revoke(lifetime, ready.generation)
+    ending = metadata(ready, ready.epoch, {:connection, :retired})
+    retire(peer)
+    assert :ok = result(ready, ending)
+  end
+
   for loss <- [:shutdown, :host_down] do
     @tag initial_owner_loss: loss
     test "a generation-zero fence keeps Manager inert through #{loss}", %{

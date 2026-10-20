@@ -15,7 +15,7 @@ defmodule LibTmux.Control do
   """
 
   alias LibTmux.{Deadline, Error, Operation}
-  alias LibTmux.Control.{Admission, Lifetime, Request}
+  alias LibTmux.Control.{Admission, Exchange, Lifetime, Request}
 
   @enforce_keys [:owner, :view, :lifetime, :endpoint]
   @derive {Inspect, only: []}
@@ -116,8 +116,11 @@ defmodule LibTmux.Control do
     result =
       with {:ok, endpoint} <- current(control) do
         case Lifetime.status(control.lifetime) do
-          %{generation: generation, phase: :retired} when generation == endpoint.generation -> :ok
-          _ -> Lifetime.revoke(control.lifetime, endpoint.generation)
+          %{generation: generation, phase: :retired} when generation == endpoint.generation ->
+            :ok
+
+          _ ->
+            Lifetime.revoke(control.lifetime, endpoint.generation)
         end
       end
 
@@ -129,6 +132,93 @@ defmodule LibTmux.Control do
 
   @doc "Requests epoch closure or raises the same structured error."
   def request_close!(control), do: unwrap(request_close(control))
+
+  @doc """
+  Requests closure and waits for proven retirement of the pinned epoch.
+
+  `timeout` defaults to 5000ms. The original budget includes validation and
+  retirement waiting. Closure still happens if the bounded metadata wait cannot
+  be admitted. Timeout, overload or lost ownership reports unknown certainty;
+  it never proves cleanup. `:ok` requires known native and actor retirement.
+
+  The connection supervisor and retained records remain available for explicit
+  reconnect and inspection. This does not stop the supervisor or roll back
+  sibling effects.
+  """
+  @spec close(t(), keyword()) :: :ok | {:error, Error.t()}
+  def close(%__MODULE__{} = control, options \\ []) do
+    deadline = lifecycle_deadline(options)
+
+    result =
+      with :ok <- request_close(control),
+           {:ok, endpoint} <- current(control) do
+        case Lifetime.status(control.lifetime) do
+          %{generation: generation, phase: :retired} when generation == endpoint.generation ->
+            unexpired(deadline)
+
+          _ ->
+            Exchange.call(endpoint.inbox, endpoint.epoch, deadline, {:connection, :retired})
+        end
+      end
+
+    lifecycle_result(result, :close)
+  end
+
+  @doc "Waits for retirement or raises the same structured error."
+  def close!(control, options \\ []), do: unwrap(close(control, options))
+
+  @doc """
+  Explicitly obtains the ready epoch, starting a replacement only after retirement.
+
+  A ready epoch returns itself. Call `close/2` first to require replacement.
+  The default 5000ms budget covers metadata admission, retirement and startup.
+  A successful reply pins the acknowledged endpoint even if it becomes stale
+  before this caller resumes. It never follows a later view or replays work.
+  Errors report unknown certainty about existing effects. Attachment counts
+  include the control client; reconnect can attach one replacement client.
+  """
+  @spec reconnect(t(), keyword()) :: {:ok, t()} | {:error, Error.t()}
+  def reconnect(%__MODULE__{} = control, options \\ []) do
+    deadline = lifecycle_deadline(options)
+
+    result =
+      with {:ok, endpoint} <- current(control),
+           {:ok, acknowledged} <-
+             Exchange.call(endpoint.inbox, endpoint.epoch, deadline, {:reconnect, nil}) do
+        bind_reconnected(control, acknowledged)
+      end
+
+    lifecycle_result(result, :connect)
+  end
+
+  @doc "Obtains the ready epoch or raises the same structured error."
+  def reconnect!(control, options \\ []), do: unwrap(reconnect(control, options))
+
+  defp bind_reconnected(control, acknowledged) do
+    shared = [:manager, :pool, :records, :inbox, :waiter_inbox, :lifetime]
+    original = control.endpoint
+
+    epoch_matches =
+      (acknowledged.generation == original.generation and acknowledged.epoch == original.epoch) or
+        (acknowledged.generation == original.generation + 1 and
+           acknowledged.epoch != original.epoch)
+
+    if acknowledged.phase == :ready and epoch_matches and
+         Map.take(acknowledged, shared) === Map.take(original, shared),
+       do: {:ok, %{control | endpoint: acknowledged}},
+       else: failure(:invalid_reply)
+  end
+
+  defp lifecycle_deadline(options) do
+    entered_at = System.monotonic_time(:millisecond)
+    options = Keyword.validate!(options, timeout: 5000)
+    Deadline.new(options[:timeout], now: entered_at)
+  end
+
+  defp lifecycle_result({:error, %Error{} = error}, phase),
+    do: {:error, %{error | phase: phase, certainty: :unknown}}
+
+  defp lifecycle_result(result, _phase), do: result
 
   defp publish(control, endpoint, lease, request, deadline) do
     with {:ok, ^endpoint} <- current(control),

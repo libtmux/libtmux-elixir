@@ -23,7 +23,7 @@ defmodule LibTmux.Control.Inbox do
 
     unless is_integer(max_outcome_bytes) and max_outcome_bytes in 1024..131_072 and
              is_list(kinds) and length(kinds) in 1..3 and Enum.uniq(kinds) == kinds and
-             Enum.all?(kinds, &(&1 in [:reconnect, :forget, :await])),
+             Enum.all?(kinds, &(&1 in [:reconnect, :forget, :await, :connection])),
            do: raise(ArgumentError, "inbox requires fixed kinds and 1024..131072 outcome bytes")
 
     table = :ets.new(__MODULE__, [:set, :public, read_concurrency: true, write_concurrency: true])
@@ -367,6 +367,9 @@ defmodule LibTmux.Control.Inbox do
 
   defp valid_request?(inbox, {:reconnect, nil}), do: :reconnect in inbox.kinds
 
+  defp valid_request?(inbox, {:connection, action}) when action in [:ready, :retired],
+    do: :connection in inbox.kinds
+
   defp valid_request?(inbox, {kind, %Lease{} = lease}) when kind in [:forget, :await] do
     kind in inbox.kinds and local_ref?(lease.table) and local_ref?(lease.epoch) and
       is_integer(lease.slot) and lease.slot in 1..256 and is_integer(lease.generation) and
@@ -380,6 +383,7 @@ defmodule LibTmux.Control.Inbox do
   defp valid_request?(_inbox, _request), do: false
 
   defp pending_certainty(%{request: {:await, _lease}}), do: :unknown
+  defp pending_certainty(%{request: {:connection, _action}}), do: :unknown
   defp pending_certainty(_data), do: :no_write
 
   defp known_certainty({tag, %{certainty: certainty}})

@@ -41,7 +41,7 @@ defmodule LibTmux.Control.Manager do
     %{generation: generation, phase: phase} = Lifetime.status(lifetime)
     pool = Admission.new(options[:capacity])
     records = Records.new(pool)
-    inbox = Inbox.new(options[:metadata_capacity], kinds: [:reconnect, :forget])
+    inbox = Inbox.new(options[:metadata_capacity], kinds: [:reconnect, :forget, :connection])
     waiters = Waiters.new(records, options[:waiter_capacity])
     payload = Keyword.fetch!(options, :payload)
     retention = options[:retention_ms]
@@ -85,6 +85,9 @@ defmodule LibTmux.Control.Manager do
       unclean: phase != :retired,
       closing_at: nil,
       waiting: [],
+      ready_waiting: [],
+      retiring: [],
+      metadata_fault: false,
       reason: nil
     }
 
@@ -103,7 +106,13 @@ defmodule LibTmux.Control.Manager do
   @impl true
   def handle_info(:sweep, state) do
     state = harvest(state)
-    {:ok, _count} = Inbox.reap(state.inbox)
+
+    state =
+      case Inbox.reap(state.inbox) do
+        {:ok, _count} -> state
+        {:error, _error} -> %{state | metadata_fault: true}
+      end
+
     state = requests(state)
     state = account(state) |> service_waiters() |> progress() |> publish()
     Process.send_after(self(), :sweep, 25)
@@ -122,7 +131,7 @@ defmodule LibTmux.Control.Manager do
   end
 
   def handle_info(message, state) do
-    state = service_waiters(state) |> harvest()
+    state = service_waiters(state) |> guard_metadata() |> harvest()
 
     state =
       case state.pending do
@@ -148,6 +157,16 @@ defmodule LibTmux.Control.Manager do
   end
 
   defp begin_start(state, deadline, initial \\ false) do
+    state = settle_retiring(state) |> service_waiters() |> guard_metadata()
+
+    if state.metadata_fault or state.unclean do
+      poison(state)
+    else
+      reserve_epoch(state, deadline, initial)
+    end
+  end
+
+  defp reserve_epoch(state, deadline, initial) do
     case Lifetime.begin_epoch(state.lifetime) do
       {:ok, generation} ->
         epoch = if initial, do: state.epoch, else: make_ref()
@@ -284,9 +303,14 @@ defmodule LibTmux.Control.Manager do
        when epoch == state.epoch and router == state.actors.router and state.phase == :starting do
     if Deadline.remaining(state.deadline) > 0 and
          Lifetime.allows_write?(state.lifetime, state.generation) do
-      state = %{state | phase: :ready, instance: instance}
-      Enum.each(state.waiting, &connected(state, &1))
-      %{state | waiting: []}
+      state = publish(%{state | phase: :ready, instance: instance})
+
+      if state.phase == :ready do
+        state = Enum.reduce(state.waiting ++ state.ready_waiting, state, &connected(&2, &1))
+        if state.metadata_fault, do: state, else: %{state | waiting: [], ready_waiting: []}
+      else
+        state
+      end
     else
       close(state, :timeout)
     end
@@ -367,7 +391,8 @@ defmodule LibTmux.Control.Manager do
 
   defp poison(state) do
     abandon(state.lifetime, state.generation)
-    fail_waiters(%{state | unclean: true, phase: :unknown}, :cleanup_unknown)
+    state = fail_waiters(%{state | unclean: true, phase: :unknown}, :cleanup_unknown)
+    finish_list(state, :retiring, failure(:cleanup_unknown))
   end
 
   defp abandon(lifetime, 0), do: Lifetime.abandon_initial(lifetime)
@@ -392,7 +417,7 @@ defmodule LibTmux.Control.Manager do
         case Lifetime.retired(state.lifetime, state.generation) do
           :ok ->
             if state.births, do: :ets.delete(state.births.table)
-            %{state | phase: :closed, births: nil, closing_at: nil}
+            %{state | phase: :closed, births: nil, closing_at: nil} |> settle_retiring()
 
           {:error, _error} ->
             poison(state)
@@ -410,8 +435,8 @@ defmodule LibTmux.Control.Manager do
         &(Deadline.remaining(%Deadline{expires_at: &1.expires_at}) == 0)
       )
 
-    Enum.each(expired, &Inbox.finish(state.inbox, &1, failure(:timeout)))
-    state = %{state | waiting: active}
+    state = Enum.reduce(expired, state, &finish(&2, &1, failure(:timeout)))
+    state = if state.metadata_fault, do: state, else: %{state | waiting: active}
 
     if active == [],
       do: state,
@@ -499,18 +524,37 @@ defmodule LibTmux.Control.Manager do
 
     state = if expired_publication, do: close(state, :timeout), else: state
 
-    Enum.each(state.waiting, fn ticket ->
-      if ticket.expires_at <= now, do: Inbox.finish(state.inbox, ticket, failure(:timeout))
+    Enum.reduce([:waiting, :ready_waiting, :retiring], state, fn key, state ->
+      {expired, active} = Enum.split_with(state[key], &(&1.expires_at <= now))
+      state = Enum.reduce(expired, state, &finish(&2, &1, failure(:timeout)))
+      if state.metadata_fault, do: state, else: Map.put(state, key, active)
     end)
-
-    %{state | waiting: Enum.reject(state.waiting, &(&1.expires_at <= now))}
   end
 
   defp requests(state) do
-    state = service_waiters(state) |> observe_gate()
-    {:ok, work} = Inbox.take(state.inbox)
+    state = service_waiters(state) |> guard_metadata() |> observe_gate()
+
+    case if(state.metadata_fault, do: {:ok, []}, else: Inbox.take(state.inbox)) do
+      {:ok, work} -> process_requests(state, work)
+      {:error, _error} -> %{state | metadata_fault: true} |> guard_metadata()
+    end
+  end
+
+  defp process_requests(state, work) do
+    work =
+      Enum.sort_by(work, fn
+        {_ticket, {:connection, _action}} -> 0
+        {_ticket, {:forget, _lease}} -> 1
+        {_ticket, {:reconnect, nil}} -> 2
+      end)
 
     Enum.reduce(work, state, fn
+      {ticket, {:connection, :ready}}, state ->
+        watch_ready(state, ticket)
+
+      {ticket, {:connection, :retired}}, state ->
+        watch_retired(state, ticket)
+
       {ticket, {:reconnect, nil}}, state ->
         reconnect(state, ticket)
 
@@ -520,8 +564,7 @@ defmodule LibTmux.Control.Manager do
             do: Waiters.forget(state.waiters, lease),
             else: {state.waiters, failure(:stale_epoch)}
 
-        Inbox.finish(state.inbox, ticket, outcome)
-        %{state | waiters: waiters}
+        finish(%{state | waiters: waiters}, ticket, outcome)
     end)
   end
 
@@ -538,17 +581,14 @@ defmodule LibTmux.Control.Manager do
 
   defp reconnect(state, ticket) do
     cond do
-      state.unclean ->
-        Inbox.finish(state.inbox, ticket, failure(:cleanup_unknown))
-        state
+      state.unclean or state.metadata_fault ->
+        finish(state, ticket, failure(:cleanup_unknown))
 
       ticket.epoch != state.epoch ->
-        Inbox.finish(state.inbox, ticket, failure(:stale_epoch))
-        state
+        finish(state, ticket, failure(:stale_epoch))
 
       state.phase == :ready ->
         connected(state, ticket)
-        state
 
       state.phase == :starting ->
         %{state | waiting: [ticket | state.waiting]}
@@ -564,9 +604,61 @@ defmodule LibTmux.Control.Manager do
   end
 
   defp fail_waiters(state, kind) do
-    Enum.each(state.waiting, &Inbox.finish(state.inbox, &1, failure(kind)))
-    %{state | waiting: []}
+    state |> finish_list(:waiting, failure(kind)) |> finish_list(:ready_waiting, failure(kind))
   end
+
+  defp watch_ready(state, ticket) do
+    cond do
+      state.unclean or state.metadata_fault -> finish(state, ticket, failure(:cleanup_unknown))
+      ticket.epoch != state.epoch -> finish(state, ticket, failure(:stale_epoch))
+      state.phase == :ready -> connected(state, ticket)
+      state.phase == :starting -> %{state | ready_waiting: [ticket | state.ready_waiting]}
+      true -> finish(state, ticket, failure(:not_ready))
+    end
+  end
+
+  defp watch_retired(state, ticket) do
+    cond do
+      state.unclean or state.metadata_fault -> finish(state, ticket, failure(:cleanup_unknown))
+      ticket.epoch != state.epoch -> finish(state, ticket, failure(:stale_epoch))
+      state.phase == :closed -> finish(state, ticket, :ok)
+      state.phase == :closing -> %{state | retiring: [ticket | state.retiring]}
+      true -> finish(state, ticket, failure(:not_closing))
+    end
+  end
+
+  defp settle_retiring(%{phase: :closed, unclean: false} = state),
+    do: finish_list(state, :retiring, :ok)
+
+  defp settle_retiring(state), do: state
+
+  defp finish_list(state, key, outcome) do
+    state = Enum.reduce(state[key], state, &finish(&2, &1, outcome))
+    if state.metadata_fault, do: state, else: Map.put(state, key, [])
+  end
+
+  defp finish(state, ticket, outcome, options \\ []) do
+    case Inbox.finish(state.inbox, ticket, outcome, options) do
+      :ok ->
+        state
+
+      {:error, _error} ->
+        abandon(state.lifetime, state.generation)
+        %{state | metadata_fault: true}
+    end
+  end
+
+  defp guard_metadata(%{metadata_fault: true, phase: phase} = state) when phase != :unknown,
+    do: state |> close(:metadata_failed) |> poison()
+
+  defp guard_metadata(%{metadata_fault: false} = state) do
+    case Inbox.validate(state.inbox) do
+      :ok -> state
+      {:error, _error} -> %{state | metadata_fault: true} |> guard_metadata()
+    end
+  end
+
+  defp guard_metadata(state), do: state
 
   defp service_waiters(state) do
     waiters = Waiters.turn(state.waiters)
@@ -577,8 +669,12 @@ defmodule LibTmux.Control.Manager do
       else: state
   end
 
+  defp connected(%{metadata_fault: fault, unclean: unclean} = state, ticket)
+       when fault or unclean,
+       do: finish(state, ticket, failure(:cleanup_unknown))
+
   defp connected(state, ticket) do
-    Inbox.finish(state.inbox, ticket, {:ok, endpoint(state)},
+    finish(state, ticket, {:ok, endpoint(state)},
       references: [
         state.epoch,
         state.lifetime.word,
@@ -612,6 +708,7 @@ defmodule LibTmux.Control.Manager do
       })
 
   defp publish(state) do
+    state = guard_metadata(state)
     :ets.insert(state.view, {:connection, endpoint(state)})
     state
   end
