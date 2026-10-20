@@ -31,7 +31,7 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     actors = monitor_actors(endpoint)
     assert :ok = Control.close(control, timeout: 800)
     exited(actors)
-    assert :ok = Supervisor.stop(root, :normal, 500)
+    assert :ok = :sys.terminate(root, :normal, 500)
     assert_receive {:DOWN, ^root_monitor, :process, ^root, :normal}, 100
 
     assert {:error, %Error{kind: :command_error, phase: :connect, certainty: :unknown} = error} =
