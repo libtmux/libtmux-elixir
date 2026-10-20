@@ -105,7 +105,7 @@ try do
   :ok = LibTmux.Protocol.finish(parser)
   if :os.type() == {:unix, :linux} do
     {:ok, %{stdout: "packed\n", stderr: "", exit_status: 0, cleanup: :retired}} =
-      LibTmux.Transport.OneShot.run("/bin/echo", ["packed"])
+      LibTmux.Transport.OneShot.run("/bin/echo", ["packed"], max_total_bytes: 7)
   else
     {:error, %LibTmux.Error{kind: :unsupported_platform}} =
       LibTmux.Transport.OneShot.run("/bin/echo", ["packed"])

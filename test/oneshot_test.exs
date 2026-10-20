@@ -40,6 +40,20 @@ defmodule LibTmux.OneShotTest do
     assert error.details.cleanup == :retired
   end
 
+  test "a combined byte budget bounds stdout and stderr together" do
+    assert {:error, error} =
+             OneShot.run(
+               "/usr/bin/python3",
+               ["-c", "import os;os.write(1,b'out');os.write(2,b'err')"],
+               max_total_bytes: 5
+             )
+
+    assert error.kind == :resource_limit
+    assert error.details.reason == :total_bytes
+    assert byte_size(error.details.stdout) + byte_size(error.details.stderr) == 5
+    assert error.details.cleanup == :retired
+  end
+
   test "one deadline returns partial bytes without treating them as success" do
     assert {:error, error} =
              OneShot.run(

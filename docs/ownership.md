@@ -16,6 +16,8 @@ owner is descheduled.
 
 Default ceilings are 1 MiB stdout, 64 KiB stderr and 4096 retained chunks.
 Byte limits may be 0–16 MiB per stream; chunk limits may be 1–65,536.
+`max_total_bytes` limits both streams together to 0–32 MiB; its default is
+the sum of the stream limits. The retained prefix obeys both ceilings.
 Encoded cwd, argv and environment together fit a 32 KiB initialization
 payload. Argv and environment each have at most 256 entries, including
 argv's executable. Target environment values preserve empty strings and

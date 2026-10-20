@@ -11,7 +11,9 @@ defmodule LibTmux.Transport.OneShot do
   removed from the target environment.
 
   Limits apply per call: stdout defaults to 1 MiB, stderr to 64 KiB, and
-  retained chunks to 4096. Overload returns an error with a bounded prefix.
+  retained chunks to 4096. `max_total_bytes` additionally bounds both streams
+  together; it defaults to their summed limits. Overload returns an error
+  with a bounded prefix.
   Independent caller processes require admission limits at their host or
   server boundary; this primitive maintains no shared request queue.
 
@@ -50,6 +52,7 @@ defmodule LibTmux.Transport.OneShot do
         cwd: File.cwd!(),
         max_stdout_bytes: 1_048_576,
         max_stderr_bytes: 65_536,
+        max_total_bytes: nil,
         max_chunks: 4096
       ])
 
@@ -80,11 +83,20 @@ defmodule LibTmux.Transport.OneShot do
 
     limits = %{1 => options[:max_stdout_bytes], 2 => options[:max_stderr_bytes]}
 
-    unless Enum.all?(limits, fn {_, limit} -> is_integer(limit) and limit in 0..16_777_216 end) and
+    unless Enum.all?(limits, fn {_, limit} -> is_integer(limit) and limit in 0..16_777_216 end),
+      do: raise(ArgumentError, "stream limits must be 0..16 MiB")
+
+    total_limit =
+      case options[:max_total_bytes] do
+        nil -> Enum.sum(Map.values(limits))
+        value -> value
+      end
+
+    unless is_integer(total_limit) and total_limit in 0..33_554_432 and
              is_integer(options[:max_chunks]) and options[:max_chunks] in 1..65_536 and
              Deadline.remaining(deadline) <= 600_000 do
       raise ArgumentError,
-            "limits require 0..16 MiB per stream, 1..65536 chunks and at most 600000 ms"
+            "limits require 0..32 MiB combined, 1..65536 chunks and at most 600000 ms"
     end
 
     environment =
@@ -114,6 +126,7 @@ defmodule LibTmux.Transport.OneShot do
     %{
       payload: payload,
       limits: limits,
+      total_limit: total_limit,
       max_chunks: options[:max_chunks],
       deadline: deadline
     }
@@ -289,7 +302,9 @@ defmodule LibTmux.Transport.OneShot do
   defp frame(state, _data), do: abort(state, :protocol_error, :parse)
 
   defp retain(state, stream, data) do
-    available = max(state.limits[stream] - state.bytes[stream], 0)
+    stream_available = max(state.limits[stream] - state.bytes[stream], 0)
+    total_available = max(state.total_limit - state.bytes[1] - state.bytes[2], 0)
+    available = min(stream_available, total_available)
     retained = binary_part(data, 0, min(byte_size(data), available)) |> :binary.copy()
 
     state = %{
@@ -301,7 +316,11 @@ defmodule LibTmux.Transport.OneShot do
 
     if byte_size(data) > available do
       abort(state, :resource_limit, :capture, %{
-        reason: if(stream == 1, do: :stdout_bytes, else: :stderr_bytes)
+        reason:
+          if(total_available < stream_available,
+            do: :total_bytes,
+            else: if(stream == 1, do: :stdout_bytes, else: :stderr_bytes)
+          )
       })
     else
       grant(state, stream)
@@ -310,7 +329,13 @@ defmodule LibTmux.Transport.OneShot do
   end
 
   defp grant(state, stream) do
-    size = min(@chunk_bytes, max(state.limits[stream] - state.bytes[stream] + 1, 1))
+    available =
+      min(
+        state.limits[stream] - state.bytes[stream],
+        state.total_limit - state.bytes[1] - state.bytes[2]
+      )
+
+    size = min(@chunk_bytes, max(available + 1, 1))
     send_port(state.port, <<?R, stream, size::16>>)
   end
 
