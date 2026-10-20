@@ -168,6 +168,23 @@ rechecks actor aliveness and its starting lifetime before opening the driver.
 An accepted PID remains owned through actual exit: registration or a pre-open
 check can race later closure. Gate closure alone is not native retirement.
 
-These components do not pass connection-wide admission, retained outcome
-APIs, reconnect or authoritative subscription behavior. Those still need
-Manager integration and its fault contracts.
+Manager keeps one asynchronous request to an ordinary Supervisor outstanding
+while it accounts for deadlines and metadata. A suspended Supervisor cannot
+park that accounting. Closing the reply alias does not cancel a queued
+Supervisor action; an abandoned unresolved start leaves cleanup unknown and
+blocks replacement. Captured actors remain monitored independently of the
+request alias. A Router born without a Guardian exits after the startup gate
+closes. A captured pair binds even during closure, including buffered native
+retirement events.
+
+Explicit reconnect carries its original deadline through old retirement and
+new bootstrap. Replacement requires native proof, actual Guardian and Router
+exit, the host's child-finalization acknowledgment and EpochSupervisor exit.
+Manager restarts preserve the external lifetime latch and do not reconnect
+automatically. The internal qualified cases retain outcomes across reconnect,
+forget exact completed leases, and expire retained records. Accepted metadata
+work remains owned after caller timeout or alias closure; neither cancels it.
+
+The public connection supervisor, retained outcome APIs, waiter pinning,
+connection-wide accounting and authoritative subscriptions remain under
+implementation. These component checks do not qualify those contracts.
