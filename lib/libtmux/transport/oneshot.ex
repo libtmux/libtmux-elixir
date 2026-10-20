@@ -26,6 +26,7 @@ defmodule LibTmux.Transport.OneShot do
 
   alias LibTmux.{Deadline, Error}
   alias LibTmux.Transport.Native
+  alias LibTmux.Transport.Native.Protocol, as: NativeProtocol
 
   @cleanup_ms 750
   @chunk_bytes 8192
@@ -73,14 +74,6 @@ defmodule LibTmux.Transport.OneShot do
   end
 
   defp validate(executable, arguments, options, %Deadline{} = deadline) do
-    unless is_binary(executable) and Path.type(executable) == :absolute and
-             is_list(arguments) and length(arguments) < 256 and
-             Enum.all?([executable, options[:cwd] | arguments], &valid_string?/1) and
-             Path.type(options[:cwd]) == :absolute do
-      raise ArgumentError,
-            "transport requires an absolute executable/cwd and at most 255 NUL-free argv values"
-    end
-
     limits = %{1 => options[:max_stdout_bytes], 2 => options[:max_stderr_bytes]}
 
     unless Enum.all?(limits, fn {_, limit} -> is_integer(limit) and limit in 0..16_777_216 end),
@@ -99,29 +92,11 @@ defmodule LibTmux.Transport.OneShot do
             "limits require 0..32 MiB combined, 1..65536 chunks and at most 600000 ms"
     end
 
-    environment =
-      options |> Keyword.get_lazy(:env, &System.get_env/0) |> Map.drop(["TMUX", "TMUX_PANE"])
-
-    unless map_size(environment) <= 256 and
-             Enum.all?(environment, fn {key, value} ->
-               valid_string?(key) and byte_size(key) in 1..128 and
-                 :binary.match(key, "=") == :nomatch and valid_string?(value)
-             end),
-           do: raise(ArgumentError, "env requires at most 256 NUL-free named binary values")
-
-    argv = [executable | arguments]
-    env = Enum.map(environment, fn {key, value} -> key <> "=" <> value end)
-
-    payload = [
-      Native.encode_string(options[:cwd]),
-      <<length(argv)::16>>,
-      Enum.map(argv, &Native.encode_string/1),
-      <<length(env)::16>>,
-      Enum.map(env, &Native.encode_string/1)
-    ]
-
-    if IO.iodata_length(payload) + 7 > 32_768,
-      do: raise(ArgumentError, "encoded argv/cwd/environment exceeds 32 KiB")
+    payload =
+      NativeProtocol.process(executable, arguments,
+        cwd: options[:cwd],
+        env: Keyword.get_lazy(options, :env, &System.get_env/0)
+      )
 
     %{
       payload: payload,
@@ -131,10 +106,6 @@ defmodule LibTmux.Transport.OneShot do
       deadline: deadline
     }
   end
-
-  defp valid_string?(value),
-    do:
-      is_binary(value) and byte_size(value) <= 32_000 and :binary.match(value, <<0>>) == :nomatch
 
   defp run_worker(spec) do
     caller = self()
@@ -197,9 +168,17 @@ defmodule LibTmux.Transport.OneShot do
           remaining = Deadline.remaining(spec.deadline)
 
           cond do
-            remaining == 0 -> abort(state, :timeout, :admission, %{}, :no_write)
-            send_port(port, [<<?O, 3, 0, remaining::32>>, spec.payload]) -> await(state)
-            true -> abort(state, :resource_limit, :write, %{reason: :helper_busy}, :no_write)
+            remaining == 0 ->
+              abort(state, :timeout, :admission, %{}, :no_write)
+
+            send_port(
+              port,
+              NativeProtocol.open_frame(spec.payload, input: :closed, timeout: remaining)
+            ) ->
+              await(state)
+
+            true ->
+              abort(state, :resource_limit, :write, %{reason: :helper_busy}, :no_write)
           end
         after
           close_port(port)
