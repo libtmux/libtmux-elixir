@@ -238,6 +238,11 @@ cleanup uses only its remaining budget. OTP still waits for actual Root DOWN
 after an initialization timeout; this primitive alone does not prove a strict
 caller-return deadline or complete descendant retirement.
 
+Both startup wrappers close their private reply aliases through local BIFs
+and zero-time receives. Timeout cleanup does not demand-load the shared reply
+helper after Root exit. Isolated loader-gate checks qualify this dependency;
+they do not bound OTP's actual-DOWN wait or explain earlier timing failures.
+
 Failed initial startup fences the fresh lifetime even before its first epoch
 reservation. If that reservation wins the CAS race, the fence closes only the
 first generation. Proven retirement remains intact, and later generations

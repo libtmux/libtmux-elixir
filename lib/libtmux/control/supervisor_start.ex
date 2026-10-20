@@ -2,7 +2,6 @@ defmodule LibTmux.Control.SupervisorStart do
   @moduledoc false
   @behaviour Supervisor
   alias LibTmux.Deadline
-  alias LibTmux.Transport.Reply
 
   def start_link(callback, argument, %Deadline{} = deadline) do
     case Deadline.remaining(deadline) do
@@ -31,7 +30,14 @@ defmodule LibTmux.Control.SupervisorStart do
 
           result
         after
-          Reply.close(reply, token)
+          # Expired startup cleanup must not demand-load a reply helper.
+          :erlang.unalias(reply)
+
+          receive do
+            {^token, _late_reply} -> :ok
+          after
+            0 -> :ok
+          end
         end
     end
   end

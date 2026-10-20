@@ -4,7 +4,6 @@ defmodule LibTmux.Control.ConnectionSupervisor do
   alias LibTmux.{Deadline, Error}
   alias LibTmux.Control.{EpochHost, Lifetime, Manager, SupervisorStart}
   alias LibTmux.Transport.Native.Driver
-  alias LibTmux.Transport.Reply
 
   def child_spec(options) do
     options =
@@ -77,7 +76,14 @@ defmodule LibTmux.Control.ConnectionSupervisor do
         abandon(lifetime, generation)
         :erlang.raise(kind, reason, __STACKTRACE__)
     after
-      Reply.close(reply, token)
+      # Preserve timeout return without demand-loading another cleanup module.
+      :erlang.unalias(reply)
+
+      receive do
+        {^token, _late_reply} -> :ok
+      after
+        0 -> :ok
+      end
     end
   end
 
