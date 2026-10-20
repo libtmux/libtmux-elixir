@@ -125,6 +125,21 @@ Reply numbers must increase when observed; gaps are normal because other
 clients and callbacks use the same server counter. This does not detect
 every possible counter wrap or authenticate an unqualified stream.
 
+Metadata requests use a separate fixed ETS inbox before any wake message.
+Its context binds the real table owner, capacity, allowed request kinds and
+atomics references. Publication creates the caller's reply alias and token;
+only a small ready notification enters its mailbox. Owner completion and
+caller receipt remain separate: a finished row stays occupied until alias
+closure and receipt acknowledgement, or caller death. A monotone receipt
+word cannot regress when a delayed old close meets a replacement generation.
+Wake hints also coalesce across slot reuse; accounting sweeps never clear a
+hint that a paused publisher still owns.
+
+Inbox ceilings cover fixed metadata rows and serialized result size. They
+do not establish a bound on all retained BEAM binaries: a small subbinary can
+retain a larger parent. Integrated operation waiters must retain bounded
+record references and include result storage in connection-wide accounting.
+
 These components do not pass connection-wide admission, retained outcome
 APIs, reconnect or authoritative subscription behavior. Those still need
 Manager integration and its fault contracts.
