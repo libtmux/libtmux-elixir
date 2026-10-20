@@ -115,8 +115,10 @@ defmodule LibTmux.Operation.Lifecycle do
     end
   end
 
-  defp transition(%{wire: :awaiting, result: nil} = operation, {:reply, status, guard, lines})
-       when status in [:ok, :error] do
+  # A qualified reply can precede the native write acknowledgement. Its logical
+  # result is final; only acknowledged bytes advance the writer or retire wire.
+  defp transition(%{wire: wire, result: nil} = operation, {:reply, status, guard, lines})
+       when wire in [:writing, :awaiting] and status in [:ok, :error] do
     with :ok <- reply_size(operation, guard, lines) do
       result = %{
         outcome: if(status == :ok, do: :completed, else: :failed),

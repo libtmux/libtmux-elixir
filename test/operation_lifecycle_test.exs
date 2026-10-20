@@ -186,6 +186,24 @@ defmodule LibTmux.OperationLifecycleTest do
     assert operation.result == result
   end
 
+  test "a qualified command reply survives closure before native write acknowledgement" do
+    {:ok, operation, []} =
+      Lifecycle.step(operation(), {:owner, :epoch, :operation, :dispatch}, now: 1)
+
+    assert {:ok, operation, [{:settle, {:ok, result}}]} =
+             Lifecycle.step(
+               operation,
+               {:owner, :epoch, :operation, {:reply, :ok, {1, 2, 1}, ["done"]}},
+               now: 2
+             )
+
+    assert operation.wire == :writing and operation.written == 0
+    refute Lifecycle.wire_retired?(operation)
+    assert result.certainty == :acknowledged
+    assert {:ok, operation, []} = Lifecycle.step(operation, {:epoch_closed, :epoch}, now: 3)
+    assert operation.result == result and Lifecycle.wire_retired?(operation)
+  end
+
   defp operation do
     Lifecycle.new(:epoch, :operation, Deadline.new(100, now: 0), 8,
       max_reply_bytes: 16,

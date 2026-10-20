@@ -108,6 +108,23 @@ client-directed messages; parser limits cannot authenticate such output.
 Absence of a configuration-error notification cannot certify configuration.
 The library never silently disables hooks or changes configuration.
 
-Guardian and bootstrap qualification does not pass connection-wide admission,
-retained outcomes, reconnect, FIFO or authoritative subscription behavior.
-Those need the Manager/router integration and its fault contracts.
+The internal epoch router registers operation identity and FIFO position
+before sending fragments. A qualified reply after final-fragment dispatch
+can establish an immutable logical result before the native acknowledgement
+arrives. The writer still waits for native acknowledgement before advancing;
+wire retirement also requires it. Completed reply events survive a later
+parser error in the same chunk. Expired unsent work removes its exact queued
+token before capacity reuse. A retained reply observation and its logical
+result are separate copies in the eventual connection byte accounting.
+
+The initial lane admits encoded field reads and literal server user-option
+writes, with bounded ASCII option names and no value expansion. It rejects
+arbitrary command lines. Literal send-keys still needs domain qualification:
+pane-mode key bindings can enqueue additional commands even with `-l`.
+Reply numbers must increase when observed; gaps are normal because other
+clients and callbacks use the same server counter. This does not detect
+every possible counter wrap or authenticate an unqualified stream.
+
+These components do not pass connection-wide admission, retained outcome
+APIs, reconnect or authoritative subscription behavior. Those still need
+Manager integration and its fault contracts.
