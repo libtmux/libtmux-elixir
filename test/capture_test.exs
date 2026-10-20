@@ -1,7 +1,7 @@
 defmodule LibTmux.CaptureTest do
   use ExUnit.Case, async: true
 
-  alias LibTmux.{Error, Format, Server, Snapshot}
+  alias LibTmux.{Error, Format, Selection, Server, Snapshot}
   alias LibTmux.Test.OwnedTmux
 
   @moduletag :integration
@@ -26,6 +26,14 @@ defmodule LibTmux.CaptureTest do
     assert Enum.map(Snapshot.related(snapshot, :session, "$0", :panes), & &1.id) == ["%0"]
     assert snapshot.sessions["$0"].attached_count == 0
     assert snapshot.panes["%0"].exit_status == nil
+    assert Snapshot.related(snapshot, :session, "$0", :active_window).id == "@0"
+
+    assert ["$0", "$1"] ==
+             snapshot
+             |> Snapshot.sessions()
+             |> Selection.where(active_window: [is: [name: name]])
+             |> Enum.map(& &1.id)
+
     assert snapshot.captured_from <= snapshot.captured_until
     assert {:ok, next} = Server.snapshot(server)
     assert next.id != snapshot.id

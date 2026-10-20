@@ -110,6 +110,11 @@ try do
   )
   [%LibTmux.Session{attached: true, attached_count: 2}] =
     LibTmux.Snapshot.items(snapshot, LibTmux.Session)
+  sessions = LibTmux.Snapshot.sessions(snapshot)
+  filter = LibTmux.Filter.new!(LibTmux.Session, attached: true, name: [starts_with: "pack"])
+  {:ok, ^filter} = LibTmux.Filter.from_json(LibTmux.Session, JSON.encode!(LibTmux.Filter.to_wire(filter)))
+  {:ok, %LibTmux.Session{id: "$0"}} = LibTmux.Selection.one(sessions, filter)
+  ["$0"] = for session <- LibTmux.Selection.where(sessions, filter), do: session.id
   if :os.type() == {:unix, :linux} do
     {:ok, %{stdout: "packed\n", stderr: "", exit_status: 0, cleanup: :retired}} =
       LibTmux.Transport.OneShot.run("/bin/echo", ["packed"], max_total_bytes: 7)

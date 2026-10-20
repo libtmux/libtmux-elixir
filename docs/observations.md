@@ -11,8 +11,9 @@ remain environmental effects of commands, including list commands.
 `Snapshot.items/2` returns a plain list for an entity atom or module.
 `Snapshot.fetch/3` looks up an exact ID. `Snapshot.related/4` follows captured
 indexes and raises a structured coverage error when a relation is incomplete.
-These functions perform no I/O. Materialized selections and declarative
-filters are still under implementation.
+These functions perform no I/O. `Snapshot.sessions/1`, `windows/1`, `panes/1`,
+`window_links/1` and `clients/1` return materialized Enumerable selections.
+See [filtering](filtering.md) for local predicates and portable criteria.
 
 Sessions, physical windows, panes and clients have separate maps. A pane
 belongs to one physical window. `WindowLink` records session membership,
@@ -46,7 +47,7 @@ objects needs a complete join domain, so missing children never become an
 empty relation. Complete target sets reject dangling references. A partial
 target set can retain unresolved foreign IDs, but traversal fails explicitly.
 
-The [schema](../lib/libtmux/schema.ex) owns field types, explicit wire names,
+The [generated schema](schema.md) owns field types, explicit wire names,
 tmux variables and relation cardinalities. Physical windows carry no single
 session, session index or active membership flag.
 

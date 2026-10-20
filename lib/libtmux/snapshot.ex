@@ -117,6 +117,17 @@ defmodule LibTmux.Snapshot do
     Enum.map(snapshot.order[entity], &Map.fetch!(table, &1))
   end
 
+  @doc "Returns a materialized session selection without I/O."
+  def sessions(snapshot), do: LibTmux.Selection.new(snapshot, :session)
+  @doc "Returns a materialized physical window selection without I/O."
+  def windows(snapshot), do: LibTmux.Selection.new(snapshot, :window)
+  @doc "Returns a materialized physical pane selection without I/O."
+  def panes(snapshot), do: LibTmux.Selection.new(snapshot, :pane)
+  @doc "Returns a materialized membership selection without I/O."
+  def window_links(snapshot), do: LibTmux.Selection.new(snapshot, :window_link)
+  @doc "Returns a materialized attached-client selection without I/O."
+  def clients(snapshot), do: LibTmux.Selection.new(snapshot, :client)
+
   @doc "Looks up one exact observed ID without I/O."
   def fetch(%__MODULE__{} = snapshot, entity, id) do
     entity = Schema.entity(entity)
@@ -385,6 +396,10 @@ defmodule LibTmux.Snapshot do
   defp requirements(:window, :panes), do: {[:pane], [pane: :window_id]}
   defp requirements(:session, :clients), do: {[:client], [client: :session_id]}
 
+  defp requirements(:session, :active_window),
+    do:
+      {[:window_link], [window_link: :session_id, window_link: :window_id, window_link: :active]}
+
   defp requirements(:session, :panes),
     do:
       {[:window_link, :pane],
@@ -392,6 +407,13 @@ defmodule LibTmux.Snapshot do
 
   defp requirements(_entity, _relation),
     do: {[:window_link], [window_link: :session_id, window_link: :window_id]}
+
+  defp relation_targets_present?(snapshot, :session, id, :active_window) do
+    case active_link(snapshot, snapshot.sessions[id]) do
+      nil -> true
+      link -> Map.has_key?(snapshot.windows, link.window_id)
+    end
+  end
 
   defp relation_targets_present?(snapshot, entity, id, relation) do
     {cardinality, _target} = Schema.relations(entity)[relation]
@@ -403,6 +425,13 @@ defmodule LibTmux.Snapshot do
   defp project(s, :client, item, :session), do: s.sessions[item.session_id]
   defp project(s, :window_link, item, :session), do: s.sessions[item.session_id]
   defp project(s, :window_link, item, :window), do: s.windows[item.window_id]
+
+  defp project(s, :session, item, :active_window) do
+    case active_link(s, item) do
+      nil -> nil
+      link -> s.windows[link.window_id]
+    end
+  end
 
   defp project(s, :window, item, :panes),
     do: Enum.map(Map.get(s.indexes.window_panes, item.id, []), &s.panes[&1])
@@ -437,6 +466,14 @@ defmodule LibTmux.Snapshot do
   end
 
   defp table(snapshot, entity), do: Map.fetch!(snapshot, @collections[entity])
+
+  defp active_link(snapshot, session) do
+    case Enum.filter(project(snapshot, :session, session, :window_links), & &1.active) do
+      [] -> nil
+      [link] -> link
+      _ -> raise_error(:ambiguous_relation, [:session, session.id, :active_window])
+    end
+  end
 
   defp sort_key(:window_link, {session, index, window}),
     do: {sort_key(:session, session), index, sort_key(:window, window)}

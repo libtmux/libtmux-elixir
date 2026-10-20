@@ -3,12 +3,13 @@
 An Elixir library for controlling tmux, currently under implementation.
 The unpublished core provides exact target references, shared deadlines,
 command encoding, bounded protocol parsing, a Linux one-shot transport and
-immutable graph capture.
+immutable graph capture, Enumerable selections and portable filters.
 A tmux client API and supported release are still in development.
 
 [Contributing](.github/CONTRIBUTING.md) ·
 [Design](docs/design.md) · [Encoding](docs/encoding.md) ·
 [Observations](docs/observations.md) ·
+[Filtering](docs/filtering.md) ·
 [Ownership](docs/ownership.md) ·
 [Writing](.github/WRITING.md)
 

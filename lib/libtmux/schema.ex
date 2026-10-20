@@ -3,7 +3,7 @@ defmodule LibTmux.Schema do
   Defines observed fields, wire names and graph relations.
 
   The table is a semantic overlay on tmux 3.3 format variables. It drives
-  observation validation and later filter/reference generation. Empty text
+  observation validation, portable filtering and reference generation. Empty text
   remains text; only explicitly nullable fields admit `nil`.
   """
 
@@ -62,6 +62,7 @@ defmodule LibTmux.Schema do
   }
   @relations %{
     session: %{
+      active_window: {:one, :window},
       windows: {:many, :window},
       window_links: {:many, :window_link},
       panes: {:many, :pane},
@@ -75,6 +76,16 @@ defmodule LibTmux.Schema do
     pane: %{window: {:one, :window}},
     window_link: %{session: {:one, :session}, window: {:one, :window}},
     client: %{session: {:one, :session}}
+  }
+  @relation_names %{
+    active_window: "activeWindow",
+    windows: "windows",
+    window_links: "windowLinks",
+    panes: "panes",
+    clients: "clients",
+    sessions: "sessions",
+    session: "session",
+    window: "window"
   }
 
   @doc "Returns supported entity names in a stable order."
@@ -112,6 +123,19 @@ defmodule LibTmux.Schema do
   @doc "Returns each relation's cardinality and target entity."
   def relations(entity), do: Map.fetch!(@relations, entity(entity))
 
+  @doc "Returns a relation's explicit stable wire name."
+  def relation_wire(name), do: Map.fetch!(@relation_names, name)
+
+  @doc "Returns the portable operators allowed by a scalar field's value category."
+  def operators(%{type: type}) do
+    [:equals, :not, :in, :not_in] ++
+      case type do
+        type when type in [:integer, :nullable_integer] -> [:lt, :lte, :gt, :gte]
+        :string -> [:contains, :starts_with, :ends_with]
+        _ -> []
+      end
+  end
+
   @doc false
   def valid_value?(%{nullable: true}, nil), do: true
 
@@ -122,6 +146,13 @@ defmodule LibTmux.Schema do
 
   def valid_value?(%{type: :string}, value),
     do: is_binary(value) and String.valid?(value) and :binary.match(value, <<0>>) == :nomatch
+
+  def valid_value?(%{type: {:id, :window_link}}, {_session, index, _window} = value),
+    do:
+      is_integer(index) and index in 0..2_147_483_647 and
+        match?({:ok, _}, LibTmux.Ref.new(:window_link, value, "schema"))
+
+  def valid_value?(%{type: {:id, :window_link}}, _value), do: false
 
   def valid_value?(%{type: {:id, entity}}, value),
     do: match?({:ok, _}, LibTmux.Ref.new(entity, value, "schema"))

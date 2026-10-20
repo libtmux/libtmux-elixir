@@ -78,6 +78,14 @@ Run critical pure tests in the inner loop, or all unit tests in the mid loop:
 $ time mix test
 ```
 
+Check generated field, operator and relation documentation after schema changes:
+
+```console
+$ time mix run scripts/generate_schema.exs --check
+```
+
+Regenerate it with `mix run scripts/generate_schema.exs` before the check.
+
 The default suite excludes the `integration` tag. Linux integration fixtures
 require Python 3.9+ with pidfd support and an explicit tmux executable or tmux
 on PATH. Python is a development fixture tool, not a core runtime dependency.
