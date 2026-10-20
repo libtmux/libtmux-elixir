@@ -609,11 +609,20 @@ defmodule LibTmux.Control.Manager do
 
   defp watch_ready(state, ticket) do
     cond do
-      state.unclean or state.metadata_fault -> finish(state, ticket, failure(:cleanup_unknown))
-      ticket.epoch != state.epoch -> finish(state, ticket, failure(:stale_epoch))
-      state.phase == :ready -> connected(state, ticket)
-      state.phase == :starting -> %{state | ready_waiting: [ticket | state.ready_waiting]}
-      true -> finish(state, ticket, failure(:not_ready))
+      state.unclean or state.metadata_fault ->
+        finish(state, ticket, failure(state.reason || :cleanup_unknown))
+
+      ticket.epoch != state.epoch ->
+        finish(state, ticket, failure(:stale_epoch))
+
+      state.phase == :ready ->
+        connected(state, ticket)
+
+      state.phase == :starting ->
+        %{state | ready_waiting: [ticket | state.ready_waiting]}
+
+      true ->
+        finish(state, ticket, failure(state.reason || :not_ready))
     end
   end
 

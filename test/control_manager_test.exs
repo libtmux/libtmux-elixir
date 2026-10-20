@@ -16,6 +16,46 @@ defmodule LibTmux.ControlManagerTest do
   alias LibTmux.Test.NativeDriver
   @moduletag :capture_log
 
+  @tag public_start_reason: true
+  test "a readiness waiter registered after startup failure retains the original reason" do
+    {_host, view, _lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    current = endpoint(view)
+    observer = self()
+    token = make_ref()
+
+    :ok =
+      :sys.install(manager, {
+        fn
+          _seen, {:noreply, %{reason: :invalid_bootstrap}}, _name ->
+            send(observer, {:startup_failed, token})
+            :done
+
+          seen, _event, _name ->
+            seen
+        end,
+        false
+      })
+
+    assert_receive {:driver_open, guardian, handle}, 200
+    assert_receive {:driver_command, ^guardian, ^handle, <<?O, _::binary>>}, 200
+    peer = %{guardian: guardian, handle: handle}
+    send(guardian, {handle, {:data, <<?S, 123::32>>}})
+    assert_receive {:driver_command, ^guardian, ^handle, <<?R, 2, _::binary>>}, 200
+    assert_receive {:driver_command, ^guardian, ^handle, <<?R, 1, _::binary>>}, 200
+    data(peer, "%begin 1 1 0\nunexpected attach output\n%end 1 1 0\n")
+    assert_receive {:startup_failed, ^token}, 200
+
+    try do
+      waiting = metadata(current, current.epoch, {:connection, :ready})
+
+      assert {:error, %Error{kind: :invalid_bootstrap, certainty: :unknown}} =
+               result(current, waiting)
+    after
+      retire(peer)
+    end
+  end
+
   @tag lifecycle_waits: true
   @tag ready_settlement: true
   test "one failed readiness settlement prevents success for the next intact waiter" do

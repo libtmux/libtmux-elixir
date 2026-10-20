@@ -137,6 +137,10 @@ defmodule LibTmux.Control.ConnectionSupervisor do
      }}
   end
 
+  @doc false
+  def abort_start(root, lifetime, deadline, generation),
+    do: unpublished(root, lifetime, deadline, generation)
+
   defp abandon(lifetime, 0), do: Lifetime.abandon_initial(lifetime)
   defp abandon(lifetime, generation), do: Lifetime.abandon(lifetime, generation)
 end

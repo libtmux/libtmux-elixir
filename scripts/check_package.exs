@@ -115,6 +115,11 @@ try do
   {:ok, ^filter} = LibTmux.Filter.from_json(LibTmux.Session, JSON.encode!(LibTmux.Filter.to_wire(filter)))
   {:ok, %LibTmux.Session{id: "$0"}} = LibTmux.Selection.one(sessions, filter)
   ["$0"] = for session <- LibTmux.Selection.where(sessions, filter), do: session.id
+  server = LibTmux.Server.new(executable: "/unused/tmux", socket: "/unused/socket", cwd: "/", env: %{})
+  %{id: LibTmux.Control, type: :supervisor, start: {module, function, arguments}} =
+    LibTmux.Control.child_spec(server: server, session: {:existing, "$0"}, lane: :host_qualified)
+  true = Code.ensure_loaded?(module)
+  true = function_exported?(module, function, length(arguments))
   if :os.type() == {:unix, :linux} do
     {:ok, %{stdout: "packed\n", stderr: "", exit_status: 0, cleanup: :retired}} =
       LibTmux.Transport.OneShot.run("/bin/echo", ["packed"], max_total_bytes: 7)

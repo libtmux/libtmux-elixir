@@ -246,6 +246,27 @@ This fence handles observed startup failures; it does not establish recovery
 from untrappable caller or VM death. One lifetime belongs to one connection
 Root; concurrent starts sharing that lifetime intentionally fail closed.
 
+`Control.start_link/1` requires an explicit Server, exact existing session ID
+and host-qualified lane. It returns `{:ok, root, control}` only after fresh
+bootstrap and a bounded ready exchange. Its 1..600000ms timeout includes
+preparation, Root startup and handoff; every successful handoff rechecks the
+original deadline. The provisional handle stays internal. Accepted ready
+replies bind their exact endpoint without a later Births or latest-view lookup.
+If startup failed before ready registration, the error retains the original
+failure kind. Cleanup fences the lifetime, requests exact-Root termination,
+and reports actual Root exit only when observed. Native cleanup can remain
+unknown. Ordinary linked-process exits retain their OTP semantics.
+
+`Control.child_spec/1` prepares detached bounded process bytes without I/O.
+One lifetime survives its permanent factory's invocations. Each invocation
+starts a new startup budget, but a nonfresh lifetime returns inert instead of
+automatically attaching. Explicit reconnect requires proven retirement;
+unknown cleanup, including generation zero, returns a structured error.
+`Supervisor.start_child/2` and `Supervisor.restart_child/2` return fresh handle
+info. After automatic restart, terminate and restart that exact child to obtain
+the new info; this recovery does not clear unknown cleanup. Retain a distinct
+child spec/lifetime per Root, and never use an old handle as a locator.
+
 `Control.submit/3` pins a ready Root view, Manager and epoch. It detaches the
 request's binary leaves under a separate 20,000-byte owned-term limit before
 claiming a fixed operation slot. One deadline includes validation, admission,
@@ -262,7 +283,7 @@ acknowledge native retirement or roll back siblings. Repeated requests for
 the same closing or proven-retired generation succeed; old handles cannot
 follow replacement Managers or epochs. Status errors report unknown
 certainty about existing work; a rejected new, unadmitted submission reports
-no write. Public connection construction remains open.
+no write.
 
 `Control.close/2` waits for native and epoch-actor retirement plus the Host's
 epoch-child finalization acknowledgement under its original budget. An
@@ -280,6 +301,6 @@ The Root and retained records outlive ordinary epoch closure. Public lifecycle
 errors preserve unknown certainty about existing effects; direct retirement
 proof must still be observed within the original close budget.
 
-Public bounded connection startup and factory retrieval,
-connection-wide accounting and authoritative subscriptions remain under
-implementation. These component checks do not qualify those contracts.
+Strict caller-return startup bounds, connection-wide accounting and
+authoritative subscriptions remain unqualified. These component checks do
+not qualify those contracts.

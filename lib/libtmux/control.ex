@@ -7,20 +7,64 @@ defmodule LibTmux.Control do
   `request_close/1` closes write authority for the entire pinned epoch through
   reserved capacity; it does not prove retirement or roll back effects.
 
-  Connection construction and its public startup factory remain under
-  implementation. The internal descriptor constructor accepts only an already
-  ready connection. Its host must qualify the server's effective hooks, aliases
-  and stream writers for the whole lane; a pinned handle is not authentication
-  against unqualified command output or arbitrary writes to internal tables.
+  `start_link/1` explicitly attaches to an existing session. Its host must qualify
+  the server's effective hooks, aliases and stream writers for the whole lane;
+  a pinned handle is not authentication against unqualified command output or
+  arbitrary writes to internal tables. Reads and local selections never attach.
   """
 
   alias LibTmux.{Deadline, Error, Operation}
-  alias LibTmux.Control.{Admission, Exchange, Lifetime, Request}
+  alias LibTmux.Control.{Admission, Exchange, Inbox, Lifetime, Records, Request, Start}
 
   @enforce_keys [:owner, :view, :lifetime, :endpoint]
   @derive {Inspect, only: []}
   defstruct @enforce_keys
   @opaque t :: %__MODULE__{}
+
+  @doc """
+  Starts a linked connection and returns `{:ok, root, control}`.
+
+  Require `server: %LibTmux.Server{}`, `session: {:existing, "$id"}` and
+  `lane: :host_qualified`. No session is created. The attachment is visible in
+  tmux's client counts and can update session state. `no-output,ignore-size`
+  suppresses pane output and excludes this client from window sizing.
+
+  `timeout` defaults to 5000ms and accepts 1..600000ms. One budget covers input
+  preparation, Root startup, bootstrap, ready waiting and handoff. A fresh
+  factory returns a ready handle. Runtime failures return a structured error;
+  invalid trusted options raise `ArgumentError`. Ordinary OTP links remain:
+  an asynchronous fatal Root exit can terminate a non-trapping caller.
+
+  Failed startup fences its lifetime and requests exact-Root cleanup. Error
+  details distinguish observed Root exit from a kill request; unknown native
+  cleanup is never success. OTP can await Root exit after its initialization
+  timer expires, so a strict wall-clock caller-return bound remains unqualified.
+
+  Optional `capacity`, `metadata_capacity` and `waiter_capacity` default to 32
+  and accept 1..256. `retention_ms` defaults to 60000 and accepts 1..600000.
+  """
+  @spec start_link(keyword()) :: {:ok, pid(), t()} | {:error, Error.t()}
+  def start_link(options) do
+    entered_at = System.monotonic_time(:millisecond)
+    Start.start(options, entered_at)
+  end
+
+  @doc """
+  Builds a permanent supervisor child spec without attaching.
+
+  Prepares bounded detached inputs and one lifetime shared by all factory
+  invocations. Each invocation starts its own configured startup budget.
+  A restarted nonfresh lifetime returns an inert handle and never attaches
+  automatically. Proven retirement permits explicit `reconnect/2`; unknown
+  cleanup refuses it. Old handles never follow a replacement Root or Manager.
+
+  `Supervisor.start_child/2` and `Supervisor.restart_child/2` return the new
+  handle as their third info element. After an automatic restart, use
+  `Supervisor.terminate_child/2` followed by `Supervisor.restart_child/2` for
+  fresh info. This does not clear unknown cleanup or authorize replay.
+  """
+  @spec child_spec(keyword()) :: Supervisor.child_spec()
+  def child_spec(options), do: Start.child_spec(options)
 
   @doc false
   def from_descriptor(%{owner: owner, view: view, lifetime: lifetime}) do
@@ -29,6 +73,33 @@ defmodule LibTmux.Control do
          {:ok, _template} <- Operation.prepare(endpoint) do
       {:ok, %__MODULE__{owner: owner, view: view, lifetime: lifetime, endpoint: endpoint}}
     end
+  end
+
+  @doc false
+  def from_start_descriptor(%{owner: owner, view: view, lifetime: lifetime}) do
+    with {:ok, endpoint} <- read(owner, view, lifetime),
+         true <-
+           endpoint.records.pool === endpoint.pool and endpoint.pool.owner == endpoint.manager,
+         true <-
+           endpoint.inbox.owner == endpoint.manager and
+             :connection in endpoint.inbox.kinds and
+             endpoint.waiter_inbox.owner == endpoint.manager and
+             :await in endpoint.waiter_inbox.kinds,
+         :ok <- Records.validate(endpoint.records),
+         :ok <- Inbox.validate(endpoint.inbox),
+         :ok <- Inbox.validate(endpoint.waiter_inbox) do
+      {:ok, %__MODULE__{owner: owner, view: view, lifetime: lifetime, endpoint: endpoint}}
+    else
+      false -> failure(:wrong_connection)
+      error -> error
+    end
+  end
+
+  @doc false
+  def await_ready(%__MODULE__{endpoint: endpoint} = control, %Deadline{} = deadline) do
+    with {:ok, acknowledged} <-
+           Exchange.call(endpoint.inbox, endpoint.epoch, deadline, {:connection, :ready}),
+         do: bind_reconnected(control, acknowledged)
   end
 
   @doc """
@@ -118,6 +189,9 @@ defmodule LibTmux.Control do
         case Lifetime.status(control.lifetime) do
           %{generation: generation, phase: :retired} when generation == endpoint.generation ->
             :ok
+
+          %{generation: 0, phase: :unknown} ->
+            failure(:cleanup_unknown)
 
           _ ->
             Lifetime.revoke(control.lifetime, endpoint.generation)

@@ -1,12 +1,10 @@
 defmodule LibTmux.ControlManagerIntegrationTest do
   use ExUnit.Case, async: true
-  alias LibTmux.{Control, Deadline, Operation, Server}
+  alias LibTmux.{Control, Deadline, Error, Operation, Server}
 
   alias LibTmux.Control.{
     Admission,
     Births,
-    Bootstrap,
-    ConnectionSupervisor,
     Inbox,
     Lifetime,
     Records,
@@ -14,10 +12,37 @@ defmodule LibTmux.ControlManagerIntegrationTest do
   }
 
   alias LibTmux.Test.OwnedTmux
-  alias LibTmux.Transport.Native.Protocol
   @moduletag :integration
   @moduletag reason:
                "Qualifies Manager bootstrap, retirement and explicit reconnect on owned tmux"
+
+  test "direct linked startup returns ready info and preserves a failed attachment reason" do
+    fixture = start_supervised!({OwnedTmux, []})
+    %{socket: socket} = OwnedTmux.info(fixture)
+    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    server = Server.new(executable: executable, socket: socket, cwd: "/", env: %{})
+    options = [server: server, session: {:existing, "$0"}, lane: :host_qualified, timeout: 800]
+    assert {:ok, root, control} = Control.start_link(options)
+    assert {:links, links} = Process.info(root, :links)
+    assert self() in links
+    assert {:ok, %{phase: :ready}} = Control.status(control)
+    root_monitor = Process.monitor(root)
+    [{:connection, endpoint}] = :ets.lookup(control.view, :connection)
+    actors = monitor_actors(endpoint)
+    assert :ok = Control.close(control, timeout: 800)
+    exited(actors)
+    assert :ok = Supervisor.stop(root, :normal, 500)
+    assert_receive {:DOWN, ^root_monitor, :process, ^root, :normal}, 100
+
+    assert {:error, %Error{kind: :command_error, phase: :connect, certainty: :unknown} = error} =
+             Control.start_link(Keyword.put(options, :session, {:existing, "$999999"}))
+
+    assert %{root: failed_root, root_exited: true, cleanup: :unknown} = error.details
+    refute Process.alive?(failed_root)
+
+    assert {"0\n", 0} =
+             OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
+  end
 
   test "explicit reconnect waits for old actor/native retirement and preserves the server incarnation" do
     fixture = start_supervised!({OwnedTmux, []})
@@ -32,25 +57,25 @@ defmodule LibTmux.ControlManagerIntegrationTest do
         type: :supervisor
       })
 
-    payload = Protocol.process(executable, Bootstrap.arguments(server, "$0"), cwd: "/", env: %{})
-
-    {:ok, _root, %{view: view, lifetime: lifetime} = descriptor} =
+    {:ok, root, control} =
       Supervisor.start_child(
         parent,
-        ConnectionSupervisor.child_spec(
-          deadline: Deadline.new(800),
-          payload: payload,
+        Control.child_spec(
+          server: server,
+          session: {:existing, "$0"},
+          lane: :host_qualified,
+          timeout: 800,
           capacity: 2,
           metadata_capacity: 4,
           waiter_capacity: 2
         )
       )
 
-    [{:connection, starting}] = :ets.lookup(view, :connection)
-    manager = starting.manager
-    first = connect(starting)
+    view = control.view
+    lifetime = control.lifetime
+    [{:connection, first}] = :ets.lookup(view, :connection)
+    manager = first.manager
     assert first.phase == :ready
-    {:ok, control} = Control.from_descriptor(descriptor)
     literal = ~S"literal,#{safe}"
 
     {:ok, public} =
@@ -108,22 +133,23 @@ defmodule LibTmux.ControlManagerIntegrationTest do
 
     assert :ok = Control.close(replacement, timeout: 800)
     assert :sys.get_state(manager, 500).phase in [:closing, :closed]
-  end
+    root_monitor = Process.monitor(root)
+    assert :ok = Supervisor.terminate_child(parent, Control)
+    assert_receive {:DOWN, ^root_monitor, :process, ^root, _reason}, 100
+    assert {:ok, fresh_root, inert} = Supervisor.restart_child(parent, Control)
+    assert fresh_root != root
+    assert {:ok, %{phase: :retired}} = Control.status(inert)
 
-  defp connect(endpoint) do
-    {:ok, ticket} =
-      Inbox.publish(endpoint.inbox, endpoint.epoch, Deadline.new(800), {:reconnect, nil})
+    assert {"0\n", 0} =
+             OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
 
-    :ok = Inbox.notify(endpoint.inbox)
-    token = ticket.token
-
-    try do
-      assert_receive {^token, :ready}, 850
-      assert {:ok, {:ok, ready}} = Inbox.result(endpoint.inbox, ticket)
-      ready
-    after
-      Inbox.close(endpoint.inbox, ticket)
-    end
+    assert {:ok, third} = Control.reconnect(inert, timeout: 800)
+    assert {:ok, %{phase: :ready, generation: 3}} = Control.status(third)
+    assert {:error, %{kind: :connection_lost}} = Control.status(replacement)
+    [{:connection, third_endpoint}] = :ets.lookup(third.view, :connection)
+    final_actors = monitor_actors(third_endpoint)
+    assert :ok = Control.close(third, timeout: 800)
+    exited(final_actors)
   end
 
   defp operation(endpoint) do
