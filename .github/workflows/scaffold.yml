@@ -1,4 +1,4 @@
-name: Scaffold
+name: Core checks
 
 on:
   pull_request:
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   scaffold:
-    name: Mix metadata and package
+    name: Core units and package
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -41,9 +41,13 @@ jobs:
           install-rebar: false
       - name: Check formatting
         run: time mix format --check-formatted
-      - name: Compile application metadata
+      - name: Compile core
         run: time mix compile --warnings-as-errors
+      - name: Run pure units
+        run: time mix test
       - name: Build local package
         run: time mix hex.build --output "${RUNNER_TEMP}/libtmux.tar"
       - name: List packaged files
         run: tar -xOf "${RUNNER_TEMP}/libtmux.tar" contents.tar.gz | tar -tzf -
+      - name: Consume packed core outside checkout
+        run: time mix run scripts/check_package.exs

@@ -8,13 +8,15 @@ defmodule LibTmux.MixProject do
       app: :libtmux,
       version: "0.1.0-dev",
       elixir: ">= 1.20.4 and < 2.0.0",
-      description: "Elixir tmux client: unpublished repository scaffold",
+      elixirc_paths: elixirc_paths(Mix.env()),
+      description: "Elixir tmux client with explicit observations and operation outcomes",
       source_url: @source_url,
       package: [
         licenses: ["MIT"],
         links: %{"GitHub" => @source_url},
         files: [
           "mix.exs",
+          "lib",
           "README.md",
           "LICENSE",
           ".tool-versions",
@@ -28,4 +30,7 @@ defmodule LibTmux.MixProject do
       deps: []
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_environment), do: ["lib"]
 end

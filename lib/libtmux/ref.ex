@@ -1,0 +1,69 @@
+defmodule LibTmux.Ref do
+  @moduledoc """
+  An exact observed target bound to one server instance.
+
+  A window-link ID is its observed `{session_id, index, window_id}` binding,
+  not a unique lifetime identifier. Validation detects known stale instances;
+  it does not reserve an object or close a one-shot check/use race.
+  """
+
+  alias LibTmux.Error
+
+  @enforce_keys [:entity, :id, :server_instance]
+  defstruct [:entity, :id, :server_instance]
+
+  @type entity :: :session | :window | :pane | :window_link | :client
+  @type id :: String.t() | {String.t(), non_neg_integer(), String.t()}
+  @type t :: %__MODULE__{entity: entity(), id: id(), server_instance: String.t()}
+
+  @doc "Validates a native identity and binds it to a nonempty instance token."
+  @spec new(entity(), id(), String.t()) :: {:ok, t()} | {:error, Error.t()}
+  def new(entity, id, instance) do
+    if valid_id?(entity, id) and valid_token?(instance) do
+      {:ok, %__MODULE__{entity: entity, id: id, server_instance: instance}}
+    else
+      {:error, %Error{kind: :invalid_target, certainty: :no_write, path: [:target]}}
+    end
+  end
+
+  @doc "Rejects malformed references and known server-instance mismatches."
+  @spec validate(t(), String.t()) :: :ok | {:error, Error.t()}
+  def validate(%__MODULE__{} = ref, instance) do
+    case new(ref.entity, ref.id, ref.server_instance) do
+      {:ok, _} when ref.server_instance == instance ->
+        :ok
+
+      {:ok, _} ->
+        {:error, %Error{kind: :stale_target, certainty: :no_write, path: [:target]}}
+
+      {:error, _} = error ->
+        error
+    end
+  end
+
+  defp valid_id?(:session, id), do: numbered_id?(id, ?$)
+  defp valid_id?(:window, id), do: numbered_id?(id, ?@)
+  defp valid_id?(:pane, id), do: numbered_id?(id, ?%)
+  defp valid_id?(:client, id), do: valid_token?(id)
+
+  defp valid_id?(:window_link, {session, index, window}) do
+    numbered_id?(session, ?$) and is_integer(index) and index >= 0 and numbered_id?(window, ?@)
+  end
+
+  defp valid_id?(_entity, _id), do: false
+
+  defp numbered_id?(<<prefix, digits::binary>>, prefix) when byte_size(digits) in 1..20 do
+    case Integer.parse(digits) do
+      {number, ""} when number >= 0 -> Integer.to_string(number) == digits
+      _ -> false
+    end
+  end
+
+  defp numbered_id?(_id, _prefix), do: false
+
+  defp valid_token?(value) when is_binary(value) and byte_size(value) in 1..256 do
+    String.valid?(value) and :binary.match(value, [<<0>>, "\n", "\r"]) == :nomatch
+  end
+
+  defp valid_token?(_value), do: false
+end

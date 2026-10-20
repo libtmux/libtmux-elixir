@@ -1,8 +1,8 @@
 # Contributing
 
-This repository is an unpublished Elixir package scaffold. Current checks
-validate package metadata and formatting; there is no tmux implementation
-or test suite. [WRITING.md](WRITING.md) governs prose, comments, and commits.
+This unpublished Elixir package is under implementation. Pure foundation
+tests, packed-core import checks and an owned real-tmux fixture are available.
+[WRITING.md](WRITING.md) governs prose, comments, and commits.
 
 ## Setup
 
@@ -45,7 +45,8 @@ $ mix local.hex --force
 
 The core currently declares no dependencies. Keep third-party runtime
 dependencies at zero; development tools may be added when they serve an
-actual check. tmux is not needed to validate this scaffold. The proposed
+actual check. tmux is not needed for pure unit or packed-core checks. The
+proposed
 implementation floor is tmux `3.3`, and support must be proved against that
 version rather than inferred from a newer local binary.
 
@@ -70,11 +71,36 @@ With Hex already installed, build the local archive:
 $ time mix hex.build
 ```
 
-The compile command currently generates application metadata; there are no
-library modules to compile. The archive proves that Hex can package the
-declared files, not that a usable tmux API exists. Do not add empty source
-or tests merely to make a command appear useful. Add `mix test`, docs, and
-installed-consumer gates when the corresponding implementation exists.
+Run critical pure tests in the inner loop, or all unit tests in the mid loop:
+
+```console
+$ time mix test
+```
+
+The default suite excludes the `integration` tag. Linux integration fixtures
+require Python 3.9+ with pidfd support and an explicit tmux executable or tmux
+on PATH. Python is a development fixture tool, not a core runtime dependency.
+The helper owns a foreground tmux server, observes socket readiness through
+inotify and verifies server/pane exit through process handles. It uses no
+fixed readiness sleeps and never starts the default server.
+
+Run the real fixture checks in the outer loop with the exact tmux binary
+being qualified:
+
+```console
+$ LIBTMUX_TMUX=/path/to/tmux mix test --include integration
+```
+
+Check packed-core consumption and metadata outside the checkout:
+
+```console
+$ time mix run scripts/check_package.exs
+```
+
+These gates prove current foundations and fixture ownership. They do not
+establish a complete client API, installed adapter graphs or compatibility
+for unexercised operations. Do not add empty source or tests to make a
+command appear useful. Docs and consumer checks arrive with those components.
 
 ## Check budgets
 
@@ -87,8 +113,9 @@ scope in the pull request. Tool installation happens before a timed loop.
 | Mid | Under 30 seconds | Under 10 seconds | Unit suites, lint, and generated-file checks |
 | Outer | Under 5 minutes | Under 60 seconds | Compilation, packaging, docs, and integration matrices |
 
-The scaffold currently has formatting in the inner loop and compilation
-and packaging in the outer loop. No unit suite exists for the mid loop.
+Formatting and changed pure tests belong in the inner loop; the complete
+unit suite belongs in the mid loop. Compilation, packaging and real tmux
+fixtures belong in the outer loop.
 Do not run network operations, installs, builds, browsers, sleeps, or broad
 corpus scans in the inner or mid loop.
 
@@ -100,8 +127,8 @@ tests to an over-budget loop. Benchmarks are separate: each run stays under
 
 ## Package boundaries
 
-[mix.exs](../mix.exs) owns the core package. The future workspace loader and
-MCP server will be separate Mix packages that consume the core. Do not add
+[mix.exs](../mix.exs) owns the core package. The workspace loader and
+MCP server have separate Mix projects that consume the core. Do not add
 adapter dependencies or adapter configuration to the core. The
 [design note](../docs/design.md) records the planned behavioral boundaries.
 
