@@ -14,6 +14,32 @@ defmodule LibTmux.Control.Lifetime do
 
   def new, do: %__MODULE__{word: :atomics.new(1, signed: false)}
 
+  def abandon_initial(%__MODULE__{word: word}) do
+    abandon_initial(word, :atomics.get(word, 1))
+  end
+
+  defp abandon_initial(word, current) do
+    generation = div(current, 8)
+    phase = rem(current, 8)
+
+    cond do
+      generation > 1 ->
+        rejected(:stale_epoch)
+
+      phase == 4 or current == 8 ->
+        :ok
+
+      current == 0 or (generation == 1 and phase in [1, 2, 3]) ->
+        case :atomics.compare_exchange(word, 1, current, generation * 8 + 4) do
+          :ok -> :ok
+          observed -> abandon_initial(word, observed)
+        end
+
+      true ->
+        rejected(:invalid_transition)
+    end
+  end
+
   @spec begin_epoch(t()) :: {:ok, token()} | {:error, Error.t()}
   def begin_epoch(%__MODULE__{word: word}) do
     current = :atomics.get(word, 1)

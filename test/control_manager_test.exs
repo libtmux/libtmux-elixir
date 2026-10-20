@@ -16,6 +16,41 @@ defmodule LibTmux.ControlManagerTest do
   alias LibTmux.Test.NativeDriver
   @moduletag :capture_log
 
+  for loss <- [:shutdown, :host_down] do
+    @tag initial_owner_loss: loss
+    test "a generation-zero fence keeps Manager inert through #{loss}", %{
+      initial_owner_loss: loss
+    } do
+      {host, view, lifetime, options} = setup_manager()
+      assert :ok = Lifetime.abandon_initial(lifetime)
+      manager = start_supervised!({Manager, options})
+
+      assert %{phase: :unknown, generation: 0, unclean: true, pending: nil} =
+               :sys.get_state(manager, 500)
+
+      assert [] = Supervisor.which_children(host)
+      current = endpoint(view)
+      reconnecting = metadata(current, current.epoch, {:reconnect, nil})
+      assert {:error, %Error{kind: :cleanup_unknown}} = result(current, reconnecting)
+      assert %{generation: 0, phase: :unknown} = Lifetime.status(lifetime)
+
+      if loss == :shutdown do
+        monitor = Process.monitor(manager)
+        assert :ok = stop_supervised(Manager)
+        assert_receive {:DOWN, ^monitor, :process, ^manager, :shutdown}, 100
+      else
+        monitor = Process.monitor(host)
+        assert :ok = stop_supervised(:host)
+        assert_receive {:DOWN, ^monitor, :process, ^host, :shutdown}, 100
+        accounting_turn(manager)
+        assert %{phase: :unknown, generation: 0} = :sys.get_state(manager, 500)
+      end
+
+      assert %{generation: 0, phase: :unknown} = Lifetime.status(lifetime)
+      refute_receive {:driver_open, _, _}, 0
+    end
+  end
+
   test "closure between Router creation and Guardian startup retires without native uncertainty" do
     {host, _view, lifetime, options} = setup_manager()
     :ok = :sys.suspend(host, 500)

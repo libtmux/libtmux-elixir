@@ -15,6 +15,40 @@ defmodule LibTmux.ControlConnectionSupervisorTest do
   alias LibTmux.Test.NativeDriver
   @moduletag :capture_log
 
+  test "a failed fresh startup fences a same-factory retry before any epoch reservation" do
+    spec =
+      ConnectionSupervisor.child_spec(
+        deadline: %Deadline{expires_at: System.monotonic_time(:millisecond) - 1},
+        payload: <<0>>,
+        driver: {NativeDriver, observer: self()},
+        capacity: 1
+      )
+
+    %{start: {module, function, [options]}} = spec
+    assert {:error, :timeout} = apply(module, function, [options])
+    assert %{generation: 0, phase: :unknown} = Lifetime.status(options[:lifetime])
+
+    parent =
+      start_supervised!(%{
+        id: :parent,
+        start: {Supervisor, :start_link, [[], [strategy: :one_for_one]]},
+        type: :supervisor
+      })
+
+    retry = %{
+      spec
+      | start: {module, function, [Keyword.put(options, :deadline, Deadline.new(500))]}
+    }
+
+    assert {:ok, root, descriptor} = Supervisor.start_child(parent, retry)
+    assert %{phase: :unknown, generation: 0, lifetime: lifetime} = endpoint(descriptor.view)
+    assert lifetime === options[:lifetime]
+    assert :ets.info(descriptor.view, :owner) == root
+    [{:host, host}] = :ets.lookup(descriptor.view, :host)
+    assert [] = Supervisor.which_children(host)
+    refute_receive {:driver_open, _, _}, 0
+  end
+
   test "Manager restart preserves the root view and lifetime without opening another helper" do
     {parent, root, descriptor} = connection()
     old = endpoint(descriptor.view)

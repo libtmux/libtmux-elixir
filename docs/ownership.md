@@ -236,6 +236,16 @@ cleanup uses only its remaining budget. OTP still waits for actual Root DOWN
 after an initialization timeout; this primitive alone does not prove a strict
 caller-return deadline or complete descendant retirement.
 
+Failed initial startup fences the fresh lifetime even before its first epoch
+reservation. If that reservation wins the CAS race, the fence closes only the
+first generation. Proven retirement remains intact, and later generations
+cannot be revoked by an old failure. Root cleanup uses its generation captured
+at startup entry. Manager can remain inert at generation zero with unknown
+cleanup through normal shutdown or Host loss, without creating epoch actors.
+This fence handles observed startup failures; it does not establish recovery
+from untrappable caller or VM death. One lifetime belongs to one connection
+Root; concurrent starts sharing that lifetime intentionally fail closed.
+
 Public bounded connection startup and operation creation,
 connection-wide accounting and authoritative subscriptions remain under
 implementation. These component checks do not qualify those contracts.

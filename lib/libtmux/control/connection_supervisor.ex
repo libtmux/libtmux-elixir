@@ -48,6 +48,7 @@ defmodule LibTmux.Control.ConnectionSupervisor do
   def start_link(options) do
     %Lifetime{} = lifetime = Keyword.fetch!(options, :lifetime)
     %Deadline{} = deadline = Keyword.fetch!(options, :deadline)
+    generation = Lifetime.status(lifetime).generation
     reply = :erlang.alias()
     token = make_ref()
 
@@ -59,17 +60,22 @@ defmodule LibTmux.Control.ConnectionSupervisor do
             when is_reference(view) ->
               if :ets.info(view, :owner) == root and Deadline.remaining(deadline) > 0,
                 do: {:ok, root, descriptor},
-                else: unpublished(root, lifetime, deadline)
+                else: unpublished(root, lifetime, deadline, generation)
 
             {^token, _invalid} ->
-              unpublished(root, lifetime, deadline)
+              unpublished(root, lifetime, deadline, generation)
           after
-            0 -> unpublished(root, lifetime, deadline)
+            0 -> unpublished(root, lifetime, deadline, generation)
           end
 
         error ->
+          abandon(lifetime, generation)
           error
       end
+    catch
+      kind, reason ->
+        abandon(lifetime, generation)
+        :erlang.raise(kind, reason, __STACKTRACE__)
     after
       Reply.close(reply, token)
     end
@@ -101,9 +107,8 @@ defmodule LibTmux.Control.ConnectionSupervisor do
     Manager.start_link(options ++ [host: host, view: view])
   end
 
-  defp unpublished(root, lifetime, deadline) do
-    %{generation: generation} = Lifetime.status(lifetime)
-    if generation > 0, do: Lifetime.abandon(lifetime, generation)
+  defp unpublished(root, lifetime, deadline, generation) do
+    abandon(lifetime, generation)
     monitor = Process.monitor(root)
     Process.unlink(root)
     Process.exit(root, :kill)
@@ -131,4 +136,7 @@ defmodule LibTmux.Control.ConnectionSupervisor do
        details: %{root: root, root_exited: root_exited, cleanup: :unknown}
      }}
   end
+
+  defp abandon(lifetime, 0), do: Lifetime.abandon_initial(lifetime)
+  defp abandon(lifetime, generation), do: Lifetime.abandon(lifetime, generation)
 end

@@ -92,7 +92,7 @@ defmodule LibTmux.Control.Manager do
       if generation == 0 and phase == :retired do
         begin_start(state, state.deadline, true)
       else
-        if phase != :retired, do: Lifetime.abandon(lifetime, generation)
+        if phase != :retired, do: abandon(lifetime, generation)
         state
       end
 
@@ -142,7 +142,7 @@ defmodule LibTmux.Control.Manager do
   @impl true
   def terminate(_reason, state) do
     if state.births, do: Births.close(state.births)
-    if state.phase != :closed, do: Lifetime.abandon(state.lifetime, state.generation)
+    if state.phase != :closed, do: abandon(state.lifetime, state.generation)
     if state.pending, do: :gen_server.receive_response(state.pending.id, 0)
     :ok
   end
@@ -366,9 +366,12 @@ defmodule LibTmux.Control.Manager do
   end
 
   defp poison(state) do
-    Lifetime.abandon(state.lifetime, state.generation)
+    abandon(state.lifetime, state.generation)
     fail_waiters(%{state | unclean: true, phase: :unknown}, :cleanup_unknown)
   end
+
+  defp abandon(lifetime, 0), do: Lifetime.abandon_initial(lifetime)
+  defp abandon(lifetime, generation), do: Lifetime.abandon(lifetime, generation)
 
   defp progress(%{phase: phase} = state) when phase in [:closing, :unknown] do
     state = harvest(state) |> stop_startup()

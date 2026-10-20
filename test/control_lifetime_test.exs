@@ -3,6 +3,62 @@ defmodule LibTmux.ControlLifetimeTest do
   alias LibTmux.Control.Lifetime
   alias LibTmux.Error
 
+  test "failed initial startup cannot reopen a fresh or first generation" do
+    fresh = Lifetime.new()
+    assert :ok = Lifetime.abandon_initial(fresh)
+    assert :ok = Lifetime.abandon_initial(fresh)
+    assert %{generation: 0, phase: :unknown} = Lifetime.status(fresh)
+    assert {:error, %Error{kind: :cleanup_unknown}} = Lifetime.begin_epoch(fresh)
+
+    first = Lifetime.new()
+    assert {:ok, 1} = Lifetime.begin_epoch(first)
+    assert :ok = Lifetime.ready(first, 1)
+    assert :ok = Lifetime.abandon_initial(first)
+    assert %{generation: 1, phase: :unknown} = Lifetime.status(first)
+    refute Lifetime.allows_write?(first, 1)
+    assert {:error, %Error{kind: :cleanup_unknown}} = Lifetime.begin_epoch(first)
+
+    retired = Lifetime.new()
+    assert {:ok, 1} = Lifetime.begin_epoch(retired)
+    assert :ok = Lifetime.revoke(retired, 1)
+    assert :ok = Lifetime.retired(retired, 1)
+    assert :ok = Lifetime.abandon_initial(retired)
+    assert %{generation: 1, phase: :retired} = Lifetime.status(retired)
+    assert {:ok, 2} = Lifetime.begin_epoch(retired)
+    assert :ok = Lifetime.ready(retired, 2)
+    assert {:error, %Error{kind: :stale_epoch}} = Lifetime.abandon_initial(retired)
+    assert Lifetime.allows_write?(retired, 2)
+  end
+
+  test "initial fencing racing reservation cannot leave a writable generation" do
+    observer = self()
+
+    for _ <- 1..32 do
+      lifetime = Lifetime.new()
+      token = make_ref()
+
+      workers =
+        for action <- [&Lifetime.begin_epoch/1, &Lifetime.abandon_initial/1] do
+          spawn_monitor(fn ->
+            receive do
+              ^token -> send(observer, {token, action.(lifetime)})
+            end
+          end)
+        end
+
+      Enum.each(workers, fn {pid, _monitor} -> send(pid, token) end)
+      for _ <- workers, do: assert_receive({^token, _result}, 100)
+
+      for {pid, monitor} <- workers,
+          do: assert_receive({:DOWN, ^monitor, :process, ^pid, :normal}, 100)
+
+      assert %{generation: generation, phase: :unknown} = Lifetime.status(lifetime)
+      assert generation in [0, 1]
+      refute Lifetime.allows_write?(lifetime, 1)
+      assert {:error, %Error{kind: :cleanup_unknown}} = Lifetime.begin_epoch(lifetime)
+    end
+  end
+
   test "write authority closes before retirement and old tokens cannot affect a replacement" do
     lifetime = Lifetime.new()
     assert {:ok, first} = Lifetime.begin_epoch(lifetime)
