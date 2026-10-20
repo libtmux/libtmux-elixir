@@ -1,11 +1,13 @@
 # libtmux for Elixir
 
 An Elixir library for controlling tmux, currently under implementation.
-The unpublished core provides exact target references and shared deadlines.
+The unpublished core provides exact target references, shared deadlines,
+command encoding and bounded protocol parsing.
 A tmux client API and supported release are still in development.
 
 [Contributing](.github/CONTRIBUTING.md) ·
-[Design](docs/design.md) · [Writing](.github/WRITING.md)
+[Design](docs/design.md) · [Encoding](docs/encoding.md) ·
+[Writing](.github/WRITING.md)
 
 ## Status and requirements
 
@@ -19,7 +21,7 @@ A tmux client API and supported release are still in development.
 
 [`.tool-versions`](.tool-versions) selects the development toolchain ranges
 for mise and CI. See [setup](.github/CONTRIBUTING.md#setup) for installation
-and upgrades. tmux is not required for the scaffold checks. A future
+and upgrades. tmux is not required for the pure checks. A future
 implementation will require an external tmux executable and its own
 compatibility evidence.
 
@@ -56,8 +58,9 @@ $ mix run scripts/check_package.exs
 ```
 
 The unit and packed-core checks validate the current foundations. Real
-fixture checks prove owned startup and teardown; they do not qualify the
-future client API or a complete compatibility matrix.
+integration checks cover owned startup/teardown and hostile command/format
+bytes through real tmux. They do not qualify the future client API or a
+complete compatibility matrix.
 See [Contributing](.github/CONTRIBUTING.md) for setup, timing budgets, and
 the checks required as implementation arrives.
 

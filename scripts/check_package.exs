@@ -78,6 +78,16 @@ try do
   {:error, %LibTmux.Error{kind: :stale_target}} = LibTmux.Ref.validate(ref, "other-instance")
   remaining = LibTmux.Deadline.new(1000) |> LibTmux.Deadline.remaining()
   true = remaining in 1..1000
+  command = LibTmux.Command.new("display-message", ["-p", "hello;"])
+  ["display-message", "-p", "hello\\;"] = LibTmux.Command.argv(command)
+  true = is_binary(LibTmux.Command.render(command))
+  {:ok, "hello\n"} = LibTmux.Codec.decode_field("hello\n\n", :string)
+  {:ok, "hello\n"} = LibTmux.Codec.decode_field("v1:hello\\012\n", :string, encoding: :escaped_v1)
+  true = String.starts_with?(LibTmux.Format.field("pane_title"), "v1:")
+  true = is_binary(LibTmux.Format.literal(~S"#{pid}"))
+  {:ok, [{:reply, :ok, {1, 2, 1}, ["hello"]}], parser} =
+    LibTmux.Protocol.feed(LibTmux.Protocol.new(), "%begin 1 2 1\nhello\n%end 1 2 1\n")
+  :ok = LibTmux.Protocol.finish(parser)
   IO.puts("packed core consumer: ok")
   """
 

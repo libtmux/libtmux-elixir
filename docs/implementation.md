@@ -95,10 +95,11 @@ separately approves a measured critical exception.
 
 ## Capture, filtering and observation
 
-Start with a bounded conservative codec: one free-form field per subprocess
-response, removing only its one framing newline. Restricted ID/numeric
+The [conservative codec](encoding.md) uses one free-form field per response,
+with explicit versioned encoding before printing and one framing newline.
+Raw mode requires a separately qualified raw source. Restricted ID/numeric
 fields may share a validated format. US/RS with tmux `q` is not a safe
-delimiter scheme. A more efficient encoding must first pass hostile-byte
+delimiter scheme. More efficient encodings must first pass hostile-byte
 round trips at every required release. Never decode quoting by shell evaluation.
 
 Selection validation checks fields, types and required coverage before

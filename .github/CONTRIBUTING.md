@@ -1,7 +1,7 @@
 # Contributing
 
 This unpublished Elixir package is under implementation. Pure foundation
-tests, packed-core import checks and an owned real-tmux fixture are available.
+tests, packed-core import checks and owned real-tmux checks are available.
 [WRITING.md](WRITING.md) governs prose, comments, and commits.
 
 ## Setup
@@ -46,7 +46,6 @@ $ mix local.hex --force
 The core currently declares no dependencies. Keep third-party runtime
 dependencies at zero; development tools may be added when they serve an
 actual check. tmux is not needed for pure unit or packed-core checks. The
-proposed
 implementation floor is tmux `3.3`, and support must be proved against that
 version rather than inferred from a newer local binary.
 
@@ -96,6 +95,13 @@ Check packed-core consumption and metadata outside the checkout:
 ```console
 $ time mix run scripts/check_package.exs
 ```
+
+Real checks round-trip command and format syntax with hostile bytes. The
+field encoder protects backslashes and control bytes before tmux prints
+them; the decoder handles one free-form field per response. It does not
+assume separator bytes cannot occur in values. The pure control
+parser enforces byte/event limits, but transport receive bounds and shared
+lane safety need separate qualification.
 
 These gates prove current foundations and fixture ownership. They do not
 establish a complete client API, installed adapter graphs or compatibility
