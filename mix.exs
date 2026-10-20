@@ -21,7 +21,8 @@ defmodule LibTmux.MixProject do
           "AGENTS.md",
           ".github/CONTRIBUTING.md",
           ".github/WRITING.md",
-          "docs/design.md"
+          "docs",
+          "priv"
         ]
       ],
       deps: []
