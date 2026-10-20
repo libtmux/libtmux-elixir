@@ -134,6 +134,25 @@ defmodule LibTmux.ControlGuardianTest do
     assert %{phase: :unknown} = Lifetime.status(state.lifetime)
   end
 
+  test "reserved revocation closes starting and saturated ready epochs without actor requests" do
+    for active <- [false, true] do
+      state = guardian()
+      state = if active, do: activate(state), else: state
+
+      if active do
+        _first = lease(state, 5)
+        _second = lease(state, 5)
+
+        assert {:error, %Error{kind: :resource_limit}} =
+                 Admission.claim(state.pool, state.epoch, self(), Deadline.new(500), 5)
+      end
+
+      assert :ok = Lifetime.revoke(state.lifetime, state.generation)
+      assert_receive {:guardian, _, _, {:closing, %Error{kind: :closure_requested}}}
+      retire(state, :already_closing)
+    end
+  end
+
   defp guardian(options \\ []) do
     lifetime = Lifetime.new()
     {:ok, generation} = Lifetime.begin_epoch(lifetime)

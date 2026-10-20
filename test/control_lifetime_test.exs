@@ -29,6 +29,16 @@ defmodule LibTmux.ControlLifetimeTest do
 
     assert Lifetime.allows_write?(lifetime, second)
     assert {:error, %Error{kind: :invalid_transition}} = Lifetime.retired(lifetime, second)
+
+    starting = Lifetime.new()
+    assert {:ok, token} = Lifetime.begin_epoch(starting)
+    assert :ok = Lifetime.revoke(starting, token)
+    assert :ok = Lifetime.revoke(starting, token)
+    assert {:error, %Error{kind: :invalid_transition}} = Lifetime.ready(starting, token)
+    assert %{phase: :closing} = Lifetime.status(starting)
+
+    assert {:error, %Error{kind: :stale_epoch}} =
+             Lifetime.revoke(starting, Integer.pow(2, 64))
   end
 
   test "an unretired reference survives creator death and uncertainty cannot reopen it" do

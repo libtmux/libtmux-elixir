@@ -56,6 +56,15 @@ defmodule LibTmux.Control.Lifetime do
   defp transition(%__MODULE__{word: word}, token, from, to)
        when is_integer(token) and token > 0 do
     current = :atomics.get(word, 1)
+    advance(word, token, from, to, current)
+  end
+
+  defp transition(_lifetime, _token, _from, _to),
+    do: raise(ArgumentError, "lifetime transition requires a positive epoch token")
+
+  # Within a generation the allowed phases only advance. A lost starting CAS
+  # must still close a concurrent ready phase without following a replacement.
+  defp advance(word, token, from, to, current) do
     phase = rem(current, 8)
 
     cond do
@@ -71,17 +80,13 @@ defmodule LibTmux.Control.Lifetime do
       phase in from ->
         case :atomics.compare_exchange(word, 1, current, token * 8 + to) do
           :ok -> :ok
-          observed when observed == token * 8 + to -> :ok
-          _changed -> rejected(:stale_epoch)
+          observed -> advance(word, token, from, to, observed)
         end
 
       true ->
         rejected(:invalid_transition)
     end
   end
-
-  defp transition(_lifetime, _token, _from, _to),
-    do: raise(ArgumentError, "lifetime transition requires a positive epoch token")
 
   defp blocked(current),
     do: rejected(if(rem(current, 8) == 4, do: :cleanup_unknown, else: :unretired_epoch))

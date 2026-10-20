@@ -224,11 +224,21 @@ defmodule LibTmux.Control.Guardian do
           entry.status != :retired and entry.expires_at <= now
         end)
 
-    if expired do
-      {:noreply, close(state, :timeout)}
-    else
-      Process.send_after(self(), :sweep, @sweep_ms)
-      {:noreply, state}
+    lifetime = Lifetime.status(state.lifetime)
+
+    cond do
+      lifetime == %{generation: state.generation, phase: :closing} ->
+        {:noreply, close(state, :closure_requested)}
+
+      lifetime != %{generation: state.generation, phase: phase} ->
+        {:noreply, close(state, :stale_epoch)}
+
+      expired ->
+        {:noreply, close(state, :timeout)}
+
+      true ->
+        Process.send_after(self(), :sweep, @sweep_ms)
+        {:noreply, state}
     end
   end
 

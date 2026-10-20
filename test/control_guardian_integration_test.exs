@@ -91,8 +91,8 @@ defmodule LibTmux.ControlGuardianIntegrationTest do
       assert :ok = Admission.release(pool, lease)
       assert state.bytes <= 65_536
     after
-      send(guardian, {:close, self(), epoch, :test_close})
-      assert_receive {:guardian, ^epoch, ^guardian, {:closing, _error}}
+      assert :ok = Lifetime.revoke(lifetime, generation)
+      assert_receive {:guardian, ^epoch, ^guardian, {:closing, %{kind: :closure_requested}}}
       assert_receive {:guardian, ^epoch, ^guardian, {:retired, %{cleanup: :retired}}}, 800
       assert_receive {:DOWN, ^monitor, :process, ^guardian, :normal}
       assert :ok = Lifetime.retired(lifetime, generation)

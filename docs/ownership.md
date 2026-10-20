@@ -93,6 +93,14 @@ Retirement needs native terminal proof, its acknowledgement and actual helper
 exit; missing proof or Manager loss leaves the shared lifetime unclean.
 Supervisor shutdown without those proofs also leaves it unclean.
 
+Reserved closure revokes the exact lifetime generation without consuming a
+command or metadata slot. Guardian observes that word on its accounting
+timer even when Manager or Router makes no progress. A concurrent
+starting-to-ready transition cannot escape revocation; retries follow only
+the same generation. Revocation requests closure and blocks later checks.
+It does not prove cleanup or prevent a write that already passed its final
+check. Native and actor retirement remain separate required evidence.
+
 Startup uses `attach-session -E` to preserve the borrowed session environment.
 Attachment still changes client counts and session activity. After reading
 the server PID and Linux process identity, a fresh same-connection challenge
