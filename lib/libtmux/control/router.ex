@@ -63,13 +63,20 @@ defmodule LibTmux.Control.Router do
     state = %{state | guardian: guardian, guardian_monitor: Process.monitor(guardian)}
     if state.phase == :closing, do: send_guardian(state, {:close, self(), epoch, :startup_closed})
 
-    next =
-      Enum.reduce(Enum.reverse(state.startup_events), %{state | startup_events: []}, fn
-        {^guardian, event}, state -> guardian_event(state, event)
-        _foreign, state -> close_epoch(state, :stale_epoch)
-      end)
+    Enum.reduce_while(
+      Enum.reverse(state.startup_events),
+      {:noreply, %{state | startup_events: []}},
+      fn
+        {^guardian, {:retired, proof}}, {:noreply, state} ->
+          {:halt, retire(state, proof)}
 
-    {:noreply, next}
+        {^guardian, event}, {:noreply, state} ->
+          {:cont, {:noreply, guardian_event(state, event)}}
+
+        _foreign, {:noreply, state} ->
+          {:cont, {:noreply, close_epoch(state, :stale_epoch)}}
+      end
+    )
   end
 
   def handle_info({:guardian, epoch, guardian, event}, %{epoch: epoch, guardian: nil} = state) do

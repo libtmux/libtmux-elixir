@@ -4,6 +4,30 @@ defmodule LibTmux.ControlRouterTest do
   alias LibTmux.Control.{Admission, Guardian, Lifetime, Request, Router}
   alias LibTmux.Test.NativeDriver
 
+  test "binding replays a buffered Guardian retirement as a terminal event" do
+    epoch = make_ref()
+    pool = Admission.new(1)
+    records = :ets.new(:records, [:set, :public])
+
+    router =
+      start_supervised!(
+        {Router,
+         manager: self(),
+         epoch: epoch,
+         pool: pool,
+         records: records,
+         bootstrap: make_ref(),
+         deadline: Deadline.new(500)}
+      )
+
+    monitor = Process.monitor(router)
+    proof = %{cleanup: :retired, proof: :fixture_terminal}
+    send(router, {:guardian, epoch, self(), {:retired, proof}})
+    send(router, {:bind, self(), epoch, self()})
+    assert_receive {:router, ^epoch, ^router, {:retired, ^proof}}
+    assert_receive {:DOWN, ^monitor, :process, ^router, :normal}
+  end
+
   test "registered FIFO operations retain replies that precede native write acknowledgement" do
     state = connection()
     first = submit(state, Request.field("pid"))
