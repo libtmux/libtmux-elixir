@@ -50,9 +50,11 @@ result, releasing captured bytes from the caller's mailbox.
 Per-call bounds cover output bytes, chunk metadata, encoded input and
 private frames. Captured chunks can coexist with an assembled result;
 account for both copies. The helper has fixed input, queue and write
-buffers, bounded initialization allocations, 8 KiB child pipes and a 4 KiB
-signal pipe. Parent pipes and Port delivery add finite buffers outside the
-capture byte count. See [the protocol](../c_src/README.md).
+buffers and bounded initialization allocations. It requests 8 KiB child
+pipes and a 4 KiB signal pipe. Kernel page rounding can increase the actual
+capacities; a resize failure rejects startup. Parent pipes and Port delivery add
+buffers outside the capture byte count. Aggregate accounting must measure
+actual pipe capacities. See [the protocol](../c_src/README.md).
 
 This primitive has one request per worker and no shared request queue.
 Applications creating many independent callers need admission limits at
