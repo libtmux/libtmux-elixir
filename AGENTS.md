@@ -3,8 +3,8 @@
 This is the Elixir libtmux implementation. Read [mix.exs](mix.exs), the
 current tree and [implementation contracts](docs/implementation.md) before
 editing. Target/deadline, command/codec, parser and bounded Linux one-shot
-foundations exist. The domain client, persistent control and consumer
-packages are still under implementation.
+foundations and indexed graph capture exist. The domain client, persistent
+control and consumer packages are still under implementation.
 
 ## Which policy applies
 

@@ -16,6 +16,16 @@ defmodule LibTmux.OwnedTmuxTest do
     refute first_info.socket == second_info.socket
     assert {pid, 0} = OwnedTmux.command(first, ["display-message", "-p", ~S"#{pid}"])
     assert String.trim(pid) == Integer.to_string(first_info.server_pid)
+
+    assert {"/bin/cat --\n", 0} =
+             OwnedTmux.command(first, [
+               "display-message",
+               "-p",
+               "-t",
+               "%0",
+               ~S"#{pane_start_command}"
+             ])
+
     assert {:ok, %{server_exit: 0, pane_exited: true}} = OwnedTmux.close(first)
     assert {:ok, %{server_exit: 0, pane_exited: true}} = OwnedTmux.close(first)
 

@@ -103,6 +103,13 @@ try do
   {:ok, [{:reply, :ok, {1, 2, 1}, ["hello"]}], parser} =
     LibTmux.Protocol.feed(LibTmux.Protocol.new(), "%begin 1 2 1\nhello\n%end 1 2 1\n")
   :ok = LibTmux.Protocol.finish(parser)
+  {:ok, snapshot} = LibTmux.Snapshot.new(
+    %{session: [%{id: "$0", name: "packed", attached_count: 2}]},
+    server_instance: "packed-instance", captured_from: 1, captured_until: 2,
+    fields: %{session: [:id, :name, :attached_count]}, complete: [:session]
+  )
+  [%LibTmux.Session{attached: true, attached_count: 2}] =
+    LibTmux.Snapshot.items(snapshot, LibTmux.Session)
   if :os.type() == {:unix, :linux} do
     {:ok, %{stdout: "packed\n", stderr: "", exit_status: 0, cleanup: :retired}} =
       LibTmux.Transport.OneShot.run("/bin/echo", ["packed"], max_total_bytes: 7)

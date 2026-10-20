@@ -5,6 +5,7 @@ defmodule LibTmux.Test.OwnedTmux do
   def start_link(options), do: GenServer.start_link(__MODULE__, options)
   def info(fixture), do: GenServer.call(fixture, :info)
   def command(fixture, argv), do: GenServer.call(fixture, {:command, argv})
+  def attach(fixture), do: GenServer.call(fixture, :attach)
   def close(fixture), do: GenServer.call(fixture, :close)
 
   def watch_exit(info) do
@@ -79,6 +80,11 @@ defmodule LibTmux.Test.OwnedTmux do
     {:reply, {Base.decode64!(data), status}, state}
   end
 
+  def handle_call(:attach, _from, %{closed: nil} = state) do
+    %{"kind" => "attached", "pid" => pid} = request(state.port, %{op: "attach"})
+    {:reply, %{pid: pid}, state}
+  end
+
   def handle_call(:close, _from, %{closed: nil} = state) do
     result = stop(state.port)
     {:reply, {:ok, result}, %{state | port: nil, closed: result}}
@@ -91,11 +97,17 @@ defmodule LibTmux.Test.OwnedTmux do
   def terminate(_reason, %{port: port}), do: stop(port)
 
   defp stop(port) do
-    %{"kind" => "stopped", "server_exit" => status, "pane_exited" => pane_exited} =
+    %{
+      "kind" => "stopped",
+      "server_exit" => status,
+      "pane_exited" => pane_exited,
+      "clients_exited" => clients_exited
+    } =
       request(port, %{op: "stop"})
 
     receive do
-      {^port, {:exit_status, 0}} -> %{server_exit: status, pane_exited: pane_exited}
+      {^port, {:exit_status, 0}} ->
+        %{server_exit: status, pane_exited: pane_exited, clients_exited: clients_exited}
     after
       750 -> raise "owned fixture helper did not exit"
     end

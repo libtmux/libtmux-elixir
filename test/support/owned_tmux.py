@@ -75,6 +75,7 @@ def serve(executable):
         server = None
         server_fd = None
         pane_fd = None
+        clients = []
 
         def command(argv):
             return subprocess.run(
@@ -89,6 +90,17 @@ def serve(executable):
         def stop():
             if server is None:
                 return None
+            for process, fd in clients:
+                process.stdin.close()
+                if not exited(fd):
+                    process.kill()
+                    process.wait()
+                    raise TimeoutError("owned control client did not exit after EOF")
+                process.wait()
+                process.stdout.close()
+                process.stderr.close()
+                os.close(fd)
+            clients.clear()
             if server.poll() is None:
                 command([b"kill-server"])
                 if not exited(server_fd):
@@ -98,7 +110,34 @@ def serve(executable):
             pane_exited = pane_fd is None or exited(pane_fd)
             if not pane_exited:
                 raise TimeoutError("owned pane process remained alive")
-            return {"kind": "stopped", "server_exit": status, "pane_exited": pane_exited}
+            return {"kind": "stopped", "server_exit": status, "pane_exited": pane_exited,
+                    "clients_exited": True}
+
+        def attach():
+            process = subprocess.Popen(
+                [executable, "-N", "-C", "-S", socket, "attach-session", "-t", "$0",
+                 "-f", "no-output,ignore-size"], env=environment, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+            fd = os.pidfd_open(process.pid)
+            clients.append((process, fd))
+            poller = select.poll()
+            poller.register(process.stdout, select.POLLIN)
+            data = bytearray()
+            deadline = time.monotonic() + 0.75
+            while (remaining := deadline - time.monotonic()) > 0:
+                if not poller.poll(max(1, int(remaining * 1000))):
+                    break
+                chunk = os.read(process.stdout.fileno(), 65536)
+                if not chunk:
+                    raise RuntimeError("owned client exited before attach acknowledgment")
+                data += chunk
+                if len(data) > 65536:
+                    raise RuntimeError("owned client startup exceeded byte limit")
+                if b"\n%error " in data:
+                    raise RuntimeError("owned client attach failed")
+                if b"\n%end " in data:
+                    return {"kind": "attached", "pid": process.pid}
+            raise TimeoutError("owned client did not acknowledge attachment")
 
         try:
             server = subprocess.Popen(
@@ -113,7 +152,7 @@ def serve(executable):
             os.close(notify)
             notify = None
             created = command(
-                [b"new-session", b"-d", b"-s", b"fixture", b"-P", b"-F", b"#{pane_pid}", b"/bin/cat"]
+                [b"new-session", b"-d", b"-s", b"fixture", b"-P", b"-F", b"#{pane_pid}", b"/bin/cat", b"--"]
             )
             if created.returncode != 0:
                 raise RuntimeError(created.stdout[:1024])
@@ -125,6 +164,9 @@ def serve(executable):
                 if request["op"] == "stop":
                     emit(stop())
                     return
+                if request["op"] == "attach":
+                    emit(attach())
+                    continue
                 if request["op"] != "command":
                     raise ValueError("unknown fixture request")
                 argv = [base64.b64decode(value, validate=True) for value in request["argv"]]
