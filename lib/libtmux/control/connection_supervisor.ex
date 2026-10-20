@@ -2,7 +2,7 @@ defmodule LibTmux.Control.ConnectionSupervisor do
   @moduledoc false
   use Supervisor
   alias LibTmux.{Deadline, Error}
-  alias LibTmux.Control.{EpochHost, Lifetime, Manager}
+  alias LibTmux.Control.{EpochHost, Lifetime, Manager, SupervisorStart}
   alias LibTmux.Transport.Native.Driver
   alias LibTmux.Transport.Reply
 
@@ -47,23 +47,24 @@ defmodule LibTmux.Control.ConnectionSupervisor do
 
   def start_link(options) do
     %Lifetime{} = lifetime = Keyword.fetch!(options, :lifetime)
+    %Deadline{} = deadline = Keyword.fetch!(options, :deadline)
     reply = :erlang.alias()
     token = make_ref()
 
     try do
-      case Supervisor.start_link(__MODULE__, {options, reply, token}) do
+      case SupervisorStart.start_link(__MODULE__, {options, reply, token}, deadline) do
         {:ok, root} ->
           receive do
             {^token, %{owner: ^root, lifetime: ^lifetime, view: view} = descriptor}
             when is_reference(view) ->
-              if :ets.info(view, :owner) == root,
+              if :ets.info(view, :owner) == root and Deadline.remaining(deadline) > 0,
                 do: {:ok, root, descriptor},
-                else: unpublished(root, lifetime)
+                else: unpublished(root, lifetime, deadline)
 
             {^token, _invalid} ->
-              unpublished(root, lifetime)
+              unpublished(root, lifetime, deadline)
           after
-            0 -> unpublished(root, lifetime)
+            0 -> unpublished(root, lifetime, deadline)
           end
 
         error ->
@@ -100,18 +101,24 @@ defmodule LibTmux.Control.ConnectionSupervisor do
     Manager.start_link(options ++ [host: host, view: view])
   end
 
-  defp unpublished(root, lifetime) do
+  defp unpublished(root, lifetime, deadline) do
     %{generation: generation} = Lifetime.status(lifetime)
     if generation > 0, do: Lifetime.abandon(lifetime, generation)
     monitor = Process.monitor(root)
     Process.unlink(root)
     Process.exit(root, :kill)
 
+    receive do
+      {:EXIT, ^root, _reason} -> :ok
+    after
+      0 -> :ok
+    end
+
     root_exited =
       receive do
         {:DOWN, ^monitor, :process, ^root, _reason} -> true
       after
-        500 -> false
+        Deadline.remaining(deadline) -> false
       end
 
     Process.demonitor(monitor, [:flush])

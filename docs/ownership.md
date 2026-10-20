@@ -226,6 +226,16 @@ shared unknown/unretired lifetime prevents a replacement helper in that case.
 An unsuccessful descriptor handoff after root startup kills the known root
 and reports cleanup uncertainty, even after observing root exit.
 
+The internal startup adapter passes the remaining initialization budget to
+OTP's generic server entry with its source-qualified Supervisor init shape.
+OTP stores the adapter as its callback; the adapter delegates the original
+module and arguments. A private alias captures the exact Root PID before
+delegation so cleanup drains only that Root's racing startup ACK or NACK.
+Descriptor publication rechecks the original deadline, and failed handoff
+cleanup uses only its remaining budget. OTP still waits for actual Root DOWN
+after an initialization timeout; this primitive alone does not prove a strict
+caller-return deadline or complete descendant retirement.
+
 Public bounded connection startup and operation creation,
 connection-wide accounting and authoritative subscriptions remain under
 implementation. These component checks do not qualify those contracts.
