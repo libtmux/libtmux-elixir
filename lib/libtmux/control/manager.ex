@@ -12,7 +12,8 @@ defmodule LibTmux.Control.Manager do
     Inbox,
     Lifetime,
     Records,
-    Router
+    Router,
+    Waiters
   }
 
   alias LibTmux.Transport.Native.Driver
@@ -32,6 +33,7 @@ defmodule LibTmux.Control.Manager do
         driver: {Driver, []},
         capacity: 32,
         metadata_capacity: 32,
+        waiter_capacity: 32,
         retention_ms: 60_000
       ])
 
@@ -40,6 +42,7 @@ defmodule LibTmux.Control.Manager do
     pool = Admission.new(options[:capacity])
     records = Records.new(pool)
     inbox = Inbox.new(options[:metadata_capacity], kinds: [:reconnect, :forget])
+    waiters = Waiters.new(records, options[:waiter_capacity])
     payload = Keyword.fetch!(options, :payload)
     retention = options[:retention_ms]
 
@@ -62,6 +65,7 @@ defmodule LibTmux.Control.Manager do
       pool: pool,
       records: records,
       inbox: inbox,
+      waiters: waiters,
       payload: :binary.copy(payload),
       driver: options[:driver],
       retention_ms: retention,
@@ -101,18 +105,24 @@ defmodule LibTmux.Control.Manager do
     state = harvest(state)
     {:ok, _count} = Inbox.reap(state.inbox)
     state = requests(state)
-    state = account(state) |> progress() |> publish()
+    state = account(state) |> service_waiters() |> progress() |> publish()
     Process.send_after(self(), :sweep, 25)
     {:noreply, state}
   end
 
   def handle_info({Inbox, :wake, table, generation}, state) when table == state.inbox.table do
     Inbox.consume_wake(state.inbox, {self(), table, generation})
-    {:noreply, state |> harvest() |> requests() |> progress() |> publish()}
+    {:noreply, state |> harvest() |> requests() |> service_waiters() |> progress() |> publish()}
+  end
+
+  def handle_info({Inbox, :wake, table, generation}, state)
+      when table == state.waiters.inbox.table do
+    Inbox.consume_wake(state.waiters.inbox, {self(), table, generation})
+    {:noreply, state |> service_waiters() |> progress() |> publish()}
   end
 
   def handle_info(message, state) do
-    state = harvest(state)
+    state = service_waiters(state) |> harvest()
 
     state =
       case state.pending do
@@ -126,7 +136,7 @@ defmodule LibTmux.Control.Manager do
           end
       end
 
-    {:noreply, state |> progress() |> publish()}
+    {:noreply, state |> service_waiters() |> progress() |> publish()}
   end
 
   @impl true
@@ -469,9 +479,15 @@ defmodule LibTmux.Control.Manager do
       end
     )
 
-    Enum.each(entries, fn {_status, lease} ->
-      if lease.expires_at + state.retention_ms <= now, do: Records.forget(state.records, lease)
-    end)
+    state =
+      Enum.reduce(entries, state, fn {_status, lease}, state ->
+        if lease.expires_at + state.retention_ms <= now do
+          {waiters, _outcome} = Waiters.forget(state.waiters, lease)
+          %{state | waiters: waiters}
+        else
+          state
+        end
+      end)
 
     expired_publication =
       Enum.any?(entries, fn {status, lease} ->
@@ -488,7 +504,7 @@ defmodule LibTmux.Control.Manager do
   end
 
   defp requests(state) do
-    state = observe_gate(state)
+    state = service_waiters(state) |> observe_gate()
     {:ok, work} = Inbox.take(state.inbox)
 
     Enum.reduce(work, state, fn
@@ -496,13 +512,13 @@ defmodule LibTmux.Control.Manager do
         reconnect(state, ticket)
 
       {ticket, {:forget, lease}}, state ->
-        outcome =
+        {waiters, outcome} =
           if ticket.epoch == lease.epoch,
-            do: Records.forget(state.records, lease),
-            else: failure(:stale_epoch)
+            do: Waiters.forget(state.waiters, lease),
+            else: {state.waiters, failure(:stale_epoch)}
 
         Inbox.finish(state.inbox, ticket, outcome)
-        state
+        %{state | waiters: waiters}
     end)
   end
 
@@ -549,6 +565,15 @@ defmodule LibTmux.Control.Manager do
     %{state | waiting: []}
   end
 
+  defp service_waiters(state) do
+    waiters = Waiters.turn(state.waiters)
+    state = %{state | waiters: waiters}
+
+    if waiters.fault && state.phase != :unknown,
+      do: state |> close(:waiter_failed) |> poison(),
+      else: state
+  end
+
   defp connected(state, ticket) do
     Inbox.finish(state.inbox, ticket, {:ok, endpoint(state)},
       references: [
@@ -556,7 +581,10 @@ defmodule LibTmux.Control.Manager do
         state.lifetime.word,
         state.pool.table,
         state.records.table,
-        state.births.table
+        state.births.table,
+        state.waiters.inbox.table,
+        state.waiters.inbox.wake,
+        state.waiters.inbox.receipts
       ]
     )
   end
@@ -574,7 +602,11 @@ defmodule LibTmux.Control.Manager do
         :instance,
         :births
       ])
-      |> Map.merge(%{manager: self(), router: state.actors.router})
+      |> Map.merge(%{
+        manager: self(),
+        router: state.actors.router,
+        waiter_inbox: state.waiters.inbox
+      })
 
   defp publish(state) do
     :ets.insert(state.view, {:connection, endpoint(state)})

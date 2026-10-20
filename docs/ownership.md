@@ -160,7 +160,14 @@ The internal waiter owner settles accepted requests from the exact immutable
 terminal record before releasing it. A prior pending read cannot justify
 forgetting a later completed record. Closed or expired waiters affect no
 operation state; pre-acceptance await failures retain unknown effect certainty.
-Manager integration and public waiter result mapping remain pending.
+Manager services its separate waiter Inbox before reconnect admission and
+startup continuations, and again after actor events. Both explicit forget
+and automatic record expiry use the exact-record release barrier. A finished
+waiter copy survives record reclamation and epoch replacement until receipt.
+Lost waiter storage closes an active epoch and blocks this Manager's reuse.
+If native retirement was already proved, that lifetime remains retired;
+the Manager's fault does not erase cleanup knowledge or preserve lost tables
+across its replacement. Public waiter result mapping remains pending.
 
 The retained-record registry finalizes an epoch only after its exact Router
 PID has exited. It scans current admission leases, including a consumed
@@ -208,6 +215,6 @@ shared unknown/unretired lifetime prevents a replacement helper in that case.
 An unsuccessful descriptor handoff after root startup kills the known root
 and reports cleanup uncertainty, even after observing root exit.
 
-Public bounded connection startup, retained outcome APIs, waiter pinning,
+Public bounded connection startup, retained outcome APIs,
 connection-wide accounting and authoritative subscriptions remain under
 implementation. These component checks do not qualify those contracts.

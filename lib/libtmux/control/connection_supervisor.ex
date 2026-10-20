@@ -15,6 +15,7 @@ defmodule LibTmux.Control.ConnectionSupervisor do
         driver: {Driver, []},
         capacity: 32,
         metadata_capacity: 32,
+        waiter_capacity: 32,
         retention_ms: 60_000
       ])
 
@@ -24,6 +25,7 @@ defmodule LibTmux.Control.ConnectionSupervisor do
     unless is_binary(payload) and byte_size(payload) <= 32_768 and
              is_integer(options[:capacity]) and options[:capacity] in 1..256 and
              is_integer(options[:metadata_capacity]) and options[:metadata_capacity] in 1..256 and
+             is_integer(options[:waiter_capacity]) and options[:waiter_capacity] in 1..256 and
              is_integer(options[:retention_ms]) and options[:retention_ms] in 1..600_000,
            do: raise(ArgumentError, "invalid bounded connection options")
 

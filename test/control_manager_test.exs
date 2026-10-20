@@ -138,6 +138,239 @@ defmodule LibTmux.ControlManagerTest do
     refute_receive {:driver_open, _, _}, 0
   end
 
+  test "Manager retains an early waiter result through explicit record forget" do
+    {_host, view, _lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, Keyword.put(options, :waiter_capacity, 1)})
+    initial = endpoint(view)
+    connecting = metadata(initial, initial.epoch, {:reconnect, nil})
+    peer = bootstrap(view)
+    ready = result(initial, connecting)
+    caller = self()
+
+    :ok =
+      :sys.install(
+        manager,
+        {fn
+           state, {:in, {:router, _epoch, _router, {:settled, lease}}}, _name ->
+             send(caller, {:wire_retired, lease})
+             state
+
+           state, _event, _name ->
+             state
+         end, nil},
+        500
+      )
+
+    lease = submit(ready, 500)
+    %{guardian: guardian, handle: handle} = peer
+    assert_receive {:driver_command, ^guardian, ^handle, <<?W, 1::32, line::binary>>}
+
+    {:ok, ticket} =
+      Inbox.publish(ready.waiter_inbox, ready.epoch, Deadline.new(500), {:await, lease})
+
+    :ok = Inbox.notify(ready.waiter_inbox)
+    data(peer, "%begin 1 4 1\nv1:early\n%end 1 4 1\n")
+    token = ticket.token
+    assert_receive {^token, :ready}, 200
+    assert {:ok, {:ok, retained}} = Inbox.result(ready.waiter_inbox, ticket)
+    assert retained.lines == ["v1:early"]
+    assert {:ok, %{life: %{wire: :writing}}} = Records.fetch(ready.records, lease)
+    send(guardian, {handle, {:data, <<?A, 1::32, byte_size(line)::16, 0>>}})
+    assert_receive {:wire_retired, ^lease}, 200
+    forgetting = metadata(ready, lease.epoch, {:forget, lease})
+    assert :ok = result(ready, forgetting)
+    assert {:error, %Error{kind: :stale_operation}} = Records.fetch(ready.records, lease)
+    assert {:ok, {:ok, ^retained}} = Inbox.result(ready.waiter_inbox, ticket)
+    replacement = submit(ready, 500)
+    assert replacement.slot == lease.slot and replacement.generation > lease.generation
+
+    assert {:error, %Error{kind: :resource_limit}} =
+             Inbox.publish(
+               ready.waiter_inbox,
+               ready.epoch,
+               Deadline.new(500),
+               {:await, replacement}
+             )
+
+    assert :ok = Inbox.close(ready.waiter_inbox, ticket)
+    :ok = Lifetime.revoke(ready.lifetime, ready.generation)
+    retire(peer)
+  end
+
+  test "lost waiter storage blocks reconnect before advancing a closed generation" do
+    {_host, view, lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    initial = endpoint(view)
+    connecting = metadata(initial, initial.epoch, {:reconnect, nil})
+    peer = bootstrap(view)
+    ready = result(initial, connecting)
+    observer = self()
+    closed = make_ref()
+
+    :ok =
+      :sys.install(
+        manager,
+        {fn
+           _state, {:noreply, %{phase: :closed}}, _name ->
+             send(observer, {:closed, closed})
+             :done
+
+           state, _event, _name ->
+             state
+         end, nil},
+        500
+      )
+
+    :ok = Lifetime.revoke(lifetime, ready.generation)
+    retire(peer)
+    assert_receive {:closed, ^closed}, 200
+
+    :sys.replace_state(
+      manager,
+      fn state ->
+        :ets.delete(state.waiters.inbox.table)
+        state
+      end,
+      500
+    )
+
+    reconnecting = metadata(ready, ready.epoch, {:reconnect, nil})
+    assert {:error, %Error{kind: :cleanup_unknown}} = result(ready, reconnecting)
+    assert Lifetime.status(lifetime).generation == ready.generation
+    assert :sys.get_state(manager, 500).phase == :unknown
+    refute_receive {:driver_open, _, _}, 0
+  end
+
+  test "lost waiter storage prevents a queued readiness event from publishing a connected endpoint" do
+    {_host, view, lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    initial = endpoint(view)
+    connecting = metadata(initial, initial.epoch, {:reconnect, nil})
+
+    :ok =
+      :sys.install(
+        manager,
+        {fn
+           state, {:in, {:router, _epoch, _router, {:ready, _instance}}}, _name ->
+             :ets.delete(initial.waiter_inbox.table)
+             state
+
+           state, _event, _name ->
+             state
+         end, nil},
+        500
+      )
+
+    peer = bootstrap(view)
+
+    assert {:error, %Error{kind: :waiter_failed, certainty: :unknown}} =
+             result(initial, connecting)
+
+    assert :sys.get_state(manager, 500).phase == :unknown
+    assert Lifetime.status(lifetime).phase == :unknown
+    retire(peer)
+  end
+
+  for storage_lost <- [false, true] do
+    @tag waiter_storage_lost: storage_lost
+    test "automatic record expiry preserves accepted evidence after suspension (storage lost: #{storage_lost})",
+         %{waiter_storage_lost: storage_lost} do
+      {_host, view, _lifetime, options} = setup_manager()
+      manager = start_supervised!({Manager, Keyword.put(options, :retention_ms, 1)})
+      initial = endpoint(view)
+      connecting = metadata(initial, initial.epoch, {:reconnect, nil})
+      peer = bootstrap(view)
+      ready = result(initial, connecting)
+      request = Request.field("pid")
+      {:ok, line} = Request.encode(request, ready.instance)
+
+      {:ok, lease} =
+        Admission.claim(ready.pool, ready.epoch, ready.router, Deadline.new(150), byte_size(line))
+
+      {:ok, ticket} =
+        Inbox.publish(ready.waiter_inbox, ready.epoch, Deadline.new(500), {:await, lease})
+
+      :ok = Inbox.notify(ready.waiter_inbox)
+      assert map_size(:sys.get_state(manager, 500).waiters.active) == 1
+      observer = self()
+
+      :ok =
+        :sys.install(
+          ready.router,
+          {fn
+             _seen, {:in, {:submit, _epoch, ^lease, _request}}, _name ->
+               true
+
+             true, {:noreply, %{operations: operations}}, _name when map_size(operations) == 0 ->
+               send(observer, :retired_while_manager_paused)
+               :done
+
+             seen, _event, _name ->
+               seen
+           end, false},
+          500
+        )
+
+      :ok = :sys.suspend(manager, 500)
+
+      try do
+        send(ready.router, {:submit, ready.epoch, lease, request})
+        %{guardian: guardian, handle: handle} = peer
+        assert_receive {:driver_command, ^guardian, ^handle, <<?W, 1::32, line::binary>>}
+        data(peer, "%begin 1 4 1\nv1:expired-record\n%end 1 4 1\n")
+        send(guardian, {handle, {:data, <<?A, 1::32, byte_size(line)::16, 0>>}})
+        assert_receive :retired_while_manager_paused, 200
+
+        if storage_lost do
+          :sys.replace_state(
+            manager,
+            fn state ->
+              :ets.delete(state.waiters.inbox.table)
+              state
+            end,
+            500
+          )
+        end
+
+        timer =
+          :erlang.start_timer(
+            max(lease.expires_at + 2 - System.monotonic_time(:millisecond), 0),
+            self(),
+            :retention_due
+          )
+
+        assert_receive {:timeout, ^timer, :retention_due}, 200
+      after
+        :sys.resume(manager, 500)
+      end
+
+      if storage_lost do
+        accounting_turn(manager)
+        assert :sys.get_state(manager, 500).phase == :unknown
+        assert Lifetime.status(ready.lifetime).phase == :unknown
+
+        assert {:ok,
+                %{life: %{result: %{lines: ["v1:expired-record"], certainty: :acknowledged}}}} =
+                 Records.fetch(ready.records, lease)
+
+        refute_receive {:driver_open, _, _}, 0
+      else
+        token = ticket.token
+        assert_receive {^token, :ready}, 200
+        accounting_turn(manager)
+        assert {:error, %Error{kind: :stale_operation}} = Records.fetch(ready.records, lease)
+
+        assert {:ok, {:ok, %{lines: ["v1:expired-record"], certainty: :acknowledged}}} =
+                 Inbox.result(ready.waiter_inbox, ticket)
+
+        :ok = Lifetime.revoke(ready.lifetime, ready.generation)
+      end
+
+      Inbox.close(ready.waiter_inbox, ticket)
+      retire(peer)
+    end
+  end
+
   test "a suspended host cannot block reserved closure or admit its queued late startup" do
     {host, view, lifetime, options} = setup_manager()
     :ok = :sys.suspend(host, 500)

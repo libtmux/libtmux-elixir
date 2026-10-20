@@ -1,7 +1,18 @@
 defmodule LibTmux.ControlManagerIntegrationTest do
   use ExUnit.Case, async: true
   alias LibTmux.{Deadline, Server}
-  alias LibTmux.Control.{Births, Bootstrap, ConnectionSupervisor, Inbox, Lifetime}
+
+  alias LibTmux.Control.{
+    Admission,
+    Births,
+    Bootstrap,
+    ConnectionSupervisor,
+    Inbox,
+    Lifetime,
+    Records,
+    Request
+  }
+
   alias LibTmux.Test.OwnedTmux
   alias LibTmux.Transport.Native.Protocol
   @moduletag :integration
@@ -30,7 +41,8 @@ defmodule LibTmux.ControlManagerIntegrationTest do
           deadline: Deadline.new(800),
           payload: payload,
           capacity: 2,
-          metadata_capacity: 2
+          metadata_capacity: 4,
+          waiter_capacity: 1
         )
       )
 
@@ -38,6 +50,7 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     manager = starting.manager
     first = connect(starting)
     assert first.phase == :ready
+    {lease, waiting, outcome} = operation(first)
 
     assert {"1\n", 0} =
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
@@ -49,6 +62,19 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     assert second.epoch != first.epoch
     assert second.instance == first.instance
     exited(old)
+    assert {:ok, %{life: %{result: ^outcome}}} = Records.fetch(second.records, lease)
+
+    {:ok, forgetting} =
+      Inbox.publish(second.inbox, lease.epoch, Deadline.new(800), {:forget, lease})
+
+    :ok = Inbox.notify(second.inbox)
+    token = forgetting.token
+    assert_receive {^token, :ready}, 850
+    assert {:ok, :ok} = Inbox.result(second.inbox, forgetting)
+    assert :ok = Inbox.close(second.inbox, forgetting)
+    assert {:error, %{kind: :stale_operation}} = Records.fetch(second.records, lease)
+    assert {:ok, {:ok, ^outcome}} = Inbox.result(second.waiter_inbox, waiting)
+    assert :ok = Inbox.close(second.waiter_inbox, waiting)
 
     assert {"1\n", 0} =
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
@@ -77,6 +103,33 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     after
       Inbox.close(endpoint.inbox, ticket)
     end
+  end
+
+  defp operation(endpoint) do
+    request = Request.field("pid")
+    {:ok, line} = Request.encode(request, endpoint.instance)
+
+    {:ok, lease} =
+      Admission.claim(
+        endpoint.pool,
+        endpoint.epoch,
+        endpoint.router,
+        Deadline.new(800),
+        byte_size(line)
+      )
+
+    {:ok, ticket} =
+      Inbox.publish(endpoint.waiter_inbox, endpoint.epoch, Deadline.new(800), {:await, lease})
+
+    :ok = Inbox.notify(endpoint.waiter_inbox)
+    send(endpoint.router, {:submit, endpoint.epoch, lease, request})
+    token = ticket.token
+    assert_receive {^token, :ready}, 850
+
+    assert {:ok, {:ok, %{outcome: :completed, certainty: :acknowledged} = outcome}} =
+             Inbox.result(endpoint.waiter_inbox, ticket)
+
+    {lease, ticket, outcome}
   end
 
   defp monitor_actors(endpoint) do
