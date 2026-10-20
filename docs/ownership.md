@@ -185,6 +185,15 @@ automatically. The internal qualified cases retain outcomes across reconnect,
 forget exact completed leases, and expire retained records. Accepted metadata
 work remains owned after caller timeout or alias closure; neither cancels it.
 
-The public connection supervisor, retained outcome APIs, waiter pinning,
+The internal connection Supervisor owns the view and starts EpochHost before
+Manager. Its external child-spec factory pins the lifetime across root
+restarts. Manager replacement invalidates its old tables; root replacement
+also invalidates the view. A surviving view never recovers old operation
+evidence. Finite Supervisor shutdown can leave descendants alive; only the
+shared unknown/unretired lifetime prevents a replacement helper in that case.
+An unsuccessful descriptor handoff after root startup kills the known root
+and reports cleanup uncertainty, even after observing root exit.
+
+Public bounded connection startup, retained outcome APIs, waiter pinning,
 connection-wide accounting and authoritative subscriptions remain under
 implementation. These component checks do not qualify those contracts.

@@ -1,7 +1,7 @@
 defmodule LibTmux.ControlManagerIntegrationTest do
   use ExUnit.Case, async: true
   alias LibTmux.{Deadline, Server}
-  alias LibTmux.Control.{Births, Bootstrap, Inbox, Lifetime, Manager}
+  alias LibTmux.Control.{Births, Bootstrap, ConnectionSupervisor, Inbox, Lifetime}
   alias LibTmux.Test.OwnedTmux
   alias LibTmux.Transport.Native.Protocol
   @moduletag :integration
@@ -14,30 +14,28 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
     server = Server.new(executable: executable, socket: socket, cwd: "/", env: %{})
 
-    host =
+    parent =
       start_supervised!(%{
-        id: :host,
+        id: :parent,
         start: {Supervisor, :start_link, [[], [strategy: :one_for_one]]},
         type: :supervisor
       })
 
-    view = :ets.new(:view, [:set, :public])
-    lifetime = Lifetime.new()
     payload = Protocol.process(executable, Bootstrap.arguments(server, "$0"), cwd: "/", env: %{})
 
-    manager =
-      start_supervised!(
-        {Manager,
-         host: host,
-         view: view,
-         lifetime: lifetime,
-         deadline: Deadline.new(800),
-         payload: payload,
-         capacity: 2,
-         metadata_capacity: 2}
+    {:ok, _root, %{view: view, lifetime: lifetime}} =
+      Supervisor.start_child(
+        parent,
+        ConnectionSupervisor.child_spec(
+          deadline: Deadline.new(800),
+          payload: payload,
+          capacity: 2,
+          metadata_capacity: 2
+        )
       )
 
     [{:connection, starting}] = :ets.lookup(view, :connection)
+    manager = starting.manager
     first = connect(starting)
     assert first.phase == :ready
 
