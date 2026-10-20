@@ -104,6 +104,19 @@ defmodule LibTmux.ControlAdmissionTest do
     monitor = Process.monitor(destination)
     stop_supervised!(Task)
     assert_receive {:DOWN, ^monitor, :process, ^destination, :shutdown}
+
+    start_supervised!(
+      {Task,
+       fn ->
+         send(
+           parent,
+           {:forged_retire,
+            Admission.retire_destination(%{pool | owner: self()}, epoch, destination)}
+         )
+       end}
+    )
+
+    assert_receive {:forged_retire, {:error, %Error{kind: :wrong_pool}}}
     assert {:ok, 1} = Admission.retire_destination(pool, epoch, destination)
     assert {:ok, replacement} = Admission.claim(pool, make_ref(), self(), deadline, 8, now: 0)
     assert replacement != lease
@@ -140,6 +153,41 @@ defmodule LibTmux.ControlAdmissionTest do
     assert Enum.count(results, &match?({:error, %Error{kind: :resource_limit}}, &1)) == 31
     assert :ok = Admission.consume(pool, lease, 8)
     assert :ok = Admission.release(pool, lease)
+  end
+
+  test "forged pool handles cannot release consumed capacity or widen configured bounds" do
+    pool = Admission.new(1, max_bytes: 64)
+    epoch = make_ref()
+    deadline = Deadline.new(100, now: 0)
+    assert {:ok, lease} = Admission.claim(pool, epoch, self(), deadline, 64, now: 0)
+    assert :ok = Admission.consume(pool, lease, 64)
+    parent = self()
+
+    start_supervised!(
+      {Task,
+       fn ->
+         send(parent, {:forged_release, Admission.release(%{pool | owner: self()}, lease)})
+       end}
+    )
+
+    assert_receive {:forged_release, {:error, %Error{kind: :wrong_pool}}}
+    assert :ok = Admission.verify_consumed(pool, lease)
+
+    assert {:error, %Error{kind: :resource_limit}} =
+             Admission.claim(pool, epoch, self(), deadline, 1, now: 0)
+
+    assert :ok = Admission.release(pool, lease)
+
+    for forged <- [%{pool | max_bytes: 65}, %{pool | capacity: 1_000_000}] do
+      assert {:error, %Error{kind: :wrong_pool}} =
+               Admission.claim(forged, epoch, self(), deadline, 65, now: 0)
+
+      assert {:error, %Error{kind: :wrong_pool}} = Admission.unpublished_expired(forged, now: 100)
+    end
+
+    assert {:ok, next} = Admission.claim(pool, epoch, self(), deadline, 1, now: 0)
+    assert :ok = Admission.consume(pool, next, 1)
+    assert :ok = Admission.release(pool, next)
   end
 
   test "loss of the owning table cannot become free capacity" do

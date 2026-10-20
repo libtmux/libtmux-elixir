@@ -36,7 +36,9 @@ defmodule LibTmux.Control.Admission do
 
     table = :ets.new(__MODULE__, [:set, :public, read_concurrency: true, write_concurrency: true])
     true = :ets.insert(table, for(slot <- 1..capacity, do: free(slot, 0)))
-    %__MODULE__{table: table, owner: self(), capacity: capacity, max_bytes: max_bytes}
+    pool = %__MODULE__{table: table, owner: self(), capacity: capacity, max_bytes: max_bytes}
+    true = :ets.insert(table, {:context, pool})
+    pool
   end
 
   @spec claim(t(), reference(), pid(), Deadline.t(), pos_integer(), keyword()) ::
@@ -57,19 +59,21 @@ defmodule LibTmux.Control.Admission do
              is_integer(bytes) and bytes > 0 do
     options = Keyword.validate!(options, [:now])
 
-    cond do
-      bytes > pool.max_bytes ->
-        rejected(:resource_limit)
+    with_table(pool, fn ->
+      cond do
+        bytes > pool.max_bytes ->
+          rejected(:resource_limit)
 
-      Deadline.remaining(deadline, options) == 0 ->
-        rejected(:timeout)
+        Deadline.remaining(deadline, options) == 0 ->
+          rejected(:timeout)
 
-      not Process.alive?(destination) ->
-        rejected(:stale_epoch)
+        not Process.alive?(destination) ->
+          rejected(:stale_epoch)
 
-      true ->
-        with_table(pool, fn -> reserve(pool, epoch, destination, deadline, bytes) end)
-    end
+        true ->
+          reserve(pool, epoch, destination, deadline, bytes)
+      end
+    end)
   end
 
   def claim(_pool, _epoch, _destination, _deadline, _bytes, _options),
@@ -82,18 +86,18 @@ defmodule LibTmux.Control.Admission do
   # Consuming proves that this publication reached its fixed destination.
   def consume(%__MODULE__{} = pool, %Lease{} = lease, encoded_bytes)
       when is_integer(encoded_bytes) and encoded_bytes > 0 do
-    cond do
-      lease.table != pool.table ->
-        rejected(:stale_lease)
+    with_table(pool, fn ->
+      cond do
+        lease.table != pool.table ->
+          rejected(:stale_lease)
 
-      self() != lease.destination ->
-        rejected(:wrong_destination)
+        self() != lease.destination ->
+          rejected(:wrong_destination)
 
-      encoded_bytes > lease.bytes or encoded_bytes > pool.max_bytes ->
-        rejected(:resource_limit)
+        encoded_bytes > lease.bytes or encoded_bytes > pool.max_bytes ->
+          rejected(:resource_limit)
 
-      true ->
-        with_table(pool, fn ->
+        true ->
           reserved = row(lease, :reserved)
 
           # Lease fields remain data; only an equal stored row becomes a match pattern.
@@ -101,8 +105,8 @@ defmodule LibTmux.Control.Admission do
             [entry] when entry === reserved -> replace(pool, entry, put_elem(entry, 2, :consumed))
             _ -> rejected(:stale_lease)
           end
-        end)
-    end
+      end
+    end)
   end
 
   # The final writer rechecks the exact consumed generation immediately before I/O.
@@ -218,10 +222,22 @@ defmodule LibTmux.Control.Admission do
   end
 
   defp owned(pool, operation),
-    do: if(self() == pool.owner, do: with_table(pool, operation), else: rejected(:wrong_owner))
+    do:
+      with_table(pool, fn ->
+        if(self() == pool.owner, do: operation.(), else: rejected(:wrong_owner))
+      end)
 
   defp with_table(pool, operation) do
-    operation.()
+    case :ets.info(pool.table, :owner) do
+      :undefined ->
+        rejected(:connection_lost)
+
+      owner ->
+        case :ets.lookup(pool.table, :context) do
+          [{:context, ^pool}] when owner == pool.owner -> operation.()
+          _ -> rejected(:wrong_pool)
+        end
+    end
   rescue
     error in ArgumentError ->
       if :ets.info(pool.table) == :undefined,
