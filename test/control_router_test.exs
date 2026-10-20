@@ -1,11 +1,13 @@
 defmodule LibTmux.ControlRouterTest do
   use ExUnit.Case, async: true
   alias LibTmux.{Deadline, Error, Ref}
-  alias LibTmux.Control.{Admission, Guardian, Lifetime, Request, Router}
+  alias LibTmux.Control.{Admission, Guardian, Lifetime, Records, Request, Router}
   alias LibTmux.Test.NativeDriver
 
   test "binding replays a buffered Guardian retirement as a terminal event" do
     epoch = make_ref()
+    lifetime = Lifetime.new()
+    {:ok, generation} = Lifetime.begin_epoch(lifetime)
     pool = Admission.new(1)
     records = :ets.new(:records, [:set, :public])
 
@@ -14,6 +16,8 @@ defmodule LibTmux.ControlRouterTest do
         {Router,
          manager: self(),
          epoch: epoch,
+         lifetime: lifetime,
+         generation: generation,
          pool: pool,
          records: records,
          bootstrap: make_ref(),
@@ -57,6 +61,33 @@ defmodule LibTmux.ControlRouterTest do
 
     refute_receive {:driver_command, _, _, <<?W, _::binary>>}, 0
     close(state)
+  end
+
+  test "a revoked epoch leaves queued publications unconsumed" do
+    state = connection()
+    :ok = :sys.suspend(state.router)
+
+    lease =
+      try do
+        lease = submit(state, Request.set_user_option("@queued", String.duplicate("x", 4096)))
+        assert :ok = Lifetime.revoke(state.lifetime, state.generation)
+        lease
+      after
+        :ok = :sys.resume(state.router)
+      end
+
+    :sys.get_state(state.router)
+    assert {:ok, :reserved} = Admission.state(state.pool, lease)
+    assert :ets.lookup(state.records, lease.slot) == [{lease.slot, nil}]
+    refute_receive {:driver_command, _, _, <<?W, _::binary>>}, 0
+    assert_receive {:router, _, _, {:closing, %Error{kind: :closure_requested}}}
+    retire(state)
+    assert_receive {:router, _, _, {:retired, _}}
+    finish(state)
+    assert {:ok, 1} = Records.finalize(state.record_owner, state.epoch, state.router)
+
+    assert {:ok, %{life: %{wire: :retired, result: %{outcome: :skipped, certainty: :no_write}}}} =
+             Records.fetch(state.record_owner, lease)
   end
 
   test "an unacknowledged dispatched line becomes unknown and an unsent sibling is skipped" do
@@ -174,8 +205,7 @@ defmodule LibTmux.ControlRouterTest do
     lifetime = Lifetime.new()
     {:ok, generation} = Lifetime.begin_epoch(lifetime)
     pool = Admission.new(2)
-    records = :ets.new(:records, [:set, :public])
-    :ets.insert(records, [{1, nil}, {2, nil}])
+    records = Records.new(pool)
     epoch = make_ref()
     bootstrap = make_ref()
     deadline = Deadline.new(800)
@@ -186,8 +216,10 @@ defmodule LibTmux.ControlRouterTest do
           {Router,
            manager: self(),
            epoch: epoch,
+           lifetime: lifetime,
+           generation: generation,
            pool: pool,
-           records: records,
+           records: records.table,
            bootstrap: bootstrap,
            deadline: deadline},
           id: make_ref()
@@ -222,7 +254,8 @@ defmodule LibTmux.ControlRouterTest do
       handle: handle,
       epoch: epoch,
       pool: pool,
-      records: records,
+      records: records.table,
+      record_owner: records,
       lifetime: lifetime,
       generation: generation,
       router_monitor: Process.monitor(router),

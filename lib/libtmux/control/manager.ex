@@ -218,6 +218,8 @@ defmodule LibTmux.Control.Manager do
       common = [
         manager: self(),
         epoch: state.epoch,
+        lifetime: state.lifetime,
+        generation: state.generation,
         deadline: state.deadline,
         births: state.births,
         pool: state.pool,
@@ -239,8 +241,6 @@ defmodule LibTmux.Control.Manager do
             common ++
               [
                 router: pid,
-                lifetime: state.lifetime,
-                generation: state.generation,
                 payload: state.payload,
                 driver: state.driver
               ]

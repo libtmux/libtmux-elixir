@@ -3,7 +3,7 @@ defmodule LibTmux.Control.Router do
   use GenServer, restart: :temporary, shutdown: 950
 
   alias LibTmux.{Deadline, Error, Protocol}
-  alias LibTmux.Control.{Admission, Births, Bootstrap, Request}
+  alias LibTmux.Control.{Admission, Births, Bootstrap, Lifetime, Request}
   alias LibTmux.Operation.Lifecycle
 
   def start_link(options), do: GenServer.start_link(__MODULE__, options)
@@ -26,6 +26,8 @@ defmodule LibTmux.Control.Router do
        manager: manager,
        manager_monitor: Process.monitor(manager),
        epoch: Keyword.fetch!(options, :epoch),
+       lifetime: Keyword.fetch!(options, :lifetime),
+       generation: Keyword.fetch!(options, :generation),
        pool: Keyword.fetch!(options, :pool),
        records: Keyword.fetch!(options, :records),
        bootstrap_token: Keyword.fetch!(options, :bootstrap),
@@ -101,29 +103,36 @@ defmodule LibTmux.Control.Router do
         {:submit, epoch, %Admission.Lease{} = lease, %Request{} = request},
         %{epoch: epoch, phase: :ready} = state
       ) do
-    with {:ok, line} <- Request.encode(request, state.instance),
-         true <- byte_size(line) <= lease.bytes,
-         true <- lease.epoch == epoch and lease.destination == self(),
-         :ok <- Admission.consume(state.pool, lease, byte_size(line)) do
-      token = make_ref()
-      life = Lifecycle.new(epoch, token, %Deadline{expires_at: lease.expires_at}, byte_size(line))
+    # A closed epoch can leave bounded publications ahead of its close message.
+    if Lifetime.allows_write?(state.lifetime, state.generation) do
+      with {:ok, line} <- Request.encode(request, state.instance),
+           true <- byte_size(line) <= lease.bytes,
+           true <- lease.epoch == epoch and lease.destination == self(),
+           :ok <- Admission.consume(state.pool, lease, byte_size(line)) do
+        token = make_ref()
 
-      entry = %{
-        lease: lease,
-        token: token,
-        life: life,
-        line: line,
-        request: request,
-        reply: nil,
-        sent_until: 0,
-        wire_requested: false
-      }
+        life =
+          Lifecycle.new(epoch, token, %Deadline{expires_at: lease.expires_at}, byte_size(line))
 
-      state = store(state, entry)
-      {:noreply, dispatch(%{state | queue: :queue.in({lease.slot, token}, state.queue)})}
+        entry = %{
+          lease: lease,
+          token: token,
+          life: life,
+          line: line,
+          request: request,
+          reply: nil,
+          sent_until: 0,
+          wire_requested: false
+        }
+
+        state = store(state, entry)
+        {:noreply, dispatch(%{state | queue: :queue.in({lease.slot, token}, state.queue)})}
+      else
+        {:error, error} -> {:noreply, close_epoch(state, error.kind)}
+        false -> {:noreply, close_epoch(state, :invalid_publication)}
+      end
     else
-      {:error, error} -> {:noreply, close_epoch(state, error.kind)}
-      false -> {:noreply, close_epoch(state, :invalid_publication)}
+      {:noreply, close_epoch(state, :closure_requested)}
     end
   end
 

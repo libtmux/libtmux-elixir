@@ -40,6 +40,8 @@ defmodule LibTmux.ControlRouterIntegrationTest do
          manager: self(),
          births: births,
          epoch: epoch,
+         lifetime: lifetime,
+         generation: generation,
          pool: pool,
          records: records.table,
          bootstrap: bootstrap,

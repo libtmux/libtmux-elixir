@@ -108,6 +108,25 @@ defmodule LibTmux.ControlBirthsTest do
     assert {:error, %Error{kind: :connection_lost}} = Births.register(births, :guardian, now: 1)
   end
 
+  test "both epoch actors reject a different lifetime or generation" do
+    lifetime = Lifetime.new()
+    {:ok, generation} = Lifetime.begin_epoch(lifetime)
+    deadline = Deadline.new(500)
+    epoch = make_ref()
+    births = Births.new(lifetime, generation, epoch, deadline)
+    options = [manager: self(), epoch: epoch, deadline: deadline, births: births]
+
+    for role <- [:router, :guardian],
+        identity <- [
+          [lifetime: Lifetime.new(), generation: generation],
+          [lifetime: lifetime, generation: generation + 1]
+        ] do
+      assert {:error, %Error{kind: :wrong_births}} = Births.enter(options ++ identity, role)
+    end
+
+    assert {:ok, %{roles: %{router: nil, guardian: nil}}} = Births.snapshot(births)
+  end
+
   defp births do
     lifetime = Lifetime.new()
     {:ok, generation} = Lifetime.begin_epoch(lifetime)

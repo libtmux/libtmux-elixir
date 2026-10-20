@@ -56,12 +56,11 @@ defmodule LibTmux.Control.Births do
             Keyword.fetch!(options, :epoch) == births.epoch and
             Keyword.fetch!(options, :deadline) === births.deadline
 
-        guardian =
-          role != :guardian or
-            (Keyword.fetch!(options, :lifetime) === births.lifetime and
-               Keyword.fetch!(options, :generation) === births.generation)
+        identity =
+          Keyword.fetch!(options, :lifetime) === births.lifetime and
+            Keyword.fetch!(options, :generation) === births.generation
 
-        if common and guardian, do: register(births, role), else: rejected(:wrong_births)
+        if common and identity, do: register(births, role), else: rejected(:wrong_births)
     end
   end
 
