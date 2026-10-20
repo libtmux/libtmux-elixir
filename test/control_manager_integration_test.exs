@@ -1,6 +1,6 @@
 defmodule LibTmux.ControlManagerIntegrationTest do
   use ExUnit.Case, async: true
-  alias LibTmux.{Deadline, Operation, Server}
+  alias LibTmux.{Control, Deadline, Operation, Server}
 
   alias LibTmux.Control.{
     Admission,
@@ -34,7 +34,7 @@ defmodule LibTmux.ControlManagerIntegrationTest do
 
     payload = Protocol.process(executable, Bootstrap.arguments(server, "$0"), cwd: "/", env: %{})
 
-    {:ok, _root, %{view: view, lifetime: lifetime}} =
+    {:ok, _root, %{view: view, lifetime: lifetime} = descriptor} =
       Supervisor.start_child(
         parent,
         ConnectionSupervisor.child_spec(
@@ -50,6 +50,18 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     manager = starting.manager
     first = connect(starting)
     assert first.phase == :ready
+    {:ok, control} = Control.from_descriptor(descriptor)
+    literal = ~S"literal,#{safe}"
+
+    {:ok, public} =
+      Control.submit(control, Request.set_user_option("@public", literal), timeout: 800)
+
+    assert {:ok, %{outcome: :completed, certainty: :acknowledged}} =
+             Operation.await(public, timeout: 800)
+
+    assert :ok = Operation.forget(public, timeout: 800)
+    assert {actual, 0} = OwnedTmux.command(fixture, ["show-options", "-sv", "@public"])
+    assert actual == literal <> "\n"
     {operation, lease, waiting, outcome} = operation(first)
     assert {:ok, ^outcome} = Operation.await(operation, timeout: 800)
 
@@ -57,11 +69,15 @@ defmodule LibTmux.ControlManagerIntegrationTest do
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
 
     old = monitor_actors(first)
-    :ok = Lifetime.revoke(lifetime, first.generation)
+    :ok = Control.request_close(control)
     second = connect(first)
     assert second.generation == first.generation + 1
     assert second.epoch != first.epoch
     assert second.instance == first.instance
+
+    assert {:error, %{kind: :stale_connection, certainty: :no_write}} =
+             Control.submit(control, Request.field("pid"))
+
     exited(old)
     assert {:ok, %{life: %{result: ^outcome}}} = Records.fetch(second.records, lease)
     assert {:ok, ^outcome} = Operation.result(operation)

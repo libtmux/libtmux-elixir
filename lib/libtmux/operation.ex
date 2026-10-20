@@ -33,9 +33,24 @@ defmodule LibTmux.Operation do
 
   @doc false
   def new(endpoint, %Admission.Lease{} = lease) do
+    with {:ok, template} <- prepare(endpoint),
+         true <- endpoint.epoch === lease.epoch and endpoint.router === lease.destination,
+         current when current == :pending or is_tuple(current) <-
+           Records.fetch(endpoint.records, lease) do
+      case current do
+        {:error, _error} -> raise ArgumentError, "operation requires a current admitted lease"
+        _ -> bind(template, lease)
+      end
+    else
+      _ -> raise ArgumentError, "operation requires matching Manager and epoch resources"
+    end
+  end
+
+  @doc false
+  def prepare(endpoint) do
     operation = %__MODULE__{
       records: endpoint.records,
-      lease: lease,
+      lease: nil,
       inbox: endpoint.inbox,
       waiter_inbox: endpoint.waiter_inbox,
       births: endpoint.births
@@ -43,25 +58,32 @@ defmodule LibTmux.Operation do
 
     valid =
       endpoint.manager == operation.records.pool.owner and
-        endpoint.pool === operation.records.pool and endpoint.epoch === lease.epoch and
-        endpoint.router === lease.destination and
+        endpoint.pool === operation.records.pool and
+        endpoint.epoch === operation.births.epoch and
         endpoint.lifetime === operation.births.lifetime and
         endpoint.generation === operation.births.generation
 
     with true <- valid,
+         :ok <- Records.validate(operation.records),
          :ok <- inbox_context(operation, operation.inbox, :forget),
          :ok <- inbox_context(operation, operation.waiter_inbox, :await),
-         {:ok, _births} <- stop_context(operation),
-         current when current == :pending or is_tuple(current) <-
-           Records.fetch(operation.records, lease) do
-      case current do
-        {:error, _error} -> raise ArgumentError, "operation requires a current admitted lease"
-        _ -> operation
-      end
+         {:ok, %{roles: %{router: router}}} <- Births.snapshot(operation.births),
+         true <- operation.births.owner == endpoint.manager and router === endpoint.router do
+      {:ok, operation}
     else
-      _ -> raise ArgumentError, "operation requires matching Manager and epoch resources"
+      false -> failure(:wrong_operation)
+      error -> error
     end
   end
+
+  # Admission already produced this exact lease. Binding performs no live reads.
+  @doc false
+  def bind(
+        %__MODULE__{lease: nil, records: records, births: births} = template,
+        %Admission.Lease{} = lease
+      )
+      when lease.table == records.pool.table and lease.epoch == births.epoch,
+      do: %{template | lease: lease}
 
   @doc "Reads retained wire state and canonical result without contacting tmux."
   @spec status(t()) :: {:ok, status()} | {:error, Error.t()}

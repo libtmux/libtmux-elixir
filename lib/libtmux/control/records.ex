@@ -20,6 +20,8 @@ defmodule LibTmux.Control.Records do
     records
   end
 
+  def validate(records), do: with_table(records, fn -> Admission.validate(records.pool) end)
+
   def fetch(records, %Admission.Lease{} = lease) do
     with_table(records, fn ->
       with {:ok, _state} <- current(records, lease) do

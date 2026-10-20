@@ -246,6 +246,24 @@ This fence handles observed startup failures; it does not establish recovery
 from untrappable caller or VM death. One lifetime belongs to one connection
 Root; concurrent starts sharing that lifetime intentionally fail closed.
 
-Public bounded connection startup and operation creation,
+`Control.submit/3` pins a ready Root view, Manager and epoch. It detaches the
+request's binary leaves under a separate 20,000-byte owned-term limit before
+claiming a fixed operation slot. One deadline includes validation, admission,
+queueing, writing and replies. After claim, pure Operation binding preserves
+the handle even if context disappears. A final local gate check can suppress
+publication; the reserved lease stays owned. Its original deadline requests
+epoch closure; capacity still follows native/destination retirement and
+record retention or explicit forget rules. Router and Guardian independently
+validate before writing.
+
+`Control.request_close/1` requests whole-epoch closure without claiming a
+slot, including when operation and metadata capacity are full. It does not
+acknowledge native retirement or roll back siblings. Repeated requests for
+the same closing or proven-retired generation succeed; old handles cannot
+follow replacement Managers or epochs. Status errors report unknown
+certainty about existing work; a rejected new, unadmitted submission reports
+no write. Public connection construction and awaited retirement remain open.
+
+Public bounded connection startup and awaited retirement,
 connection-wide accounting and authoritative subscriptions remain under
 implementation. These component checks do not qualify those contracts.

@@ -1,17 +1,37 @@
 defmodule LibTmux.Control.Request do
-  @moduledoc false
+  @moduledoc """
+  Data for the qualified control lane's supported commands.
+
+  Field reads encode one named variable losslessly. Server user options accept
+  literal binary values. Constructing a request performs no I/O; submit it with
+  `LibTmux.Control.submit/3`. Arbitrary commands, formats and raw control lines
+  require separate qualification and are not accepted by this lane.
+  """
   alias LibTmux.{Codec, Command, Error, Format, Ref}
 
   @enforce_keys [:kind, :value]
   defstruct [:kind, :value, :target]
+  @opaque t :: %__MODULE__{}
 
+  @doc "Reads a named format variable, optionally from an exact instance-bound target."
+  @spec field(String.t(), Ref.t() | nil) :: t()
   def field(variable, target \\ nil),
     do: %__MODULE__{kind: :field, value: variable, target: target}
 
+  @doc "Sets a server user option with an `@name` and a literal binary value."
+  @spec set_user_option(String.t(), binary()) :: t()
   def set_user_option(name, value),
     do: %__MODULE__{kind: :set_user_option, value: {name, value}}
 
+  @doc false
+  def prepare(%__MODULE__{} = request, instance) do
+    with {:ok, line} <- encode(request, instance),
+         {:ok, request} <- LibTmux.Control.OwnedTerm.copy(request, 20_000),
+         do: {:ok, request, line}
+  end
+
   # Rebuilt at both publication boundaries; a struct is not a lane certificate.
+  @doc false
   def encode(%__MODULE__{} = request, instance) do
     with :ok <- target(request, instance) do
       command =

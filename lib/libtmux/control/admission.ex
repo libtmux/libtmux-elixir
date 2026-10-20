@@ -41,6 +41,8 @@ defmodule LibTmux.Control.Admission do
     pool
   end
 
+  def validate(pool), do: with_table(pool, fn -> :ok end)
+
   @spec claim(t(), reference(), pid(), Deadline.t(), pos_integer(), keyword()) ::
           {:ok, Lease.t()} | {:error, Error.t()}
   def claim(pool, epoch, destination, deadline, bytes, options \\ [])
