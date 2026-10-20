@@ -1,7 +1,7 @@
 defmodule LibTmux.ControlGuardianIntegrationTest do
   use ExUnit.Case, async: true
   alias LibTmux.{Command, Deadline, Format, ProcessIdentity, Protocol, Server}
-  alias LibTmux.Control.{Admission, Bootstrap, Guardian, Lifetime}
+  alias LibTmux.Control.{Admission, Births, Bootstrap, Guardian, Lifetime}
   alias LibTmux.Test.OwnedTmux
   alias LibTmux.Transport.Native.Protocol, as: NativeProtocol
 
@@ -27,6 +27,7 @@ defmodule LibTmux.ControlGuardianIntegrationTest do
     epoch = make_ref()
     bootstrap_token = make_ref()
     deadline = Deadline.new(800)
+    births = Births.new(lifetime, generation, epoch, deadline)
 
     payload =
       NativeProtocol.process(executable, Bootstrap.arguments(server, "$0"), cwd: "/", env: %{})
@@ -35,6 +36,7 @@ defmodule LibTmux.ControlGuardianIntegrationTest do
       start_supervised!(
         {Guardian,
          manager: self(),
+         births: births,
          router: self(),
          epoch: epoch,
          lifetime: lifetime,
@@ -91,6 +93,7 @@ defmodule LibTmux.ControlGuardianIntegrationTest do
       assert :ok = Admission.release(pool, lease)
       assert state.bytes <= 65_536
     after
+      assert {:ok, %{guardian: ^guardian}} = Births.close(births)
       assert :ok = Lifetime.revoke(lifetime, generation)
       assert_receive {:guardian, ^epoch, ^guardian, {:closing, %{kind: :closure_requested}}}
       assert_receive {:guardian, ^epoch, ^guardian, {:retired, %{cleanup: :retired}}}, 800

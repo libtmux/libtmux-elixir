@@ -1,7 +1,18 @@
 defmodule LibTmux.ControlRouterIntegrationTest do
   use ExUnit.Case, async: true
   alias LibTmux.{Codec, Deadline, Server}
-  alias LibTmux.Control.{Admission, Bootstrap, Guardian, Lifetime, Records, Request, Router}
+
+  alias LibTmux.Control.{
+    Admission,
+    Births,
+    Bootstrap,
+    Guardian,
+    Lifetime,
+    Records,
+    Request,
+    Router
+  }
+
   alias LibTmux.Test.OwnedTmux
   alias LibTmux.Transport.Native.Protocol, as: NativeProtocol
 
@@ -21,11 +32,13 @@ defmodule LibTmux.ControlRouterIntegrationTest do
     epoch = make_ref()
     bootstrap = make_ref()
     deadline = Deadline.new(800)
+    births = Births.new(lifetime, generation, epoch, deadline)
 
     router =
       start_supervised!(
         {Router,
          manager: self(),
+         births: births,
          epoch: epoch,
          pool: pool,
          records: records.table,
@@ -40,6 +53,7 @@ defmodule LibTmux.ControlRouterIntegrationTest do
       start_supervised!(
         {Guardian,
          manager: self(),
+         births: births,
          router: router,
          epoch: epoch,
          lifetime: lifetime,
@@ -56,6 +70,7 @@ defmodule LibTmux.ControlRouterIntegrationTest do
 
     try do
       assert_receive {:router, ^epoch, ^router, {:ready, instance}}, 800
+      assert {:ok, %{roles: %{router: ^router, guardian: ^guardian}}} = Births.snapshot(births)
       value = String.duplicate("x", 6000) <> "é\n%end 17 2 1\n#{literal()}"
       write = submit(pool, epoch, router, instance, Request.set_user_option("@router", value))
       read = submit(pool, epoch, router, instance, Request.field("@router"))

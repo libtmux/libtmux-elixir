@@ -3,7 +3,7 @@ defmodule LibTmux.Control.Guardian do
   use GenServer, restart: :temporary, shutdown: 950
 
   alias LibTmux.{Command, Deadline, Error}
-  alias LibTmux.Control.{Admission, Lifetime}
+  alias LibTmux.Control.{Admission, Births, Lifetime}
   alias LibTmux.Transport.Native.{Driver, Protocol}
 
   @sweep_ms 25
@@ -13,6 +13,13 @@ defmodule LibTmux.Control.Guardian do
 
   @impl true
   def init(options) do
+    case Births.enter(options, :guardian) do
+      :ok -> init_epoch(options)
+      {:error, error} -> {:stop, error}
+    end
+  end
+
+  defp init_epoch(options) do
     Process.flag(:trap_exit, true)
     {driver, driver_options} = Keyword.get(options, :driver, {Driver, []})
     manager = Keyword.fetch!(options, :manager)
@@ -53,6 +60,27 @@ defmodule LibTmux.Control.Guardian do
       close_reason: nil
     }
 
+    cond do
+      Deadline.remaining(state.deadline) == 0 ->
+        reject_start(state, :timeout)
+
+      not Process.alive?(manager) or not Process.alive?(router) or
+          Lifetime.status(lifetime) != %{generation: generation, phase: :starting} ->
+        reject_start(state, :stale_epoch)
+
+      true ->
+        open_driver(state, driver_options, options)
+    end
+  end
+
+  defp reject_start(state, kind) do
+    Lifetime.abandon(state.lifetime, state.generation)
+    {:stop, %Error{kind: kind, phase: :connect, certainty: :no_write}}
+  end
+
+  defp open_driver(state, driver_options, options) do
+    driver = state.driver
+
     case driver.open(driver_options) do
       {:ok, handle} ->
         state = %{state | handle: handle}
@@ -64,7 +92,7 @@ defmodule LibTmux.Control.Guardian do
           else: {:ok, close(state, :port_busy)}
 
       {:error, _reason} ->
-        Lifetime.abandon(lifetime, generation)
+        Lifetime.abandon(state.lifetime, state.generation)
         {:stop, %Error{kind: :transport_unavailable, phase: :connect, certainty: :no_write}}
     end
   end

@@ -3,13 +3,20 @@ defmodule LibTmux.Control.Router do
   use GenServer, restart: :temporary, shutdown: 950
 
   alias LibTmux.{Deadline, Error, Protocol}
-  alias LibTmux.Control.{Admission, Bootstrap, Request}
+  alias LibTmux.Control.{Admission, Births, Bootstrap, Request}
   alias LibTmux.Operation.Lifecycle
 
   def start_link(options), do: GenServer.start_link(__MODULE__, options)
 
   @impl true
   def init(options) do
+    case Births.enter(options, :router) do
+      :ok -> init_epoch(options)
+      {:error, error} -> {:stop, error}
+    end
+  end
+
+  defp init_epoch(options) do
     manager = Keyword.fetch!(options, :manager)
     deadline = Keyword.fetch!(options, :deadline)
     Process.send_after(self(), :sweep, 25)

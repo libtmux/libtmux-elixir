@@ -159,6 +159,15 @@ exact old value, preserving any replacement already published in that slot.
 Logical finalization does not prove Guardian/helper cleanup or authorize a
 new epoch; Manager must separately establish complete resource retirement.
 
+Startup registration uses one fixed row for three epoch actor roles and its gate.
+Each actor records its own PID before side effects. Closing the gate captures
+all accepted PIDs in the same CAS; a queued late startup cannot be omitted
+between a separate read and close. Router and Guardian bind the supplied
+registration to their manager, epoch and original deadline. Guardian also
+rechecks actor aliveness and its starting lifetime before opening the driver.
+An accepted PID remains owned through actual exit: registration or a pre-open
+check can race later closure. Gate closure alone is not native retirement.
+
 These components do not pass connection-wide admission, retained outcome
 APIs, reconnect or authoritative subscription behavior. Those still need
 Manager integration and its fault contracts.
