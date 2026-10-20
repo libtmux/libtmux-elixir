@@ -1,4 +1,5 @@
 /_build
+/priv/native/
 /cover
 /deps
 **/_build/
@@ -8,6 +9,8 @@
 erl_crash.dump
 *.ez
 *.beam
+__pycache__/
+*.pyc
 /config/*.secret.exs
 .elixir_ls/
 /*.tar

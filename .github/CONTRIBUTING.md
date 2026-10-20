@@ -8,7 +8,9 @@ tests, packed-core import checks and owned real-tmux checks are available.
 
 Use mise with the ranges in [`.tool-versions`](../.tool-versions): Erlang/OTP
 `29.x` and Elixir `1.20.x`. The Mix project requires at least Elixir `1.20.4`.
-Install the toolchain before timing checks:
+Linux builds also require a C11 compiler and Linux headers for the owned
+I/O helper. No NIF or third-party runtime package is required. `CC` may name
+one compiler executable. Install prerequisites before timing checks:
 
 ```console
 $ mise install
@@ -102,6 +104,9 @@ them; the decoder handles one free-form field per response. It does not
 assume separator bytes cannot occur in values. The pure control
 parser enforces byte/event limits, but transport receive bounds and shared
 lane safety need separate qualification.
+
+The [ownership guide](../docs/ownership.md) describes the one-shot helper,
+resource ceilings and remaining distribution gates.
 
 These gates prove current foundations and fixture ownership. They do not
 establish a complete client API, installed adapter graphs or compatibility

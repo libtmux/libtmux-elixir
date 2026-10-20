@@ -88,10 +88,15 @@ Command acknowledgement does not prove external process completion.
 
 Bound parser carry, frames, queues, Port delivery, BEAM mailboxes, captures,
 stderr, pending calls and retained results together. A later bounded queue
-does not fix an upstream unbounded mailbox. The standard-library transport
-must qualify flood/slow-reader behavior, owner/VM death and descendant exit.
-A runtime dependency remains outside the core contract unless the user
-separately approves a measured critical exception.
+does not fix an upstream unbounded mailbox. The Linux one-shot transport
+uses an owned C helper with explicit read credits and process-tree
+retirement; ordinary Port busy limits do not bound inbound delivery.
+Mix builds the helper from shipped source, requiring a C11 compiler but no
+third-party runtime package or NIF. See [ownership](ownership.md) for
+per-call memory accounting, cleanup limits and pending escript distribution
+checks. Persistent connection admission and epoch ownership remain planned.
+A third-party runtime dependency remains outside the core contract unless
+the user separately approves a measured critical exception.
 
 ## Capture, filtering and observation
 

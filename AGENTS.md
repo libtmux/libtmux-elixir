@@ -2,8 +2,9 @@
 
 This is the Elixir libtmux implementation. Read [mix.exs](mix.exs), the
 current tree and [implementation contracts](docs/implementation.md) before
-editing. Public target/deadline, command/codec and parser foundations exist;
-the full tmux client and consumer packages are still under implementation.
+editing. Target/deadline, command/codec, parser and bounded Linux one-shot
+foundations exist. The domain client, persistent control and consumer
+packages are still under implementation.
 
 ## Which policy applies
 

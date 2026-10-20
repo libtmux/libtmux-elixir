@@ -2,11 +2,12 @@
 
 An Elixir library for controlling tmux, currently under implementation.
 The unpublished core provides exact target references, shared deadlines,
-command encoding and bounded protocol parsing.
+command encoding, bounded protocol parsing and a Linux one-shot transport.
 A tmux client API and supported release are still in development.
 
 [Contributing](.github/CONTRIBUTING.md) ·
 [Design](docs/design.md) · [Encoding](docs/encoding.md) ·
+[Ownership](docs/ownership.md) ·
 [Writing](.github/WRITING.md)
 
 ## Status and requirements
@@ -16,11 +17,12 @@ A tmux client API and supported release are still in development.
 | Mix application | `:libtmux`, version `0.1.0-dev`; unpublished |
 | Development toolchain | Elixir `1.20.x` (at least `1.20.4`) on Erlang/OTP `29.x` |
 | Planned tmux floor | `3.3`; fixture checks precede client compatibility qualification |
-| Runtime dependencies | No third-party dependencies |
+| Runtime dependencies | No third-party packages; own native I/O helper |
 | Platforms | No runtime support matrix has been qualified |
 
 [`.tool-versions`](.tool-versions) selects the development toolchain ranges
-for mise and CI. See [setup](.github/CONTRIBUTING.md#setup) for installation
+for mise and CI. Linux builds require a C11 compiler for the helper. See
+[setup](.github/CONTRIBUTING.md#setup) for installation
 and upgrades. tmux is not required for the pure checks. A future
 implementation will require an external tmux executable and its own
 compatibility evidence.

@@ -62,6 +62,21 @@ try do
       {:cwd, String.to_charlist(package)}
     ])
 
+  true = File.regular?(Path.join(package, "c_src/owned_io.c"))
+  false = File.exists?(Path.join(package, "priv/native"))
+
+  if :os.type() == {:unix, :linux} do
+    {missing_output, missing_status} =
+      System.cmd(mix, ["compile"],
+        cd: package,
+        env: [{"MIX_ENV", "prod"}, {"CC", "missing-libtmux-c-compiler"}],
+        stderr_to_stdout: true
+      )
+
+    true = missing_status != 0
+    true = String.contains?(missing_output, "requires a C11 compiler")
+  end
+
   {compile_output, 0} =
     System.cmd(mix, ["compile", "--warnings-as-errors"],
       cd: package,
@@ -88,6 +103,13 @@ try do
   {:ok, [{:reply, :ok, {1, 2, 1}, ["hello"]}], parser} =
     LibTmux.Protocol.feed(LibTmux.Protocol.new(), "%begin 1 2 1\nhello\n%end 1 2 1\n")
   :ok = LibTmux.Protocol.finish(parser)
+  if :os.type() == {:unix, :linux} do
+    {:ok, %{stdout: "packed\n", stderr: "", exit_status: 0, cleanup: :retired}} =
+      LibTmux.Transport.OneShot.run("/bin/echo", ["packed"])
+  else
+    {:error, %LibTmux.Error{kind: :unsupported_platform}} =
+      LibTmux.Transport.OneShot.run("/bin/echo", ["packed"])
+  end
   IO.puts("packed core consumer: ok")
   """
 
