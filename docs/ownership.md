@@ -143,10 +143,21 @@ word cannot regress when a delayed old close meets a replacement generation.
 Wake hints also coalesce across slot reuse; accounting sweeps never clear a
 hint that a paused publisher still owns.
 
-Inbox ceilings cover fixed metadata rows and serialized result size. They
-do not establish a bound on all retained BEAM binaries: a small subbinary can
-retain a larger parent. Integrated operation waiters must retain bounded
-record references and include result storage in connection-wide accounting.
+Inbox outcomes copy every binary leaf, including map keys. Copying charges
+bytes and nodes before allocation, caps depth at64 and nodes at8192, and
+rejects functions, ports and unqualified references. Known context references
+come from explicitly identified, separately bounded resources. Metadata keeps
+the default64 KiB outcome allowance; an independently configured Inbox may
+reserve1–128 KiB so a64 KiB reply plus its envelope fits. The1 KiB minimum
+covers fixed fallback errors. Copying shares the original deadline, checked
+again before result publication. These limits do
+not yet establish complete connection-wide heap/work accounting.
+
+The selected waiter design retains bounded outcome copies in receipt-controlled
+Inbox rows, superseding the earlier record-reference-only proposal. This avoids
+cross-table pin/reclamation races at the cost of separately charged copies.
+Manager must settle accepted waiters from the exact immutable terminal record
+before releasing it. Waiter integration and its race qualification are pending.
 
 The retained-record registry finalizes an epoch only after its exact Router
 PID has exited. It scans current admission leases, including a consumed

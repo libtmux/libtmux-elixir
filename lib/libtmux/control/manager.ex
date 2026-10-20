@@ -275,7 +275,7 @@ defmodule LibTmux.Control.Manager do
     if Deadline.remaining(state.deadline) > 0 and
          Lifetime.allows_write?(state.lifetime, state.generation) do
       state = %{state | phase: :ready, instance: instance}
-      Enum.each(state.waiting, &Inbox.finish(state.inbox, &1, {:ok, endpoint(state)}))
+      Enum.each(state.waiting, &connected(state, &1))
       %{state | waiting: []}
     else
       close(state, :timeout)
@@ -528,7 +528,7 @@ defmodule LibTmux.Control.Manager do
         state
 
       state.phase == :ready ->
-        Inbox.finish(state.inbox, ticket, {:ok, endpoint(state)})
+        connected(state, ticket)
         state
 
       state.phase == :starting ->
@@ -547,6 +547,18 @@ defmodule LibTmux.Control.Manager do
   defp fail_waiters(state, kind) do
     Enum.each(state.waiting, &Inbox.finish(state.inbox, &1, failure(kind)))
     %{state | waiting: []}
+  end
+
+  defp connected(state, ticket) do
+    Inbox.finish(state.inbox, ticket, {:ok, endpoint(state)},
+      references: [
+        state.epoch,
+        state.lifetime.word,
+        state.pool.table,
+        state.records.table,
+        state.births.table
+      ]
+    )
   end
 
   defp endpoint(state),

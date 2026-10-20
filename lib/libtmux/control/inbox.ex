@@ -2,6 +2,7 @@ defmodule LibTmux.Control.Inbox do
   @moduledoc false
   alias LibTmux.{Deadline, Error}
   alias LibTmux.Control.Admission.Lease
+  alias LibTmux.Control.OwnedTerm
   alias LibTmux.Transport.Reply
 
   defmodule Ticket do
@@ -10,18 +11,20 @@ defmodule LibTmux.Control.Inbox do
     defstruct @enforce_keys
   end
 
-  @enforce_keys [:table, :owner, :capacity, :kinds, :wake, :receipts]
+  @enforce_keys [:table, :owner, :capacity, :kinds, :wake, :receipts, :max_outcome_bytes]
   defstruct @enforce_keys
   @max_generation 18_446_744_073_709_551_615
   @max_wake 9_223_372_036_854_775_807
 
   def new(capacity, options) when is_integer(capacity) and capacity in 1..256 do
-    options = Keyword.validate!(options, [:kinds])
+    options = Keyword.validate!(options, [:kinds, max_outcome_bytes: 65_536])
     kinds = Keyword.fetch!(options, :kinds)
+    max_outcome_bytes = options[:max_outcome_bytes]
 
-    unless is_list(kinds) and length(kinds) in 1..3 and Enum.uniq(kinds) == kinds and
+    unless is_integer(max_outcome_bytes) and max_outcome_bytes in 1024..131_072 and
+             is_list(kinds) and length(kinds) in 1..3 and Enum.uniq(kinds) == kinds and
              Enum.all?(kinds, &(&1 in [:reconnect, :forget, :await])),
-           do: raise(ArgumentError, "inbox requires explicit metadata request kinds")
+           do: raise(ArgumentError, "inbox requires fixed kinds and 1024..131072 outcome bytes")
 
     table = :ets.new(__MODULE__, [:set, :public, read_concurrency: true, write_concurrency: true])
     :ets.insert(table, for(slot <- 1..capacity, do: {slot, free(0)}))
@@ -31,6 +34,7 @@ defmodule LibTmux.Control.Inbox do
       owner: self(),
       capacity: capacity,
       kinds: kinds,
+      max_outcome_bytes: max_outcome_bytes,
       wake: :atomics.new(1, signed: false),
       receipts: :atomics.new(capacity, signed: false)
     }
@@ -173,16 +177,22 @@ defmodule LibTmux.Control.Inbox do
     owned(inbox, fn ->
       with {:ok, data} <- fetch(inbox, ticket) do
         outcome =
-          cond do
-            :erlang.external_size(outcome) > 65_536 ->
-              {:error, failure(:resource_limit, :unknown)}
+          if Deadline.remaining(%Deadline{expires_at: data.expires_at}, options) == 0 do
+            {:error, failure(:timeout, :unknown)}
+          else
+            references =
+              [inbox.table, inbox.wake, inbox.receipts | Keyword.get(options, :references, [])]
 
-            Deadline.remaining(%Deadline{expires_at: data.expires_at}, options) == 0 ->
-              {:error, failure(:timeout, :unknown)}
-
-            true ->
-              outcome
+            case OwnedTerm.copy(outcome, inbox.max_outcome_bytes, references) do
+              {:ok, copy} -> copy
+              {:error, kind} -> {:error, failure(kind, :unknown)}
+            end
           end
+
+        outcome =
+          if Deadline.remaining(%Deadline{expires_at: data.expires_at}, options) == 0,
+            do: {:error, failure(:timeout, :unknown)},
+            else: outcome
 
         complete(inbox, ticket, outcome, 2)
       end

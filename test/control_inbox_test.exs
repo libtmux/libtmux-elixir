@@ -3,6 +3,101 @@ defmodule LibTmux.ControlInboxTest do
   alias LibTmux.{Deadline, Error}
   alias LibTmux.Control.Inbox
 
+  test "retained results copy binary leaves without losing reference identity" do
+    inbox = Inbox.new(1, kinds: [:reconnect])
+    ticket = publish(inbox)
+    assert {:ok, [{^ticket, _}]} = Inbox.take(inbox, now: 1)
+    parent = :binary.copy("x", 1_048_576)
+    slice = binary_part(parent, 32_768, 4096)
+    assert :binary.referenced_byte_size(slice) == byte_size(parent)
+    resource = inbox.wake
+    :atomics.put(resource, 1, 7)
+
+    assert :ok =
+             Inbox.finish(inbox, ticket, {:ok, %{values: [slice, {slice}], resource: resource}},
+               now: 2
+             )
+
+    assert {:ok, {:ok, %{values: [first, {second}], resource: ^resource}}} =
+             Inbox.result(inbox, ticket)
+
+    assert first == slice and second == slice
+    assert :binary.referenced_byte_size(first) == byte_size(first)
+    assert :binary.referenced_byte_size(second) == byte_size(second)
+    assert :atomics.get(resource, 1) == 7
+    assert :ok = Inbox.close(inbox, ticket)
+  end
+
+  test "retained results reject executable and overly nested values" do
+    inbox = Inbox.new(1, kinds: [:reconnect])
+
+    for value <- [
+          fn -> :not_data end,
+          :atomics.new(1024, []),
+          Enum.reduce(1..65, 0, fn _, value -> {value} end)
+        ] do
+      ticket = publish(inbox)
+      assert {:ok, [{^ticket, _}]} = Inbox.take(inbox, now: 1)
+      assert :ok = Inbox.finish(inbox, ticket, {:ok, value}, now: 2)
+
+      assert {:ok, {:error, %Error{kind: kind}}} = Inbox.result(inbox, ticket)
+      assert kind in [:invalid_outcome, :resource_limit]
+      assert :ok = Inbox.close(inbox, ticket)
+      assert {:ok, 1} = Inbox.reap(inbox)
+    end
+  end
+
+  test "a separately bounded envelope retains every admitted reply byte and binary map key" do
+    inbox = Inbox.new(1, kinds: [:reconnect], max_outcome_bytes: 131_072)
+    ticket = publish(inbox)
+    assert {:ok, [{^ticket, _}]} = Inbox.take(inbox, now: 1)
+    parent = :binary.copy("k", 1_048_576)
+    key = binary_part(parent, 100, 4096)
+
+    outcome =
+      {:ok,
+       %{
+         key => true,
+         outcome: :completed,
+         certainty: :acknowledged,
+         evidence: :command_reply,
+         guard: {1, 4, 1},
+         lines: List.duplicate(:binary.copy("x", 64), 1024)
+       }}
+
+    assert :erlang.external_size(outcome) > 65_536
+    assert :ok = Inbox.finish(inbox, ticket, outcome, now: 2)
+    assert {:ok, ^outcome} = Inbox.result(inbox, ticket)
+    assert {:ok, {:ok, copied}} = Inbox.result(inbox, ticket)
+    stored_key = Enum.find(Map.keys(copied), &is_binary/1)
+    assert :binary.referenced_byte_size(stored_key) == byte_size(stored_key)
+    assert :ok = Inbox.close(inbox, ticket)
+    assert {:ok, 1} = Inbox.reap(inbox)
+
+    for oversized <- [:binary.copy("x", 131_073), Enum.to_list(1..8192)] do
+      ticket = publish(inbox)
+      assert {:ok, [{^ticket, _}]} = Inbox.take(inbox, now: 1)
+      assert :ok = Inbox.finish(inbox, ticket, oversized, now: 2)
+      assert {:ok, {:error, %Error{kind: :resource_limit}}} = Inbox.result(inbox, ticket)
+      assert :ok = Inbox.close(inbox, ticket)
+      assert {:ok, 1} = Inbox.reap(inbox)
+    end
+  end
+
+  test "the minimum outcome allowance covers its fixed error envelope" do
+    assert_raise ArgumentError, fn ->
+      Inbox.new(1, kinds: [:reconnect], max_outcome_bytes: 1)
+    end
+
+    inbox = Inbox.new(1, kinds: [:reconnect], max_outcome_bytes: 1024)
+    ticket = publish(inbox)
+    assert {:ok, [{^ticket, _}]} = Inbox.take(inbox, now: 1)
+    assert :ok = Inbox.finish(inbox, ticket, :binary.copy("x", 4096), now: 2)
+    assert {:ok, {:error, %Error{kind: :resource_limit}} = outcome} = Inbox.result(inbox, ticket)
+    assert :erlang.external_size(outcome) <= inbox.max_outcome_bytes
+    assert :ok = Inbox.close(inbox, ticket)
+  end
+
   test "a paused recipient retains capacity until it closes its alias and acknowledges receipt" do
     inbox = Inbox.new(1, kinds: [:reconnect])
     parent = self()
