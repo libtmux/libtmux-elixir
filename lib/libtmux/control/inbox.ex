@@ -118,6 +118,8 @@ defmodule LibTmux.Control.Inbox do
     end
   end
 
+  def validate(inbox), do: with_table(inbox, fn -> :ok end)
+
   def reserve_wake(inbox) do
     with_table(inbox, fn ->
       word = :atomics.get(inbox.wake, 1)

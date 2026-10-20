@@ -167,7 +167,18 @@ waiter copy survives record reclamation and epoch replacement until receipt.
 Lost waiter storage closes an active epoch and blocks this Manager's reuse.
 If native retirement was already proved, that lifetime remains retired;
 the Manager's fault does not erase cleanup knowledge or preserve lost tables
-across its replacement. Public waiter result mapping remains pending.
+across its replacement.
+
+`LibTmux.Operation` pins its original record, lease and Inboxes. Retained
+status and result reads are local. Each await claims a bounded independent
+slot and releases its exact alias and monitor on return; timeout does not
+stop the operation. Metadata admission errors cannot label existing effects
+as unwritten. Canonical failed, skipped and unknown outcomes remain values,
+including in bang functions. Forget uses the original lease epoch after
+reconnect. Stop validates the authoritative Births owner, epoch and Router
+before revoking its generation through reserved capacity; an already-retired
+record needs no surviving Births table. Stop closes the whole epoch and may
+affect siblings. It is a request, never rollback or native retirement proof.
 
 The retained-record registry finalizes an epoch only after its exact Router
 PID has exited. It scans current admission leases, including a consumed
@@ -215,6 +226,6 @@ shared unknown/unretired lifetime prevents a replacement helper in that case.
 An unsuccessful descriptor handoff after root startup kills the known root
 and reports cleanup uncertainty, even after observing root exit.
 
-Public bounded connection startup, retained outcome APIs,
+Public bounded connection startup and operation creation,
 connection-wide accounting and authoritative subscriptions remain under
 implementation. These component checks do not qualify those contracts.

@@ -1,6 +1,6 @@
 defmodule LibTmux.ControlManagerIntegrationTest do
   use ExUnit.Case, async: true
-  alias LibTmux.{Deadline, Server}
+  alias LibTmux.{Deadline, Operation, Server}
 
   alias LibTmux.Control.{
     Admission,
@@ -42,7 +42,7 @@ defmodule LibTmux.ControlManagerIntegrationTest do
           payload: payload,
           capacity: 2,
           metadata_capacity: 4,
-          waiter_capacity: 1
+          waiter_capacity: 2
         )
       )
 
@@ -50,7 +50,8 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     manager = starting.manager
     first = connect(starting)
     assert first.phase == :ready
-    {lease, waiting, outcome} = operation(first)
+    {operation, lease, waiting, outcome} = operation(first)
+    assert {:ok, ^outcome} = Operation.await(operation, timeout: 800)
 
     assert {"1\n", 0} =
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
@@ -63,15 +64,10 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     assert second.instance == first.instance
     exited(old)
     assert {:ok, %{life: %{result: ^outcome}}} = Records.fetch(second.records, lease)
-
-    {:ok, forgetting} =
-      Inbox.publish(second.inbox, lease.epoch, Deadline.new(800), {:forget, lease})
-
-    :ok = Inbox.notify(second.inbox)
-    token = forgetting.token
-    assert_receive {^token, :ready}, 850
-    assert {:ok, :ok} = Inbox.result(second.inbox, forgetting)
-    assert :ok = Inbox.close(second.inbox, forgetting)
+    assert {:ok, ^outcome} = Operation.result(operation)
+    assert :ok = Operation.stop(operation)
+    assert Lifetime.allows_write?(lifetime, second.generation)
+    assert :ok = Operation.forget(operation, timeout: 800)
     assert {:error, %{kind: :stale_operation}} = Records.fetch(second.records, lease)
     assert {:ok, {:ok, ^outcome}} = Inbox.result(second.waiter_inbox, waiting)
     assert :ok = Inbox.close(second.waiter_inbox, waiting)
@@ -80,8 +76,12 @@ defmodule LibTmux.ControlManagerIntegrationTest do
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
 
     current = monitor_actors(second)
-    :ok = Lifetime.revoke(lifetime, second.generation)
+    {stopping, _lease, _unpublished} = admit(second)
+    assert :ok = Operation.stop(stopping)
     exited(current)
+
+    assert {:ok, %{outcome: :skipped, certainty: :no_write}} =
+             Operation.await(stopping, timeout: 800)
 
     assert {"0\n", 0} =
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
@@ -106,17 +106,7 @@ defmodule LibTmux.ControlManagerIntegrationTest do
   end
 
   defp operation(endpoint) do
-    request = Request.field("pid")
-    {:ok, line} = Request.encode(request, endpoint.instance)
-
-    {:ok, lease} =
-      Admission.claim(
-        endpoint.pool,
-        endpoint.epoch,
-        endpoint.router,
-        Deadline.new(800),
-        byte_size(line)
-      )
+    {operation, lease, request} = admit(endpoint)
 
     {:ok, ticket} =
       Inbox.publish(endpoint.waiter_inbox, endpoint.epoch, Deadline.new(800), {:await, lease})
@@ -129,7 +119,23 @@ defmodule LibTmux.ControlManagerIntegrationTest do
     assert {:ok, {:ok, %{outcome: :completed, certainty: :acknowledged} = outcome}} =
              Inbox.result(endpoint.waiter_inbox, ticket)
 
-    {lease, ticket, outcome}
+    {operation, lease, ticket, outcome}
+  end
+
+  defp admit(endpoint) do
+    request = Request.field("pid")
+    {:ok, line} = Request.encode(request, endpoint.instance)
+
+    {:ok, lease} =
+      Admission.claim(
+        endpoint.pool,
+        endpoint.epoch,
+        endpoint.router,
+        Deadline.new(800),
+        byte_size(line)
+      )
+
+    {Operation.new(endpoint, lease), lease, request}
   end
 
   defp monitor_actors(endpoint) do
