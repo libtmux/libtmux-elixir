@@ -1,7 +1,7 @@
 defmodule LibTmux.ControlRouterIntegrationTest do
   use ExUnit.Case, async: true
   alias LibTmux.{Codec, Deadline, Server}
-  alias LibTmux.Control.{Admission, Bootstrap, Guardian, Lifetime, Request, Router}
+  alias LibTmux.Control.{Admission, Bootstrap, Guardian, Lifetime, Records, Request, Router}
   alias LibTmux.Test.OwnedTmux
   alias LibTmux.Transport.Native.Protocol, as: NativeProtocol
 
@@ -17,8 +17,7 @@ defmodule LibTmux.ControlRouterIntegrationTest do
     lifetime = Lifetime.new()
     {:ok, generation} = Lifetime.begin_epoch(lifetime)
     pool = Admission.new(2)
-    records = :ets.new(:records, [:set, :public])
-    :ets.insert(records, [{1, nil}, {2, nil}])
+    records = Records.new(pool)
     epoch = make_ref()
     bootstrap = make_ref()
     deadline = Deadline.new(800)
@@ -29,7 +28,7 @@ defmodule LibTmux.ControlRouterIntegrationTest do
          manager: self(),
          epoch: epoch,
          pool: pool,
-         records: records,
+         records: records.table,
          bootstrap: bootstrap,
          deadline: deadline}
       )
@@ -63,25 +62,21 @@ defmodule LibTmux.ControlRouterIntegrationTest do
       assert_receive {:router, ^epoch, ^router, {:settled, ^write}}, 800
       assert_receive {:router, ^epoch, ^router, {:settled, ^read}}, 800
 
-      assert [
-               {_,
-                %{
-                  lease: ^write,
-                  life: %{wire: :retired, result: %{outcome: :completed, lines: []}}
-                }}
-             ] = :ets.lookup(records, write.slot)
+      assert {:ok,
+              %{
+                lease: ^write,
+                life: %{wire: :retired, result: %{outcome: :completed, lines: []}}
+              }} = Records.fetch(records, write)
 
-      assert [
-               {_,
-                %{
-                  lease: ^read,
-                  life: %{wire: :retired, result: %{outcome: :completed, lines: [encoded]}}
-                }}
-             ] = :ets.lookup(records, read.slot)
+      assert {:ok,
+              %{
+                lease: ^read,
+                life: %{wire: :retired, result: %{outcome: :completed, lines: [encoded]}}
+              }} = Records.fetch(records, read)
 
       assert {:ok, ^value} = Codec.decode_field(encoded <> "\n", :bytes, encoding: :escaped_v1)
-      assert :ok = Admission.release(pool, write)
-      assert :ok = Admission.release(pool, read)
+      assert :ok = Records.forget(records, write)
+      assert :ok = Records.forget(records, read)
     after
       send(guardian, {:close, self(), epoch, :test_close})
       assert_receive {:guardian, ^epoch, ^guardian, {:closing, _error}}

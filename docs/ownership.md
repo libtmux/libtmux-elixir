@@ -148,6 +148,17 @@ do not establish a bound on all retained BEAM binaries: a small subbinary can
 retain a larger parent. Integrated operation waiters must retain bounded
 record references and include result storage in connection-wide accounting.
 
+The retained-record registry finalizes an epoch only after its exact Router
+PID has exited. It scans current admission leases, including a consumed
+lease whose Router died before storing its first record. Router stores its
+record and writing phase before sending, so an absent matching record proves
+no write under that ordering. Existing acknowledged results remain intact;
+dispatched work without evidence remains unknown. These outcomes retain
+their slots until explicit release. Clearing a released record uses its
+exact old value, preserving any replacement already published in that slot.
+Logical finalization does not prove Guardian/helper cleanup or authorize a
+new epoch; Manager must separately establish complete resource retirement.
+
 These components do not pass connection-wide admission, retained outcome
 APIs, reconnect or authoritative subscription behavior. Those still need
 Manager integration and its fault contracts.

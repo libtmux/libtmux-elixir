@@ -121,6 +121,31 @@ defmodule LibTmux.Control.Admission do
     end)
   end
 
+  def state(%__MODULE__{} = pool, %Lease{} = lease) do
+    with_table(pool, fn ->
+      reserved = row(lease, :reserved)
+      consumed = row(lease, :consumed)
+
+      case :ets.lookup(pool.table, lease.slot) do
+        [entry] when lease.table == pool.table and entry === reserved -> {:ok, :reserved}
+        [entry] when lease.table == pool.table and entry === consumed -> {:ok, :consumed}
+        _ -> rejected(:stale_lease)
+      end
+    end)
+  end
+
+  def entries(%__MODULE__{} = pool) do
+    owned(pool, fn ->
+      entries =
+        for {_slot, _generation, state, _epoch, _destination, _publisher, _expires, _bytes} =
+              entry <- :ets.tab2list(pool.table),
+            state in [:reserved, :consumed],
+            do: {state, lease(pool, entry)}
+
+      {:ok, Enum.sort_by(entries, fn {_state, lease} -> lease.slot end)}
+    end)
+  end
+
   # Only the Manager releases consumed capacity after logical/wire/retention rules.
   # An expired or dead publisher does not prove that its publication is absent.
   def release(%__MODULE__{} = pool, %Lease{} = lease) do
@@ -132,9 +157,16 @@ defmodule LibTmux.Control.Admission do
         consumed = row(lease, :consumed)
 
         case :ets.lookup(pool.table, lease.slot) do
-          [^reserved] -> rejected(:unconsumed_lease)
-          [^consumed] -> replace(pool, consumed, free(lease.slot, lease.generation))
-          _ -> rejected(:stale_lease)
+          [^reserved] ->
+            if Process.alive?(lease.destination),
+              do: rejected(:unconsumed_lease),
+              else: replace(pool, reserved, free(lease.slot, lease.generation))
+
+          [^consumed] ->
+            replace(pool, consumed, free(lease.slot, lease.generation))
+
+          _ ->
+            rejected(:stale_lease)
         end
       end
     end)
