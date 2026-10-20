@@ -4,7 +4,7 @@
 Linux without a shell. It returns bytes, process exit status and cleanup
 evidence separately. A nonzero process exit is still a completed transport
 result; the tmux command layer must interpret that status. The domain
-client and persistent transport remain planned.
+client and public persistent transport remain under implementation.
 
 The native helper supplies receive credits that an ordinary OTP Port
 lacks. It reads each stdout/stderr pipe only against one bounded credit;
@@ -76,3 +76,38 @@ Packed-core checks must compile and execute outside the checkout.
 Workspace/MCP escript extraction and helper discovery still need their
 installed-consumer checks; the current path expects an unpacked application
 `priv` directory. Other platforms remain unqualified.
+
+## Persistent connection components
+
+The internal Guardian owns one native helper and monitors its Manager and
+router independently. It grants one stdout credit only after router demand,
+caps stderr at 8 KiB and 64 chunks, and acknowledges one write fragment at a
+time. A fragment fits 8 KiB; a complete rendered command fits 64 KiB. The
+writer rechecks the consumed publication lease, original deadline and epoch.
+A partial line keeps its writer until the newline is acknowledged or the
+epoch closes. Completed slots retain their generation to reject replay.
+
+Deadline accounting uses one 25 ms timer, rescheduled only after consumption.
+Busy delivery closes the epoch instead of suspending the owner or retrying.
+Retirement needs native terminal proof, its acknowledgement and actual helper
+exit; missing proof or Manager loss leaves the shared lifetime unclean.
+Supervisor shutdown without those proofs also leaves it unclean.
+
+Startup uses `attach-session -E` to preserve the borrowed session environment.
+Attachment still changes client counts and session activity. After reading
+the server PID and Linux process identity, a fresh same-connection challenge
+must return the exact nonce/PID and receive a complete native write
+acknowledgement before activation. It shares the original startup deadline.
+The server and inspected `/proc` must share a PID namespace.
+
+This requires host authority for completed, clean configuration throughout
+the epoch: no aliases overriding admitted command names, no executable
+effective hooks, and no unqualified messages or subscriptions that can write
+to the control stream. Other clients can inject multiline text through
+client-directed messages; parser limits cannot authenticate such output.
+Absence of a configuration-error notification cannot certify configuration.
+The library never silently disables hooks or changes configuration.
+
+Guardian and bootstrap qualification does not pass connection-wide admission,
+retained outcomes, reconnect, FIFO or authoritative subscription behavior.
+Those need the Manager/router integration and its fault contracts.

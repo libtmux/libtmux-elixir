@@ -105,6 +105,18 @@ defmodule LibTmux.Control.Admission do
     end
   end
 
+  # The final writer rechecks the exact consumed generation immediately before I/O.
+  def verify_consumed(%__MODULE__{} = pool, %Lease{} = lease) do
+    with_table(pool, fn ->
+      expected = row(lease, :consumed)
+
+      case :ets.lookup(pool.table, lease.slot) do
+        [entry] when lease.table == pool.table and entry === expected -> :ok
+        _ -> rejected(:stale_lease)
+      end
+    end)
+  end
+
   # Only the Manager releases consumed capacity after logical/wire/retention rules.
   # An expired or dead publisher does not prove that its publication is absent.
   def release(%__MODULE__{} = pool, %Lease{} = lease) do

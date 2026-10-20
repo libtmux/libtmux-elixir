@@ -274,27 +274,13 @@ defmodule LibTmux.Capture do
 
     case Codec.decode_field(output, :integer, min: 1, max: 2_147_483_647) do
       {:ok, pid} ->
-        case process_identity(pid) do
+        case LibTmux.ProcessIdentity.read(pid) do
           {:ok, token} -> {token, state}
-          :error -> stop(state, :identity_unavailable)
+          {:error, _error} -> stop(state, :identity_unavailable)
         end
 
       {:error, error} ->
         throw({:capture_error, error, state})
-    end
-  end
-
-  defp process_identity(pid) do
-    with {:ok, stat} <- File.read("/proc/#{pid}/stat"),
-         {:ok, boot} <- File.read("/proc/sys/kernel/random/boot_id"),
-         {offset, 1} <- List.last(:binary.matches(stat, ")")),
-         fields <- stat |> binary_part(offset + 1, byte_size(stat) - offset - 1) |> String.split(),
-         value when is_binary(value) <- Enum.at(fields, 19),
-         {ticks, ""} <- Integer.parse(value),
-         true <- ticks > 0 do
-      {:ok, "linux:#{String.trim(boot)}:#{pid}:#{ticks}"}
-    else
-      _ -> :error
     end
   end
 

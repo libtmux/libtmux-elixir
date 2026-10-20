@@ -25,6 +25,7 @@ defmodule LibTmux.ControlCodecIntegrationTest do
       "-S",
       socket,
       "attach-session",
+      "-E",
       "-t",
       "$0",
       "-f",
