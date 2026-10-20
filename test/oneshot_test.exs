@@ -55,20 +55,30 @@ defmodule LibTmux.OneShotTest do
   end
 
   test "one deadline returns partial bytes without treating them as success" do
-    assert {:error, error} =
-             OneShot.run(
-               "/usr/bin/python3",
-               [
-                 "-c",
-                 "import os,signal;os.write(1,b'ready');signal.pause()"
-               ],
-               timeout: 150
-             )
+    root =
+      Path.join(
+        System.tmp_dir!(),
+        "ltx-timeout-#{System.pid()}-#{System.unique_integer([:positive])}"
+      )
 
-    assert error.kind == :timeout
-    assert error.certainty == :unknown
-    assert error.details.stdout == "ready"
-    assert error.details.cleanup == :retired
+    File.mkdir!(root)
+    on_exit(fn -> File.rm_rf!(root) end)
+    fifo = Path.join(root, "gate")
+    {"", 0} = System.cmd(System.find_executable("mkfifo"), [fifo])
+
+    assert {:error,
+            %{
+              kind: :timeout,
+              phase: :capture,
+              certainty: :unknown,
+              details: %{stdout: "ready", cleanup: :retired}
+            }} =
+             OneShot.run(
+               "/bin/sh",
+               ["-c", ~S(printf ready; exec /bin/cat < "$1"), "fixture", fifo],
+               timeout: 150,
+               env: %{}
+             )
   end
 
   test "failed exec proves that the selected program did not start" do
