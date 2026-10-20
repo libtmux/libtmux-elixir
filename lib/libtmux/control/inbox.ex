@@ -153,11 +153,25 @@ defmodule LibTmux.Control.Inbox do
             {:ok, ticket, data} ->
               cond do
                 receiver_closed?(inbox, slot, data) ->
-                  :ok = complete(inbox, ticket, {:error, failure(:cancelled, :no_write)}, 2)
+                  :ok =
+                    complete(
+                      inbox,
+                      ticket,
+                      {:error, failure(:cancelled, pending_certainty(data))},
+                      2
+                    )
+
                   []
 
                 Deadline.remaining(%Deadline{expires_at: data.expires_at}, options) == 0 ->
-                  :ok = complete(inbox, ticket, {:error, failure(:timeout, :no_write)}, 2)
+                  :ok =
+                    complete(
+                      inbox,
+                      ticket,
+                      {:error, failure(:timeout, pending_certainty(data))},
+                      2
+                    )
+
                   []
 
                 true ->
@@ -185,7 +199,7 @@ defmodule LibTmux.Control.Inbox do
 
             case OwnedTerm.copy(outcome, inbox.max_outcome_bytes, references) do
               {:ok, copy} -> copy
-              {:error, kind} -> {:error, failure(kind, :unknown)}
+              {:error, kind} -> {:error, failure(kind, known_certainty(outcome))}
             end
           end
 
@@ -208,6 +222,13 @@ defmodule LibTmux.Control.Inbox do
         false -> rejected(:wrong_receiver)
         error -> error
       end
+    end)
+  end
+
+  def closed?(inbox, %Ticket{} = ticket) do
+    owned(inbox, fn ->
+      with {:ok, data} <- fetch(inbox, ticket),
+           do: {:ok, receiver_closed?(inbox, ticket.slot, data)}
     end)
   end
 
@@ -355,6 +376,15 @@ defmodule LibTmux.Control.Inbox do
   end
 
   defp valid_request?(_inbox, _request), do: false
+
+  defp pending_certainty(%{request: {:await, _lease}}), do: :unknown
+  defp pending_certainty(_data), do: :no_write
+
+  defp known_certainty({tag, %{certainty: certainty}})
+       when tag in [:ok, :error] and certainty in [:no_write, :acknowledged, :observed, :unknown],
+       do: certainty
+
+  defp known_certainty(_outcome), do: :unknown
   defp local_ref?(value), do: is_reference(value) and node(value) == node()
 
   defp owned(inbox, action),

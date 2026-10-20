@@ -96,6 +96,23 @@ defmodule LibTmux.ControlInboxTest do
     assert {:ok, {:error, %Error{kind: :resource_limit}} = outcome} = Inbox.result(inbox, ticket)
     assert :erlang.external_size(outcome) <= inbox.max_outcome_bytes
     assert :ok = Inbox.close(inbox, ticket)
+    assert {:ok, 1} = Inbox.reap(inbox)
+    ticket = publish(inbox)
+    assert {:ok, [{^ticket, _}]} = Inbox.take(inbox, now: 1)
+
+    assert :ok =
+             Inbox.finish(
+               inbox,
+               ticket,
+               {:ok,
+                %{outcome: :completed, certainty: :acknowledged, lines: [:binary.copy("x", 4096)]}},
+               now: 2
+             )
+
+    assert {:ok, {:error, %Error{kind: :resource_limit, certainty: :acknowledged}}} =
+             Inbox.result(inbox, ticket)
+
+    assert :ok = Inbox.close(inbox, ticket)
   end
 
   test "a paused recipient retains capacity until it closes its alias and acknowledges receipt" do

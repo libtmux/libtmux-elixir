@@ -156,8 +156,11 @@ not yet establish complete connection-wide heap/work accounting.
 The selected waiter design retains bounded outcome copies in receipt-controlled
 Inbox rows, superseding the earlier record-reference-only proposal. This avoids
 cross-table pin/reclamation races at the cost of separately charged copies.
-Manager must settle accepted waiters from the exact immutable terminal record
-before releasing it. Waiter integration and its race qualification are pending.
+The internal waiter owner settles accepted requests from the exact immutable
+terminal record before releasing it. A prior pending read cannot justify
+forgetting a later completed record. Closed or expired waiters affect no
+operation state; pre-acceptance await failures retain unknown effect certainty.
+Manager integration and public waiter result mapping remain pending.
 
 The retained-record registry finalizes an epoch only after its exact Router
 PID has exited. It scans current admission leases, including a consumed
