@@ -46,16 +46,16 @@ def watch(pids):
     poller = select.poll()
     for fd in fds:
         poller.register(fd, select.POLLIN)
-    emit({"kind": "watching"})
     pending = set(fds)
     deadline = time.monotonic() + 0.75
+    emit({"kind": "watching"})
     try:
         while pending and (remaining := deadline - time.monotonic()) > 0:
             for fd, _ in poller.poll(max(1, int(remaining * 1000))):
                 pending.remove(fd)
                 poller.unregister(fd)
-        if pending:
-            raise TimeoutError("owned fixture processes remained alive")
+        if pending or time.monotonic() > deadline:
+            raise TimeoutError("owned process exit was not observed before its deadline")
         emit({"kind": "exited"})
     finally:
         for fd in fds:
@@ -166,6 +166,10 @@ def serve(executable):
                     return
                 if request["op"] == "attach":
                     emit(attach())
+                    continue
+                if request["op"] == "alive":
+                    emit({"kind": "alive", "server": not exited(server_fd, 0),
+                          "pane": not exited(pane_fd, 0)})
                     continue
                 if request["op"] != "command":
                     raise ValueError("unknown fixture request")

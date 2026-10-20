@@ -7,21 +7,20 @@ defmodule LibTmux.Test.OwnedTmux do
   def command(fixture, argv), do: GenServer.call(fixture, {:command, argv})
   def attach(fixture), do: GenServer.call(fixture, :attach)
   def close(fixture), do: GenServer.call(fixture, :close)
+  def alive?(fixture), do: GenServer.call(fixture, :alive)
 
   def watch_exit(info) do
+    watch_processes([info.server_pid, info.pane_pid, info.helper_pid])
+  end
+
+  def watch_processes(pids) when is_list(pids) and pids != [] do
     port =
       Port.open({:spawn_executable, System.find_executable("python3")}, [
         :binary,
         :exit_status,
         {:line, 65_536},
         {:args,
-         [
-           Path.join(__DIR__, "owned_tmux.py"),
-           "--watch",
-           Integer.to_string(info.server_pid),
-           Integer.to_string(info.pane_pid),
-           Integer.to_string(info.helper_pid)
-         ]}
+         [Path.join(__DIR__, "owned_tmux.py"), "--watch" | Enum.map(pids, &Integer.to_string/1)]}
       ])
 
     %{"kind" => "watching"} = receive_json(port)
@@ -83,6 +82,13 @@ defmodule LibTmux.Test.OwnedTmux do
   def handle_call(:attach, _from, %{closed: nil} = state) do
     %{"kind" => "attached", "pid" => pid} = request(state.port, %{op: "attach"})
     {:reply, %{pid: pid}, state}
+  end
+
+  def handle_call(:alive, _from, %{closed: nil} = state) do
+    %{"kind" => "alive", "server" => server, "pane" => pane} =
+      request(state.port, %{op: "alive"})
+
+    {:reply, server and pane, state}
   end
 
   def handle_call(:close, _from, %{closed: nil} = state) do
