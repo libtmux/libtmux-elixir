@@ -1,5 +1,5 @@
 defmodule LibTmux.NativeOwnershipTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias LibTmux.Transport.Native
 
