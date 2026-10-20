@@ -29,7 +29,7 @@ defmodule LibTmux.ControlWaitersTest do
     assert map_size(waiters.active) == 1
     terminal = complete(record)
     :ets.insert(records.table, {lease.slot, terminal})
-    {waiters, :ok} = Waiters.forget(waiters, lease, now: 2)
+    {waiters, :ok} = Waiters.forget_current(waiters, lease, now: 2)
     assert waiters.active == %{}
     replacement = claim(records.pool, lease.epoch)
     assert replacement.slot == lease.slot and replacement.generation > lease.generation
@@ -98,8 +98,49 @@ defmodule LibTmux.ControlWaitersTest do
     terminal = complete(record)
     :ets.insert(records.table, {lease.slot, terminal})
     :ets.delete(waiters.inbox.table)
-    {_waiters, {:error, %Error{kind: :connection_lost}}} = Waiters.forget(waiters, lease, now: 5)
+
+    {_waiters, {:error, %Error{kind: :connection_lost}}} =
+      Waiters.forget_current(waiters, lease, now: 5)
+
     assert {:ok, ^terminal} = Records.fetch(records, lease)
+  end
+
+  test "forget after an owner pass respects later cancellation, expiry and storage loss" do
+    for mode <- [:closed, :expired, :lost] do
+      {records, lease, record} = operation()
+      waiters = Waiters.new(records, 1)
+      ticket = await_ticket(waiters, lease, 3)
+      waiters = Waiters.turn(waiters, now: 1)
+      terminal = complete(record)
+      :ets.insert(records.table, {lease.slot, terminal})
+
+      case mode do
+        :lost ->
+          :ok = Inbox.close(waiters.inbox, ticket)
+          waiters = Waiters.turn(waiters, now: 2)
+          assert waiters.active == %{}
+          :ets.delete(waiters.inbox.table)
+
+          {_waiters, {:error, %Error{kind: :connection_lost}}} =
+            Waiters.forget_current(waiters, lease, now: 2)
+
+          assert {:ok, ^terminal} = Records.fetch(records, lease)
+
+        _ ->
+          if mode == :closed, do: Inbox.close(waiters.inbox, ticket)
+
+          {waiters, :ok} =
+            Waiters.forget_current(waiters, lease, now: if(mode == :expired, do: 4, else: 2))
+
+          assert waiters.active == %{}
+          expected = if mode == :closed, do: :cancelled, else: :timeout
+
+          assert {:ok, {:error, %Error{kind: ^expected, certainty: :unknown}}} =
+                   Inbox.result(waiters.inbox, ticket)
+
+          assert :ok = Inbox.close(waiters.inbox, ticket)
+      end
+    end
   end
 
   test "expiry or receipt closure before acceptance does not claim the target was unwritten" do

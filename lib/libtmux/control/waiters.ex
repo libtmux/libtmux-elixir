@@ -37,30 +37,42 @@ defmodule LibTmux.Control.Waiters do
   end
 
   def forget(state, lease, options \\ []) do
-    state = turn(state, options)
+    state |> turn(options) |> forget_current(lease, options)
+  end
 
-    if state.fault do
-      {state, {:error, state.fault}}
-    else
-      case Records.fetch(state.records, lease) do
-        {:ok, record} ->
-          # This exact retired result is immutable. A prior pending sweep is not.
-          if Lifecycle.wire_retired?(record.life) do
-            state = settle(state, lease, record.life.result, options)
+  # Manager already serviced the Inbox once for this owner pass. Settle accepted
+  # waiters against the exact retired record without repeating the whole scan.
+  def forget_current(state, lease, options \\ [])
 
-            if state.fault,
-              do: {state, {:error, state.fault}},
-              else: {state, Records.forget(state.records, lease)}
-          else
-            {state, failure(:wire_active)}
-          end
+  def forget_current(%{fault: error} = state, _lease, _options) when not is_nil(error),
+    do: {state, {:error, error}}
 
-        :pending ->
+  def forget_current(state, lease, options) do
+    case Inbox.validate(state.inbox) do
+      :ok -> forget_retired(state, lease, options)
+      {:error, error} -> {%{state | fault: error}, {:error, error}}
+    end
+  end
+
+  defp forget_retired(state, lease, options) do
+    case Records.fetch(state.records, lease) do
+      {:ok, record} ->
+        # This exact retired result is immutable. A prior pending sweep is not.
+        if Lifecycle.wire_retired?(record.life) do
+          state = settle(state, lease, record.life.result, options)
+
+          if state.fault,
+            do: {state, {:error, state.fault}},
+            else: {state, Records.forget(state.records, lease)}
+        else
           {state, failure(:wire_active)}
+        end
 
-        error ->
-          {state, error}
-      end
+      :pending ->
+        {state, failure(:wire_active)}
+
+      error ->
+        {state, error}
     end
   end
 
@@ -102,7 +114,11 @@ defmodule LibTmux.Control.Waiters do
   defp settle(state, lease, result, options) do
     Enum.reduce(state.active, state, fn
       {_key, %{ticket: ticket, lease: ^lease}}, state ->
-        finish(state, ticket, {:ok, result}, options)
+        case Inbox.closed?(state.inbox, ticket) do
+          {:ok, true} -> finish(state, ticket, failure(:cancelled), options)
+          {:ok, false} -> finish(state, ticket, {:ok, result}, options)
+          {:error, error} -> %{state | fault: error}
+        end
 
       _other, state ->
         state

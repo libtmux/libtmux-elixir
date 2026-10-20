@@ -510,7 +510,7 @@ defmodule LibTmux.Control.Manager do
     state =
       Enum.reduce(entries, state, fn {_status, lease}, state ->
         if lease.expires_at + state.retention_ms <= now do
-          {waiters, _outcome} = Waiters.forget(state.waiters, lease)
+          {waiters, _outcome} = Waiters.forget_current(state.waiters, lease)
           %{state | waiters: waiters}
         else
           state
@@ -561,7 +561,7 @@ defmodule LibTmux.Control.Manager do
       {ticket, {:forget, lease}}, state ->
         {waiters, outcome} =
           if ticket.epoch == lease.epoch,
-            do: Waiters.forget(state.waiters, lease),
+            do: Waiters.forget_current(state.waiters, lease),
             else: {state.waiters, failure(:stale_epoch)}
 
         finish(%{state | waiters: waiters}, ticket, outcome)
