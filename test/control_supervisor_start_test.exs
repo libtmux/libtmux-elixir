@@ -31,7 +31,7 @@ defmodule LibTmux.ControlSupervisorStartTest do
       child_monitor = Process.monitor(child)
       assert [{:child, ^child, :worker, [Agent]}] = Supervisor.which_children(root)
       assert :owned = Agent.get(child, & &1)
-      assert :ok = Supervisor.stop(root, :normal, 100)
+      assert :ok = :sys.terminate(root, :normal, 100)
       assert_receive {:DOWN, ^root_monitor, :process, ^root, :normal}
       assert_receive {:DOWN, ^child_monitor, :process, ^child, :shutdown}
     after
