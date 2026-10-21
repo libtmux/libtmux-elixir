@@ -78,16 +78,17 @@ jobs:
         id: support
         shell: bash
         run: |
+          jq --version
           matrix=$(jq -ce '
             . as $support |
             if .schema_version != 1 or
                (.required_linux | length) == 0 or
                ([.required_linux[].tmux] | index($support.tmux_minimum)) == null
             then error("missing required tmux floor") else . end |
-            {include:
+            {include: (
               ([.required_linux[] | . + {toolchain: "reference"}]) +
               ([.required_linux[-1] | . + {toolchain: "tracking"}])
-            }
+            )}
           ' priv/tmux/support.json)
           printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
 
