@@ -39,12 +39,24 @@ jobs:
           version-type: loose
           install-hex: true
           install-rebar: false
+      - name: Install development documentation tools
+        run: mix deps.get
       - name: Check formatting
         run: time mix format --check-formatted
       - name: Compile core
         run: time mix compile --warnings-as-errors
       - name: Run pure units
         run: time mix test
+      - name: Check public specs and typedocs
+        run: time mix run scripts/check_public_contracts.exs
+      - name: Check consumer type diagnostics
+        run: time mix run scripts/check_consumer_types.exs
+      - name: Render native documentation
+        env:
+          DOCS_SOURCE_REF: ${{ github.sha }}
+        run: time mix docs --warnings-as-errors
+      - name: Check rendered documentation links
+        run: time python3 scripts/check_docs_links.py
       - name: Build local package
         run: time mix hex.build --output "${RUNNER_TEMP}/libtmux.tar"
       - name: List packaged files
