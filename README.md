@@ -1,6 +1,17 @@
+<!-- libtmux-logo -->
+<div align="center">
+  <picture>
+    <source srcset="docs/assets/logo.svg" type="image/svg+xml">
+    <img src="docs/assets/logo-512.png" width="128" height="128" alt="libtmux for Elixir">
+  </picture>
+</div>
+<!-- /libtmux-logo -->
+
+<div align="center">
+
 # libtmux for Elixir
 
-<img src="docs/assets/logo.svg" width="128" height="128" alt="libtmux for Elixir">
+</div>
 
 An Elixir library for controlling tmux, currently under implementation.
 The unpublished core provides exact target references, shared deadlines,

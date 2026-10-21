@@ -1,6 +1,17 @@
+<!-- libtmux-logo -->
+<div align="center">
+  <picture>
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo-512.png" width="128" height="128" alt="libtmux MCP for Elixir">
+  </picture>
+</div>
+<!-- /libtmux-logo -->
+
+<div align="center">
+
 # libtmux MCP for Elixir
 
-<img src="assets/logo.svg" width="128" height="128" alt="libtmux MCP for Elixir">
+</div>
 
 This package will provide the bounded STDIO adapter, discovery, retained
 operations and host-authorized tmux tools. It is under implementation and
