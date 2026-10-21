@@ -38,6 +38,13 @@ CI reads both ranges from `.tool-versions` and passes them to `setup-beam`
 in loose mode, which selects the Elixir build for the installed OTP major.
 The action's direct `version-file` mode requires exact versions.
 
+The native Linux matrix reads exact tmux source revisions and the reference
+Elixir/OTP pair from `priv/tmux/support.json`. It also tests the resolved
+`.tool-versions` pair with the newest listed tmux release. Every cell checks
+the actual OTP patch, Elixir version and compiled OTP major before testing.
+Missing prerequisites fail the cell. `Required Linux checks` succeeds only
+when the core checks and every native cell succeed; no macOS job is required.
+
 Hex is required only for package archive checks. Install it separately from
 the check loops if it is missing:
 
@@ -57,6 +64,15 @@ implementation floor is tmux `3.3`, and support must be proved against that
 version rather than inferred from a newer local binary.
 
 ## Current checks
+
+Check that the active runtime matches the development selectors, minimum
+versions and compiled OTP major:
+
+```console
+$ time elixir scripts/check_runtime.exs tracking
+```
+
+Use `reference` instead of `tracking` to require the exact reference pair.
 
 Check formatting after an edit:
 
@@ -142,6 +158,12 @@ being qualified:
 ```console
 $ LIBTMUX_TMUX=/path/to/tmux mix test --include integration
 ```
+
+CI runs the complete existing suite with two ExUnit cases at once and two
+BEAM schedulers to fit the Linux runner. The native tests still exercise
+their explicit concurrent fault schedules. Source download, prerequisites
+and tmux compilation run before the timed test step. These cells qualify
+implemented cases; they do not establish unimplemented API support.
 
 Check packed-core consumption and metadata outside the checkout:
 
