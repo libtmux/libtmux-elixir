@@ -8,7 +8,7 @@ defmodule LibTmuxMCP.MixProject do
       elixir: ">= 1.20.4 and < 2.0.0",
       description: "MCP STDIO adapter for libtmux; under implementation",
       source_url: "https://github.com/libtmux/libtmux-elixir",
-      package: [licenses: ["MIT"], files: ["lib", "mix.exs", "README.md", "LICENSE"]],
+      package: [licenses: ["MIT"], files: ["lib", "mix.exs", "README.md", "LICENSE", "assets"]],
       deps: deps()
     ]
   end

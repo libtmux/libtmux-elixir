@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/libtmux/assets",
+  "revision": "6f3f04c872c739c2fb184796ed6a27aa42ba7731",
+  "language": "elixir",
+  "primary": "#8847B9",
+  "githubLanguageColors": "https://github.com/github-linguist/linguist/blob/538da05f034fa5c83bd81df128d144e208898da3/lib/linguist/languages.yml",
+  "variant": "mcp",
+  "sourceDirectory": "assets/elixir/mcp",
+  "files": [
+    {
+      "file": "apple-touch-icon-dark.png",
+      "bytes": 4283,
+      "sha256": "95ffb2254eb665afcb0b8785d68f361dc2d0c3ff9764f53c98f02d1bb8dc6c00"
+    },
+    {
+      "file": "apple-touch-icon-light.png",
+      "bytes": 4260,
+      "sha256": "68ea303ba8f8e5a7f84fdd7830f15fced4d96cb40fd594ca4f77c3950367892e"
+    },
+    {
+      "file": "favicon.ico",
+      "bytes": 23160,
+      "sha256": "bf927073136a533f50df02731ffd9d18fdec376d90ebb075d4e1e96e3a570504"
+    },
+    {
+      "file": "logo-32.png",
+      "bytes": 1192,
+      "sha256": "099e4afc6b7816ba968613cc39ed298481b294e95db1ff8b53af0385b0cad180"
+    },
+    {
+      "file": "logo-512.png",
+      "bytes": 16940,
+      "sha256": "677c6c75be0237d0fc2ee91abf6b60426e2077f268b2e65a72daf4f029f6fe22"
+    },
+    {
+      "file": "logo.svg",
+      "bytes": 4056,
+      "sha256": "34b2d3fdcbf0722937339b773464f5eee44b7c40c9b8b057ce723b1fa4899a34"
+    },
+    {
+      "file": "opengraph-dark.png",
+      "bytes": 26225,
+      "sha256": "f4a2130f96cf3c7f4992e3add1571dab9dbe6bdb86c423b48c77222e066f3ca8"
+    },
+    {
+      "file": "opengraph-light.png",
+      "bytes": 26052,
+      "sha256": "0e9a778526c5648da4dff5f45117a479609d23a87af2b671091e281676a21c04"
+    },
+    {
+      "file": "twitter-dark.png",
+      "bytes": 26059,
+      "sha256": "58b39a3c52ec45a860795f964316e84aef6012baa534effa196da7a9712f2f08"
+    },
+    {
+      "file": "twitter-light.png",
+      "bytes": 25876,
+      "sha256": "8f7400a464d5e2449409d5f0cb8533c24c0e07765eb60f3cc9405db6ba889961"
+    }
+  ],
+  "mcpArtwork": "https://github.com/modelcontextprotocol/modelcontextprotocol/blob/088176704a4e8f20e7f1d237de1de8484aa412fd/docs/logo/light.svg"
+}

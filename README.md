@@ -1,5 +1,7 @@
 # libtmux for Elixir
 
+<img src="docs/assets/logo.svg" width="128" height="128" alt="libtmux for Elixir">
+
 An Elixir library for controlling tmux, currently under implementation.
 The unpublished core provides exact target references, shared deadlines,
 command encoding, bounded protocol parsing, a Linux one-shot transport and
@@ -11,7 +13,7 @@ A tmux client API and supported release are still in development.
 [Observations](docs/observations.md) ·
 [Filtering](docs/filtering.md) ·
 [Ownership](docs/ownership.md) ·
-[Writing](.github/WRITING.md)
+[Writing](.github/WRITING.md) · [Artwork](docs/branding.md)
 
 ## Status and requirements
 
