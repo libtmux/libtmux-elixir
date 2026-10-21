@@ -21,6 +21,7 @@ A tmux client API and supported release are still in development.
 
 [Contributing](.github/CONTRIBUTING.md) ·
 [Design](docs/design.md) · [Encoding](docs/encoding.md) ·
+[Mental model](docs/mental-model.md) ·
 [Observations](docs/observations.md) ·
 [Filtering](docs/filtering.md) ·
 [Ownership](docs/ownership.md) ·

@@ -68,6 +68,7 @@ defmodule LibTmux.MixProject do
 
     extras = [
       "README.md",
+      "docs/mental-model.md",
       "docs/observations.md",
       "docs/filtering.md",
       "docs/schema.md",
