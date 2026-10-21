@@ -171,6 +171,10 @@ If native retirement was already proved, that lifetime remains retired;
 the Manager's fault does not erase cleanup knowledge or preserve lost tables
 across its replacement.
 
+Accounting finalizes retained records for all observed dead destinations in
+one lease scan, matching each epoch and PID together. It preserves acknowledged
+results and dispatched uncertainty, and releases no live destination's record.
+
 `LibTmux.Operation` pins its original record, lease and Inboxes. Retained
 status and result reads are local. Each await claims a bounded independent
 slot and releases its exact alias and monitor on return; timeout does not

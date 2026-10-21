@@ -496,16 +496,14 @@ defmodule LibTmux.Control.Manager do
 
     {:ok, entries} = Admission.entries(state.pool)
 
-    Enum.each(
+    destinations =
       Enum.uniq(
         for {_status, lease} <- entries,
             not Process.alive?(lease.destination),
             do: {lease.epoch, lease.destination}
-      ),
-      fn {epoch, destination} ->
-        Records.finalize(state.records, epoch, destination)
-      end
-    )
+      )
+
+    Records.finalize(state.records, destinations)
 
     state =
       Enum.reduce(entries, state, fn {_status, lease}, state ->

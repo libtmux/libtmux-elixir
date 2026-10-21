@@ -135,6 +135,65 @@ defmodule LibTmux.ControlRecordsTest do
     assert {:error, %Error{kind: :stale_operation}} = Records.fetch(records, acknowledged)
   end
 
+  @tag dead_destinations: true
+  test "batch finalization preserves live and unmatched epoch records" do
+    pool = Admission.new(4)
+    records = Records.new(pool)
+    epoch = make_ref()
+    other_epoch = make_ref()
+
+    [first, second] =
+      for id <- [:first, :second] do
+        start_supervised!(
+          Supervisor.child_spec(
+            {Task,
+             fn ->
+               receive do
+                 :finish -> :ok
+               end
+             end},
+            id: id
+          )
+        )
+      end
+
+    leases =
+      for {owner_epoch, destination} <-
+            [{epoch, first}, {other_epoch, second}, {epoch, self()}, {other_epoch, first}] do
+        {:ok, lease} = Admission.claim(pool, owner_epoch, destination, Deadline.new(500), 5)
+        lease
+      end
+
+    [first_dead, second_dead, live, unmatched] = leases
+
+    for {id, destination} <- [{:first, first}, {:second, second}] do
+      monitor = Process.monitor(destination)
+      stop_supervised!(id)
+      assert_receive {:DOWN, ^monitor, :process, ^destination, :shutdown}
+    end
+
+    assert {:error, %Error{kind: :live_destination}} =
+             Records.finalize(records, [{epoch, first}, {epoch, self()}])
+
+    for lease <- leases, do: assert(:pending == Records.fetch(records, lease))
+
+    assert {:ok, 2} =
+             Records.finalize(records, [{epoch, first}, {other_epoch, second}, {epoch, first}])
+
+    for lease <- [first_dead, second_dead] do
+      assert {:ok, %{life: %{wire: :retired, result: %{outcome: :skipped, certainty: :no_write}}}} =
+               Records.fetch(records, lease)
+    end
+
+    for lease <- [live, unmatched], do: assert(:pending == Records.fetch(records, lease))
+    assert :ok = Records.forget(records, first_dead)
+    assert :ok = Records.forget(records, second_dead)
+    {:ok, replacement} = Admission.claim(pool, make_ref(), self(), Deadline.new(500), 5)
+    assert replacement.generation > first_dead.generation
+    assert :pending = Records.fetch(records, replacement)
+    assert {:error, %Error{kind: :stale_operation}} = Records.fetch(records, first_dead)
+  end
+
   test "registry handles cannot substitute pool authority or forget another generation" do
     pool = Admission.new(1)
     records = Records.new(pool)
@@ -153,6 +212,7 @@ defmodule LibTmux.ControlRecordsTest do
       {Task,
        fn ->
          send(parent, {:foreign_forget, Records.forget(records, lease)})
+         send(parent, {:foreign_finalize, Records.finalize(records, [])})
 
          result =
            try do
@@ -167,6 +227,7 @@ defmodule LibTmux.ControlRecordsTest do
     )
 
     assert_receive {:foreign_forget, {:error, %Error{kind: :wrong_owner}}}
+    assert_receive {:foreign_finalize, {:error, %Error{kind: :wrong_owner}}}
     assert_receive {:foreign_constructor, :rejected}
     assert :ok = Admission.verify_consumed(pool, lease)
   end

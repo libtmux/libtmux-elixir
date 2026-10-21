@@ -47,31 +47,43 @@ defmodule LibTmux.Control.Records do
 
   # Only a dead destination proves its final persisted record cannot advance.
   # Router must store its first record and :writing phase before every send.
-  def finalize(records, epoch, destination) when is_reference(epoch) and is_pid(destination) do
+  def finalize(records, epoch, destination) when is_reference(epoch) and is_pid(destination),
+    do: finalize(records, [{epoch, destination}])
+
+  def finalize(records, destinations) when is_list(destinations) do
     owned(records, fn ->
-      if Process.alive?(destination) do
-        rejected(:live_destination)
-      else
-        with {:ok, entries} <- Admission.entries(records.pool) do
-          count =
-            Enum.reduce(entries, 0, fn
-              {_state, %{epoch: ^epoch, destination: ^destination} = lease}, count ->
-                record =
-                  case :ets.lookup(records.table, lease.slot) do
-                    [{_slot, %{lease: stored} = record}] when stored === lease -> record
-                    _ -> unwritten(lease)
-                  end
+      cond do
+        destinations == [] ->
+          {:ok, 0}
 
-                {:ok, life, _actions} = Lifecycle.step(record.life, {:epoch_closed, epoch})
-                :ets.insert(records.table, {lease.slot, %{record | life: life}})
-                count + 1
+        Enum.any?(destinations, fn {_epoch, destination} -> Process.alive?(destination) end) ->
+          rejected(:live_destination)
 
-              _foreign, count ->
-                count
-            end)
+        true ->
+          destinations = MapSet.new(destinations)
 
-          {:ok, count}
-        end
+          with {:ok, entries} <- Admission.entries(records.pool) do
+            count =
+              Enum.reduce(entries, 0, fn {_state, lease}, count ->
+                if MapSet.member?(destinations, {lease.epoch, lease.destination}) do
+                  record =
+                    case :ets.lookup(records.table, lease.slot) do
+                      [{_slot, %{lease: stored} = record}] when stored === lease -> record
+                      _ -> unwritten(lease)
+                    end
+
+                  {:ok, life, _actions} =
+                    Lifecycle.step(record.life, {:epoch_closed, lease.epoch})
+
+                  :ets.insert(records.table, {lease.slot, %{record | life: life}})
+                  count + 1
+                else
+                  count
+                end
+              end)
+
+            {:ok, count}
+          end
       end
     end)
   end
