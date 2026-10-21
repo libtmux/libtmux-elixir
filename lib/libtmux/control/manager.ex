@@ -316,6 +316,17 @@ defmodule LibTmux.Control.Manager do
     end
   end
 
+  defp actor_event(state, {:guardian, epoch, guardian, {:draining, origin}})
+       when epoch == state.epoch and guardian == state.actors.guardian and is_integer(origin) and
+              state.phase in [:ready, :closing] do
+    if origin <= System.monotonic_time(:millisecond) do
+      expires_at = origin + @cleanup_ms
+      %{state | closing_at: min(state.closing_at || expires_at, expires_at)}
+    else
+      close(state, :protocol_error)
+    end
+  end
+
   defp actor_event(state, {:guardian, epoch, guardian, {:retired, proof}})
        when epoch == state.epoch and guardian == state.actors.guardian do
     state = close(state, :disconnected)
@@ -362,13 +373,14 @@ defmodule LibTmux.Control.Manager do
   defp close(state, kind) do
     if state.births, do: Births.close(state.births)
     Lifetime.revoke(state.lifetime, state.generation)
+    expires_at = System.monotonic_time(:millisecond) + @cleanup_ms
 
     state =
       %{
         state
         | phase: :closing,
           reason: kind,
-          closing_at: System.monotonic_time(:millisecond) + @cleanup_ms
+          closing_at: min(state.closing_at || expires_at, expires_at)
       }
       |> harvest()
 
@@ -414,13 +426,17 @@ defmodule LibTmux.Control.Manager do
         request(state, :finalize, state.host, {:terminate_child, :epoch})
 
       state.host_finalized and children_gone and gone?(state, :epoch_supervisor) ->
-        case Lifetime.retired(state.lifetime, state.generation) do
-          :ok ->
-            if state.births, do: :ets.delete(state.births.table)
-            %{state | phase: :closed, births: nil, closing_at: nil} |> settle_retiring()
+        if state.closing_at && state.closing_at <= System.monotonic_time(:millisecond) do
+          poison(%{state | closing_at: nil})
+        else
+          case Lifetime.retired(state.lifetime, state.generation) do
+            :ok ->
+              if state.births, do: :ets.delete(state.births.table)
+              %{state | phase: :closed, births: nil, closing_at: nil} |> settle_retiring()
 
-          {:error, _error} ->
-            poison(state)
+            {:error, _error} ->
+              poison(state)
+          end
         end
 
       true ->

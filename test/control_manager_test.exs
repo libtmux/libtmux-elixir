@@ -16,6 +16,126 @@ defmodule LibTmux.ControlManagerTest do
   alias LibTmux.Test.NativeDriver
   @moduletag :capture_log
 
+  @tag :receive_buffer
+  test "draining arms the original cleanup cutoff without settling waiters or restarting on close" do
+    {_host, view, lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    initial = endpoint(view)
+    waiting = metadata(initial, initial.epoch, {:connection, :ready})
+    peer = bootstrap(view)
+    ready = result(initial, waiting)
+    observer = self()
+    marker = make_ref()
+
+    :ok =
+      :sys.install(manager, {
+        fn
+          _seen, {:noreply, %{phase: :ready, closing_at: cutoff}}, _name
+          when is_integer(cutoff) ->
+            send(observer, {:drain_clock, marker, cutoff})
+            :done
+
+          seen, _event, _name ->
+            seen
+        end,
+        false
+      })
+
+    %{guardian: guardian, handle: handle} = peer
+    :ok = :sys.suspend(ready.router)
+
+    try do
+      send(guardian, {handle, {:data, <<?Z, 1>>}})
+      assert_receive {:driver_command, ^guardian, ^handle, "Q"}
+      assert_receive {:drain_clock, ^marker, cutoff}
+      assert cutoff == :sys.get_state(guardian).cleanup_at + 50
+      assert %{phase: :ready} = Lifetime.status(lifetime)
+      still_ready = metadata(ready, ready.epoch, {:connection, :ready})
+      assert %{epoch: epoch} = result(ready, still_ready)
+      assert epoch == ready.epoch
+      send(manager, :sweep)
+      assert %{phase: :ready, closing_at: ^cutoff} = :sys.get_state(manager)
+      assert :ok = Lifetime.revoke(lifetime, ready.generation)
+      ending = metadata(ready, ready.epoch, {:connection, :retired})
+      assert %{phase: :closing, closing_at: ^cutoff} = :sys.get_state(manager)
+      :ok = :sys.resume(ready.router)
+      retire(peer)
+      assert :ok = result(ready, ending)
+    after
+      if Process.alive?(ready.router), do: :sys.resume(ready.router)
+      if Process.alive?(guardian), do: retire(peer)
+    end
+  end
+
+  @tag :receive_buffer
+  test "queued finalization cannot retire after its cleanup cutoff before the expiry sweep" do
+    {host, view, lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    initial = endpoint(view)
+    waiting = metadata(initial, initial.epoch, {:connection, :ready})
+    peer = bootstrap(view)
+    ready = result(initial, waiting)
+    observer = self()
+    marker = make_ref()
+
+    :ok =
+      :sys.install(manager, {
+        fn
+          _seen, {:noreply, %{pending: %{kind: :finalize}}}, _name ->
+            send(observer, {marker, :finalizing})
+            :done
+
+          seen, _event, _name ->
+            seen
+        end,
+        false
+      })
+
+    :ok = :sys.suspend(host)
+
+    try do
+      :ok = Lifetime.revoke(lifetime, ready.generation)
+      retire(peer)
+      assert_receive {^marker, :finalizing}
+      :ok = :sys.suspend(manager)
+      current = :sys.get_state(manager)
+      epoch_supervisor = current.actors.epoch_supervisor
+      :ok = :sys.resume(host)
+      :sys.get_state(host)
+      {:messages, messages} = Process.info(manager, :messages)
+
+      down =
+        Enum.find(messages, fn
+          {:DOWN, _monitor, :process, ^epoch_supervisor, _reason} -> true
+          _other -> false
+        end)
+
+      reply =
+        Enum.find(messages, fn
+          {[:alias | _reference], :ok} -> true
+          _other -> false
+        end)
+
+      assert not is_nil(down) and not is_nil(reply)
+
+      # Replay the real queued completion callbacks inside their owner before
+      # it can service :sweep, with an already-expired absolute cutoff.
+      state =
+        :sys.replace_state(manager, fn state ->
+          state = %{state | closing_at: System.monotonic_time(:millisecond) - 1}
+          {:noreply, state} = Manager.handle_info(down, state)
+          {:noreply, state} = Manager.handle_info(reply, state)
+          state
+        end)
+
+      assert state.phase == :unknown
+      assert %{phase: :unknown} = Lifetime.status(lifetime)
+    after
+      if Process.alive?(host), do: :sys.resume(host)
+      if Process.alive?(manager), do: :sys.resume(manager)
+    end
+  end
+
   @tag public_start_reason: true
   test "a readiness waiter registered after startup failure retains the original reason" do
     {_host, view, _lifetime, options} = setup_manager()

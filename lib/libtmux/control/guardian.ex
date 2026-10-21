@@ -8,6 +8,8 @@ defmodule LibTmux.Control.Guardian do
 
   @sweep_ms 25
   @cleanup_ms 750
+  @stdout_bytes 65_536
+  @stdout_chunks 128
 
   def start_link(options), do: GenServer.start_link(__MODULE__, options)
 
@@ -53,6 +55,12 @@ defmodule LibTmux.Control.Guardian do
       credit: make_ref(),
       stdout_credit: false,
       stdout_demand: false,
+      stdout_enabled: false,
+      stdout_queue: :queue.new(),
+      stdout_bytes: 0,
+      stdout_chunks: 0,
+      drain: nil,
+      cleanup_at: nil,
       stderr_bytes: 0,
       stderr_chunks: 0,
       stderr: [],
@@ -100,12 +108,30 @@ defmodule LibTmux.Control.Guardian do
   @impl true
   def handle_info({:read, router, epoch, credit}, %{router: router, epoch: epoch} = state)
       when state.phase in [:starting, :ready] do
-    if credit == state.credit and not state.stdout_credit and not state.stdout_demand do
-      {:noreply, grant_stdout(%{state | stdout_demand: true})}
+    if credit == state.credit and not state.stdout_demand do
+      state = %{state | stdout_demand: true, stdout_enabled: true}
+      state |> deliver_stdout() |> grant_stdout() |> proceed()
     else
       {:noreply, state}
     end
   end
+
+  def handle_info(
+        {:drain_ack, router, epoch, token},
+        %{router: router, epoch: epoch, phase: :ready, drain: drain} = state
+      )
+      when not is_nil(drain) do
+    if drain.requested and token == drain.token,
+      do: proceed(%{state | drain: %{drain | acknowledged: true}}),
+      else: {:noreply, state}
+  end
+
+  def handle_info(
+        {:write, router, epoch, _token, _lease, _offset, _total, _bytes},
+        %{router: router, epoch: epoch, drain: drain} = state
+      )
+      when not is_nil(drain),
+      do: {:noreply, state}
 
   def handle_info(
         {:challenge, router, epoch, token, nonce},
@@ -151,7 +177,7 @@ defmodule LibTmux.Control.Guardian do
       case Lifetime.ready(state.lifetime, state.generation) do
         :ok ->
           notify(state, :active)
-          {:noreply, %{state | phase: :ready}}
+          {:noreply, grant_stdout(%{state | phase: :ready})}
 
         {:error, _error} ->
           {:noreply, close(state, :stale_epoch)}
@@ -220,9 +246,17 @@ defmodule LibTmux.Control.Guardian do
     end
   end
 
+  def handle_info(
+        {handle, {:exit_status, status}},
+        %{handle: handle, phase: :ready} = state
+      ) do
+    state = begin_drain(state)
+    state = unobserved_write(state)
+    proceed(%{state | drain: %{state.drain | exit_status: status}})
+  end
+
   def handle_info({handle, {:exit_status, status}}, %{handle: handle} = state),
-    do:
-      finish(state, if(not is_nil(state.terminal) and status == 0, do: :retired, else: :unknown))
+    do: finish(state, cleanup_result(state, status))
 
   def handle_info({:EXIT, handle, :normal}, %{handle: handle} = state), do: {:noreply, state}
 
@@ -270,8 +304,17 @@ defmodule LibTmux.Control.Guardian do
     end
   end
 
-  def handle_info({:cleanup_timeout, epoch}, %{epoch: epoch, phase: :closing} = state),
-    do: finish(state, :unknown)
+  def handle_info({:cleanup_timeout, epoch}, %{epoch: epoch} = state)
+      when state.phase == :closing or not is_nil(state.drain),
+      do: state |> close(:timeout) |> finish(:unknown)
+
+  def handle_info(
+        {:finish_drain, epoch},
+        %{epoch: epoch, phase: :closing, drain: %{exit_status: status}} = state
+      )
+      when not is_nil(status) do
+    finish(state, cleanup_result(state, status))
+  end
 
   def handle_info(_message, state), do: {:noreply, state}
 
@@ -292,9 +335,26 @@ defmodule LibTmux.Control.Guardian do
   end
 
   defp native(%{stdout_credit: true} = state, {:data, :stdout, bytes}) do
-    credit = make_ref()
-    send_router(state, {:stdout, bytes, credit})
-    {:noreply, %{state | stdout_credit: false, credit: credit}}
+    state = %{state | stdout_credit: false}
+
+    cond do
+      state.stdout_demand ->
+        state |> forward_stdout(bytes) |> grant_stdout() |> proceed()
+
+      state.stdout_bytes + byte_size(bytes) <= @stdout_bytes and
+          state.stdout_chunks < @stdout_chunks ->
+        state = %{
+          state
+          | stdout_queue: :queue.in(bytes, state.stdout_queue),
+            stdout_bytes: state.stdout_bytes + byte_size(bytes),
+            stdout_chunks: state.stdout_chunks + 1
+        }
+
+        state |> grant_stdout() |> proceed()
+
+      true ->
+        {:noreply, close(state, :resource_limit)}
+    end
   end
 
   defp native(state, {:data, :stderr, bytes}) do
@@ -329,14 +389,22 @@ defmodule LibTmux.Control.Guardian do
         entry = %{entry | cursor: cursor, status: if(complete, do: :awaiting, else: :writing)}
         send_router(state, {:written, token, lease, count})
 
-        {:noreply,
-         %{
-           state
-           | pending: nil,
-             entries: Map.put(state.entries, lease.slot, entry),
-             partial: if(complete, do: nil, else: state.partial)
-         }}
+        proceed(%{
+          state
+          | pending: nil,
+            entries: Map.put(state.entries, lease.slot, entry),
+            partial: if(complete, do: nil, else: state.partial)
+        })
     end
+  end
+
+  defp native(
+         %{drain: drain, pending: %{id: id}} = state,
+         {:written, id, count, status}
+       )
+       when not is_nil(drain) do
+    failure = %{id: id, bytes: count, status: status}
+    proceed(%{state | pending: nil, drain: %{drain | write_failure: failure}})
   end
 
   defp native(state, {:terminal, _reason, _status} = proof), do: terminal(state, proof)
@@ -347,8 +415,20 @@ defmodule LibTmux.Control.Guardian do
 
   defp native(%{phase: :closing} = state, {:eof, _stream}), do: {:noreply, state}
   defp native(state, {:eof, :stderr}), do: {:noreply, state}
+
+  defp native(%{phase: :ready} = state, {:eof, :stdout}),
+    do: state |> begin_drain() |> proceed()
+
   defp native(state, {:eof, :stdout}), do: {:noreply, close(state, :disconnected)}
   defp native(state, _event), do: {:noreply, close(state, :protocol_error)}
+
+  defp terminal(%{phase: :ready, terminal: nil} = state, proof) do
+    state = begin_drain(%{state | terminal: proof})
+
+    if state.driver.command(state.handle, Protocol.terminal_ack_frame()),
+      do: proceed(state),
+      else: proceed(%{state | drain: %{state.drain | unclean: true}})
+  end
 
   defp terminal(%{terminal: nil} = state, proof) do
     state = closing(state, :disconnected)
@@ -361,17 +441,114 @@ defmodule LibTmux.Control.Guardian do
 
   defp terminal(state, _proof), do: finish(state, :unknown)
 
-  defp grant_stdout(
-         %{child: child, stdout_demand: true, stdout_credit: false, phase: phase} = state
-       )
-       when not is_nil(child) and phase in [:starting, :ready],
+  defp grant_stdout(%{child: child, stdout_credit: false, phase: phase} = state)
+       when not is_nil(child) and
+              ((phase == :starting and state.stdout_demand) or
+                 (phase == :ready and state.stdout_enabled and is_nil(state.drain))),
        do:
          native_command(
-           %{state | stdout_credit: true, stdout_demand: false},
+           %{state | stdout_credit: true},
            Protocol.read_frame(:stdout, 8192)
          )
 
   defp grant_stdout(state), do: state
+
+  defp deliver_stdout(%{stdout_demand: true} = state) do
+    case :queue.out(state.stdout_queue) do
+      {{:value, bytes}, queue} ->
+        state = %{
+          state
+          | stdout_queue: queue,
+            stdout_bytes: state.stdout_bytes - byte_size(bytes),
+            stdout_chunks: state.stdout_chunks - 1
+        }
+
+        forward_stdout(state, bytes)
+
+      {:empty, _queue} ->
+        state
+    end
+  end
+
+  defp forward_stdout(state, bytes) do
+    credit = make_ref()
+    send_router(state, {:stdout, bytes, credit})
+    %{state | stdout_demand: false, credit: credit}
+  end
+
+  defp begin_drain(%{drain: drain} = state) when not is_nil(drain), do: state
+
+  defp begin_drain(state) do
+    origin = System.monotonic_time(:millisecond)
+    state = cleanup_clock(state, origin)
+
+    drain = %{
+      token: make_ref(),
+      requested: false,
+      acknowledged: false,
+      exit_status: nil,
+      write_failure: nil,
+      unclean: false
+    }
+
+    send(state.manager, {:guardian, state.epoch, self(), {:draining, origin}})
+    state = %{state | drain: drain, stdout_credit: false}
+
+    if is_nil(state.terminal) and not state.driver.command(state.handle, Protocol.stop_frame()),
+      do: %{state | drain: %{drain | unclean: true}},
+      else: state
+  end
+
+  defp unobserved_write(%{pending: nil} = state), do: state
+
+  defp unobserved_write(state) do
+    failure = %{id: state.pending.id, bytes: nil, status: :unobserved}
+    %{state | pending: nil, drain: %{state.drain | write_failure: failure}}
+  end
+
+  defp proceed(%{phase: :ready, drain: drain} = state) when not is_nil(drain) do
+    cond do
+      state.cleanup_at <= System.monotonic_time(:millisecond) ->
+        state |> close(:timeout) |> finish(:unknown)
+
+      drain.acknowledged ->
+        state = close(state, :disconnected)
+
+        if is_nil(drain.exit_status) do
+          {:noreply, state}
+        else
+          finish(state, cleanup_result(state, drain.exit_status))
+        end
+
+      state.stdout_chunks == 0 and (state.stdout_demand or not state.stdout_enabled) and
+        is_nil(state.pending) and not drain.requested ->
+        send_router(state, {:drain_end, drain.token})
+        {:noreply, %{state | drain: %{drain | requested: true}}}
+
+      true ->
+        {:noreply, state}
+    end
+  end
+
+  defp proceed(state), do: {:noreply, state}
+
+  defp cleanup_result(state, status) do
+    clean =
+      not is_nil(state.terminal) and status == 0 and
+        (is_nil(state.drain) or not state.drain.unclean) and
+        not is_nil(state.cleanup_at) and state.cleanup_at > System.monotonic_time(:millisecond)
+
+    if clean, do: :retired, else: :unknown
+  end
+
+  defp cleanup_clock(%{cleanup_at: nil} = state, origin) do
+    expires_at = origin + @cleanup_ms
+    remaining = max(0, expires_at - System.monotonic_time(:millisecond))
+    Process.send_after(self(), {:cleanup_timeout, state.epoch}, remaining)
+    %{state | cleanup_at: expires_at}
+  end
+
+  defp cleanup_clock(state, _origin), do: state
 
   defp validate_write(state, token, %Admission.Lease{} = lease, offset, total, bytes) do
     cond do
@@ -463,10 +640,28 @@ defmodule LibTmux.Control.Guardian do
 
   defp closing(state, reason) do
     Lifetime.revoke(state.lifetime, state.generation)
-    error = %Error{kind: reason, phase: :transport, certainty: :unknown}
+
+    details =
+      if state.drain && state.drain.write_failure,
+        do: %{native_write_ack: state.drain.write_failure},
+        else: %{}
+
+    error = %Error{kind: reason, phase: :transport, certainty: :unknown, details: details}
     notify(state, {:closing, error})
-    Process.send_after(self(), {:cleanup_timeout, state.epoch}, @cleanup_ms)
-    %{state | phase: :closing, close_reason: error}
+    state = cleanup_clock(state, System.monotonic_time(:millisecond))
+
+    if state.drain && not is_nil(state.drain.exit_status),
+      do: send(self(), {:finish_drain, state.epoch})
+
+    %{
+      state
+      | phase: :closing,
+        close_reason: error,
+        stdout_enabled: false,
+        stdout_queue: :queue.new(),
+        stdout_bytes: 0,
+        stdout_chunks: 0
+    }
   end
 
   defp finish(state, cleanup) do

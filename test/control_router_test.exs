@@ -50,6 +50,88 @@ defmodule LibTmux.ControlRouterTest do
     close(state)
   end
 
+  @tag :receive_buffer
+  test "late acknowledgements drain qualified results and fence the next production write" do
+    for acknowledgement <- [:complete, :partial, :failed] do
+      state = connection()
+      first = submit(state, Request.field("pid"))
+      second = submit(state, Request.set_user_option("@not_sent", "second"))
+      assert_receive {:driver_command, _, _, <<?W, 1::32, line::binary>>}
+      observer = self()
+      marker = make_ref()
+
+      :ok =
+        :sys.install(state.router, {
+          fn
+            seen, {:noreply, %{operations: operations}}, _name ->
+              case Map.get(operations, first.slot) do
+                %{life: %{result: %{outcome: :completed}, wire: :writing}} ->
+                  send(observer, {marker, :qualified})
+                  :done
+
+                _other ->
+                  seen
+              end
+
+            seen, _event, _name ->
+              seen
+          end,
+          false
+        })
+
+      data(state, "%begin 1 4 1\nv1:retained\n")
+      data(state, "%end 1 4 1\n")
+      assert_receive {^marker, :qualified}
+      assert :sys.get_state(state.guardian).stdout_demand
+      send(state.guardian, {state.handle, {:data, <<?Z, 1>>}})
+      assert_receive {:guardian, _, _, {:draining, _origin}}
+      assert_receive {:driver_command, _, _, "Q"}
+      expected_router = state.router
+      expected_epoch = state.epoch
+
+      :ok =
+        :sys.install(state.guardian, {
+          fn
+            _seen,
+            {:in, {:write, ^expected_router, ^expected_epoch, _token, ^second, _, _, _}},
+            _name ->
+              send(observer, {marker, :next_write_requested})
+              :done
+
+            seen, _event, _name ->
+              seen
+          end,
+          false
+        })
+
+      {count, failed} =
+        case acknowledgement do
+          :complete -> {byte_size(line), 0}
+          :partial -> {2, 0}
+          :failed -> {0, 1}
+        end
+
+      send(state.guardian, {state.handle, {:data, <<?A, 1::32, count::16, failed>>}})
+      retire(state)
+      assert_receive {:router, _, _, {:settled, ^first}}
+      assert_receive {:router, _, _, {:settled, ^second}}
+      assert_receive {:router, _, _, {:retired, _proof}}
+      finish(state)
+
+      assert %{life: %{wire: :retired, result: %{outcome: :completed, lines: ["v1:retained"]}}} =
+               record(state, first)
+
+      expected = if acknowledgement == :complete, do: :unknown, else: :skipped
+      assert %{life: %{wire: :retired, result: %{outcome: ^expected}}} = record(state, second)
+
+      if acknowledgement == :complete,
+        do: assert_receive({^marker, :next_write_requested}),
+        else: refute_receive({^marker, :next_write_requested}, 0)
+
+      refute_receive {:driver_command, _, _, <<?W, 2::32, _bytes::binary>>}, 0
+    end
+  end
+
   test "unsafe or stale requests are rejected before any business write" do
     state = connection()
     {:ok, pane} = Ref.new(:pane, "%0", "wrong-instance")

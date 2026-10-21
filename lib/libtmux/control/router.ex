@@ -268,6 +268,11 @@ defmodule LibTmux.Control.Router do
     end
   end
 
+  defp guardian_event(%{phase: :ready} = state, {:drain_end, token}) when is_reference(token) do
+    send_guardian(state, {:drain_ack, self(), state.epoch, token})
+    state
+  end
+
   defp guardian_event(state, {:closing, error}), do: close_epoch(state, error.kind)
   defp guardian_event(%{phase: :closing} = state, _event), do: state
   defp guardian_event(state, _event), do: close_epoch(state, :protocol_error)

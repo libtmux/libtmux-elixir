@@ -5,18 +5,247 @@ defmodule LibTmux.ControlGuardianTest do
   alias LibTmux.Control.{Admission, Guardian, Lifetime}
   alias LibTmux.Test.NativeDriver
 
-  test "read credits stop delivery until the fixed router consumes the previous chunk" do
-    state = guardian()
+  @tag :receive_buffer
+  test "router credits release prefetched chunks in order without duplicating native credit" do
+    state = guardian() |> activate()
     send(state.pid, {:read, self(), state.epoch, state.credit})
     assert_frame(state, <<?R, 1, 8192::16>>)
-    send(state.pid, {state.handle, {:data, <<?D, 1, "startup">>}})
-    assert_receive {:guardian, _, _, {:stdout, "startup", next}}
+    send(state.pid, {state.handle, {:data, <<?D, 1, "first">>}})
+    assert {:stdout, "first", next} = next_event(state)
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?D, 1, "second">>}})
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?D, 1, "third">>}})
+    assert_frame(state, <<?R, 1, 8192::16>>)
     send(state.pid, {:read, self(), state.epoch, state.credit})
     :sys.get_state(state.pid)
+    refute_receive {:guardian, _, _, {:stdout, _, _}}, 0
     refute_receive {:driver_command, _, _, <<?R, 1, _::binary>>}, 0
     send(state.pid, {:read, self(), state.epoch, next})
-    assert_frame(state, <<?R, 1, 8192::16>>)
+    assert {:stdout, "second", second} = next_event(state)
+    send(state.pid, {:read, self(), state.epoch, next})
+    :sys.get_state(state.pid)
+    refute_receive {:guardian, _, _, {:stdout, _, _}}, 0
+    send(state.pid, {:read, self(), state.epoch, second})
+    assert {:stdout, "third", _third} = next_event(state)
+    refute_receive {:driver_command, _, _, <<?R, 1, _::binary>>}, 0
     retire(state)
+  end
+
+  @tag :receive_buffer
+  test "byte and chunk ceilings retire the lane instead of stopping native reads" do
+    for {chunk, count} <- [{:binary.copy("x", 8192), 8}, {"x", 128}] do
+      state = guardian() |> activate()
+      send(state.pid, {:read, self(), state.epoch, state.credit})
+      assert_frame(state, <<?R, 1, 8192::16>>)
+      send(state.pid, {state.handle, {:data, <<?D, 1, "delivered">>}})
+      assert {:stdout, "delivered", _credit} = next_event(state)
+      assert_frame(state, <<?R, 1, 8192::16>>)
+
+      for _ <- 1..count do
+        send(state.pid, {state.handle, {:data, <<?D, 1, chunk::binary>>}})
+        assert_frame(state, <<?R, 1, 8192::16>>)
+      end
+
+      refute_receive {:guardian, _, _, {:stdout, _, _}}, 0
+      send(state.pid, {state.handle, {:data, <<?D, 1, "overflow">>}})
+      assert {:closing, %Error{kind: :resource_limit}} = next_event(state)
+      refute Lifetime.allows_write?(state.lifetime, state.generation)
+      retire(state, :already_closing)
+    end
+  end
+
+  @tag :receive_buffer
+  test "an end barrier follows queued bytes and late write acknowledgements before retirement" do
+    state = guardian() |> activate()
+    send(state.pid, {:read, self(), state.epoch, state.credit})
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    lease = lease(state, 5)
+    operation = make_ref()
+    send(state.pid, {:write, self(), state.epoch, operation, lease, 0, 5, "noop\n"})
+    assert_frame(state, <<?W, 1::32, "noop\n">>)
+    send(state.pid, {state.handle, {:data, <<?D, 1, "prefix">>}})
+    assert {:stdout, "prefix", first} = next_event(state)
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?D, 1, "tail">>}})
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?Z, 1>>}})
+    assert {:draining, origin} = next_event(state)
+    assert is_integer(origin)
+    assert_frame(state, "Q")
+
+    suppressed = lease(state, 5)
+    send(state.pid, {:write, self(), state.epoch, make_ref(), suppressed, 0, 5, "noop\n"})
+    send(state.pid, {:read, self(), state.epoch, first})
+    assert {:stdout, "tail", last} = next_event(state)
+    send(state.pid, {:read, self(), state.epoch, last})
+    :sys.get_state(state.pid)
+    refute_receive {:guardian, _, _, {:drain_end, _}}, 0
+    refute_receive {:guardian, _, _, {:closing, _}}, 0
+    refute_receive {:driver_command, _, _, <<?W, _::binary>>}, 0
+
+    send(state.pid, {state.handle, {:data, <<?A, 1::32, 5::16, 0>>}})
+    assert {:written, ^operation, ^lease, 5} = next_event(state)
+    assert {:drain_end, token} = next_event(state)
+    send(state.pid, {state.handle, {:data, <<?E, 1, 0::32>>}})
+    assert_frame(state, "T")
+    send(state.pid, {state.handle, {:exit_status, 0}})
+    send(state.pid, {:drain_ack, self(), state.epoch, make_ref()})
+    :sys.get_state(state.pid)
+    refute_receive {:guardian, _, _, {:closing, _}}, 0
+    refute_receive {:DOWN, _, :process, _, _}, 0
+
+    send(state.pid, {:wire_retired, self(), state.epoch, operation, lease})
+    send(state.pid, {:drain_ack, self(), state.epoch, token})
+    assert {:wire_retired, ^operation, ^lease} = next_event(state)
+    assert {:closing, %Error{kind: :disconnected}} = next_event(state)
+    assert {:retired, %{cleanup: :retired}} = next_event(state)
+    assert_receive {:DOWN, _, :process, _, :normal}
+    assert :ok = Lifetime.retired(state.lifetime, state.generation)
+  end
+
+  @tag :receive_buffer
+  test "partial or failed late acknowledgements retain their evidence without claiming a write" do
+    for {count, failed, status} <- [{2, 0, :ok}, {2, 1, :error}, {0, 1, :error}] do
+      state = guardian() |> activate()
+      lease = lease(state, 5)
+      send(state.pid, {:write, self(), state.epoch, make_ref(), lease, 0, 5, "noop\n"})
+      assert_frame(state, <<?W, 1::32, "noop\n">>)
+      send(state.pid, {state.handle, {:data, <<?Z, 1>>}})
+      assert {:draining, _origin} = next_event(state)
+      assert_frame(state, "Q")
+      send(state.pid, {state.handle, {:data, <<?A, 1::32, count::16, failed>>}})
+      assert {:drain_end, token} = next_event(state)
+      refute_receive {:guardian, _, _, {:written, _, _, _}}, 0
+      send(state.pid, {:drain_ack, self(), state.epoch, token})
+
+      assert {:closing, %Error{details: %{native_write_ack: evidence}}} = next_event(state)
+      assert evidence == %{id: 1, bytes: count, status: status}
+      send(state.pid, {state.handle, {:data, <<?E, 1, 0::32>>}})
+      assert_frame(state, "T")
+      send(state.pid, {state.handle, {:exit_status, 0}})
+      assert {:retired, %{cleanup: :retired}} = next_event(state)
+      assert_receive {:DOWN, _, :process, _, :normal}
+      assert :ok = Lifetime.retired(state.lifetime, state.generation)
+    end
+  end
+
+  @tag :receive_buffer
+  test "a failed terminal acknowledgement cannot become clean retirement after the barrier" do
+    state = guardian() |> activate()
+    {_ref, _observer, fault} = state.handle
+    :atomics.put(fault, 1, 2)
+    send(state.pid, {state.handle, {:data, <<?E, 1, 0::32>>}})
+    assert {:draining, _origin} = next_event(state)
+    assert_frame(state, "T")
+    assert {:drain_end, token} = next_event(state)
+    send(state.pid, {:drain_ack, self(), state.epoch, token})
+    assert {:closing, %Error{}} = next_event(state)
+    send(state.pid, {state.handle, {:exit_status, 0}})
+    assert {:retired, %{cleanup: :unknown}} = next_event(state)
+    assert_receive {:DOWN, _, :process, _, :normal}
+    assert %{phase: :unknown} = Lifetime.status(state.lifetime)
+  end
+
+  @tag :receive_buffer
+  test "an expired drain cannot retire while its timer message is still queued" do
+    state = guardian() |> activate()
+    send(state.pid, {state.handle, {:data, <<?E, 1, 0::32>>}})
+    assert {:draining, origin} = next_event(state)
+    assert_frame(state, "T")
+    assert {:drain_end, token} = next_event(state)
+    assert :sys.get_state(state.pid).cleanup_at == origin + 750
+    send(state.pid, {state.handle, {:exit_status, 0}})
+
+    :sys.replace_state(state.pid, fn current ->
+      %{current | cleanup_at: System.monotonic_time(:millisecond) - 1}
+    end)
+
+    send(state.pid, {:drain_ack, self(), state.epoch, token})
+    assert {:closing, %Error{kind: :timeout}} = next_event(state)
+    assert {:retired, %{cleanup: :unknown}} = next_event(state)
+    assert_receive {:DOWN, _, :process, _, :normal}
+    assert %{phase: :unknown} = Lifetime.status(state.lifetime)
+  end
+
+  @tag :receive_buffer
+  test "a closing exit cannot retire after the original cutoff ahead of its timer message" do
+    state = guardian() |> activate()
+    send(state.pid, {state.handle, {:data, <<?E, 1, 0::32>>}})
+    assert {:draining, _origin} = next_event(state)
+    assert_frame(state, "T")
+    assert {:drain_end, token} = next_event(state)
+    send(state.pid, {:drain_ack, self(), state.epoch, token})
+    assert {:closing, %Error{kind: :disconnected}} = next_event(state)
+
+    :sys.replace_state(state.pid, fn current ->
+      %{current | cleanup_at: System.monotonic_time(:millisecond) - 1}
+    end)
+
+    send(state.pid, {state.handle, {:exit_status, 0}})
+    assert {:retired, %{cleanup: :unknown}} = next_event(state)
+    assert_receive {:DOWN, _, :process, _, :normal}
+    assert %{phase: :unknown} = Lifetime.status(state.lifetime)
+  end
+
+  @tag :receive_buffer
+  test "bare native exit preserves the queued tail but cannot manufacture retirement proof" do
+    state = guardian() |> activate()
+    send(state.pid, {:read, self(), state.epoch, state.credit})
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?D, 1, "prefix">>}})
+    assert {:stdout, "prefix", first} = next_event(state)
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?D, 1, "tail">>}})
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:exit_status, 0}})
+    assert {:draining, _origin} = next_event(state)
+    assert_frame(state, "Q")
+    send(state.pid, {:read, self(), state.epoch, first})
+    assert {:stdout, "tail", last} = next_event(state)
+    send(state.pid, {:read, self(), state.epoch, last})
+    assert {:drain_end, token} = next_event(state)
+    send(state.pid, {:drain_ack, self(), state.epoch, token})
+    assert {:closing, %Error{kind: :disconnected}} = next_event(state)
+    assert {:retired, %{cleanup: :unknown}} = next_event(state)
+    assert_receive {:DOWN, _, :process, _, :normal}
+    assert %{phase: :unknown} = Lifetime.status(state.lifetime)
+  end
+
+  @tag :receive_buffer
+  test "explicit closure can abort a queued drain without starting another cleanup clock" do
+    state = guardian() |> activate()
+    send(state.pid, {:read, self(), state.epoch, state.credit})
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?D, 1, "withheld">>}})
+    assert {:stdout, "withheld", _credit} = next_event(state)
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?Z, 1>>}})
+    assert {:draining, origin} = next_event(state)
+    assert_frame(state, "Q")
+    send(state.pid, {:close, self(), state.epoch, :test_close})
+    assert {:closing, %Error{kind: :test_close}} = next_event(state)
+    assert :sys.get_state(state.pid).cleanup_at == origin + 750
+    retire(state, :already_closing)
+  end
+
+  @tag :receive_buffer
+  test "closure after observed native exit uses retained proof instead of waiting for another exit" do
+    state = guardian() |> activate()
+    send(state.pid, {:read, self(), state.epoch, state.credit})
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?D, 1, "withheld">>}})
+    assert {:stdout, "withheld", _credit} = next_event(state)
+    assert_frame(state, <<?R, 1, 8192::16>>)
+    send(state.pid, {state.handle, {:data, <<?E, 1, 0::32>>}})
+    assert {:draining, _origin} = next_event(state)
+    assert_frame(state, "T")
+    send(state.pid, {state.handle, {:exit_status, 0}})
+    send(state.pid, {:close, self(), state.epoch, :test_close})
+    assert {:closing, %Error{kind: :test_close}} = next_event(state)
+    assert {:retired, %{cleanup: :retired}} = next_event(state)
+    assert_receive {:DOWN, _, :process, _, :normal}
+    assert :ok = Lifetime.retired(state.lifetime, state.generation)
   end
 
   test "only the single startup challenge can write before activation" do
@@ -222,6 +451,13 @@ defmodule LibTmux.ControlGuardianTest do
     pid = state.pid
     handle = state.handle
     assert_receive {:driver_command, ^pid, ^handle, ^expected}
+  end
+
+  defp next_event(state) do
+    pid = state.pid
+    epoch = state.epoch
+    assert_receive {:guardian, ^epoch, ^pid, event}
+    event
   end
 
   defp retire(state, phase \\ :open) do

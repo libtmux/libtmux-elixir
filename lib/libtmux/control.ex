@@ -42,6 +42,10 @@ defmodule LibTmux.Control do
 
   Optional `capacity`, `metadata_capacity` and `waiter_capacity` default to 32
   and accept 1..256. `retention_ms` defaults to 60000 and accepts 1..600000.
+
+  Ready connections buffer at most 64 KiB or 128 stdout chunks behind the
+  reader. Overflow closes the whole epoch with `resource_limit`; it never
+  replays commands. These receive limits do not cap borrowed-server memory.
   """
   @spec start_link(keyword()) :: {:ok, pid(), t()} | {:error, Error.t()}
   def start_link(options) do

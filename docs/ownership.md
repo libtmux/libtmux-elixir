@@ -82,12 +82,29 @@ installed-consumer checks; the current path expects an unpacked application
 ## Persistent connection components
 
 The internal Guardian owns one native helper and monitors its Manager and
-router independently. It grants one stdout credit only after router demand,
-caps stderr at 8 KiB and 64 chunks, and acknowledges one write fragment at a
-time. A fragment fits 8 KiB; a complete rendered command fits 64 KiB. The
-writer rechecks the consumed publication lease, original deadline and epoch.
-A partial line keeps its writer until the newline is acknowledged or the
-epoch closes. Completed slots retain their generation to reject replay.
+router independently. Startup grants one stdout credit after router demand.
+After activation it keeps one native read in flight and buffers at most
+64 KiB or 128 stdout chunks while Router consumes its previous chunk. Each
+native read and delivered chunk fits 8 KiB. Exceeding either queue ceiling
+closes the epoch with `resource_limit`; it does not indefinitely stop reading
+from a still-attached client. These limits do not cap the borrowed tmux
+server's allocations or total process memory.
+
+Guardian caps stderr at 8 KiB and 64 chunks, and acknowledges one write
+fragment at a time. A fragment fits 8 KiB; a complete rendered command fits
+64 KiB. The writer rechecks the consumed publication lease, original deadline
+and epoch. A partial line keeps its writer until the newline is acknowledged
+or the epoch closes. Completed slots retain their generation to reject replay.
+
+After orderly EOF or native exit, Guardian blocks further writes and drains
+already-received stdout through the existing Router credits. An end token
+follows pending native write acknowledgements; Router acknowledges it after
+processing earlier data and write messages. Only then does ordinary closure
+finalize remaining operations. Explicit closure, owner loss or protocol failure
+can abort that drain. Established results survive; unfinished effects remain
+uncertain. Drain and closure share the original 750 ms Guardian and 800 ms
+Manager cleanup allowances. Neither clock restarts after data delivery.
+Helper terminal acknowledgement remains independent of Router progress.
 
 Deadline accounting uses one 25 ms timer, rescheduled only after consumption.
 Busy delivery closes the epoch instead of suspending the owner or retrying.
