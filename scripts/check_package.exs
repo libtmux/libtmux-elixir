@@ -1,3 +1,10 @@
+examples? =
+  case System.argv() do
+    [] -> false
+    ["--examples"] -> true
+    _ -> raise ArgumentError, "usage: mix run scripts/check_package.exs [--examples]"
+  end
+
 root =
   Path.join(
     System.tmp_dir!(),
@@ -139,6 +146,11 @@ try do
     )
 
   IO.puts("PASS: packed core imported outside the checkout; no Hex runtime dependencies")
+
+  if examples? do
+    Code.require_file("check_examples.exs", __DIR__)
+    LibTmux.ExampleCheck.run(package, consumer)
+  end
 after
   File.rm_rf!(root)
 end

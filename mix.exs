@@ -23,6 +23,7 @@ defmodule LibTmux.MixProject do
           "mix_tasks",
           "c_src",
           "lib",
+          "examples",
           "README.md",
           "LICENSE",
           ".tool-versions",
@@ -57,6 +58,9 @@ defmodule LibTmux.MixProject do
       "docs/implementation.md" => [
         {"../priv/tmux/support.json", blob <> "priv/tmux/support.json"}
       ],
+      "docs/first-task.md" => [
+        {"../examples/capture_and_read.exs", blob <> "examples/capture_and_read.exs"}
+      ],
       "docs/ownership.md" => [{"../c_src/README.md", blob <> "c_src/README.md"}],
       "docs/branding.md" => [
         {"assets/", tree <> "docs/assets/"},
@@ -68,6 +72,7 @@ defmodule LibTmux.MixProject do
 
     extras = [
       "README.md",
+      "docs/first-task.md",
       "docs/mental-model.md",
       "docs/observations.md",
       "docs/filtering.md",

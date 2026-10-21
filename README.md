@@ -20,6 +20,7 @@ immutable graph capture, Enumerable selections and portable filters.
 A tmux client API and supported release are still in development.
 
 [Contributing](.github/CONTRIBUTING.md) ·
+[First task](docs/first-task.md) ·
 [Design](docs/design.md) · [Encoding](docs/encoding.md) ·
 [Mental model](docs/mental-model.md) ·
 [Observations](docs/observations.md) ·
@@ -40,9 +41,25 @@ A tmux client API and supported release are still in development.
 [`.tool-versions`](.tool-versions) selects the development toolchain ranges
 for mise and CI. Linux builds require a C11 compiler for the helper. See
 [setup](.github/CONTRIBUTING.md#setup) for installation
-and upgrades. tmux is not required for the pure checks. A future
-implementation will require an external tmux executable and its own
-compatibility evidence.
+and upgrades. tmux is not required for the pure checks. Capture, command
+execution and the complete example require an external tmux executable.
+The supported client API and compatibility matrix remain under qualification.
+
+## Capture, select and execute
+
+From a source checkout, run the complete public API example from the packed
+core on a new isolated tmux server. This requires Linux, a C11 compiler,
+Python 3 and tmux 3.3 or newer:
+
+```console
+$ MIX_ENV=test mix run scripts/check_package.exs --examples
+```
+
+The example captures one graph, selects its active pane, and reads that exact
+pane through one-shot and control commands. It checks the acknowledged
+result, retires its connection, and verifies owned server cleanup. The check
+uses a temporary socket and empty configuration. See the [complete program
+and failure behavior](docs/first-task.md).
 
 ## Check the implementation
 
@@ -85,7 +102,7 @@ the checks required as implementation arrives.
 
 ## Planned package boundaries
 
-The core will expose immutable observations and explicit tmux operations,
+The core provides immutable observations and explicit tmux operations,
 using Elixir and OTP without third-party runtime dependencies. Workspace
 loading and an MCP server have separate Mix projects under `packages/`.
 Their runtime implementations remain planned. MCP also consumes workspace

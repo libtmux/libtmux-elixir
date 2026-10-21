@@ -43,6 +43,8 @@ jobs:
         run: mix deps.get
       - name: Check formatting
         run: time mix format --check-formatted
+      - name: Check executable documentation drift
+        run: time python3 scripts/check_example_docs.py
       - name: Compile core
         run: time mix compile --warnings-as-errors
       - name: Run pure units
@@ -165,6 +167,8 @@ jobs:
         run: time mix compile --warnings-as-errors
       - name: Run pure and owned native cases
         run: time mix test --include integration --warnings-as-errors --max-cases 2 --seed 624498
+      - name: Run packed public caller example
+        run: time mix run scripts/check_package.exs --examples
 
   required-linux:
     name: Required Linux checks
