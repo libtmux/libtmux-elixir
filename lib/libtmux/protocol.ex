@@ -50,15 +50,22 @@ defmodule LibTmux.Protocol do
 
   defstruct carry: "", guard: nil, lines: [], frame_bytes: 0, frame_lines: 0, limits: @limits
 
+  @typedoc "A complete tmux reply guard: timestamp, command number and flags, retained for correlation."
   @type guard_id :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}
+  @typedoc "A framed reply or lexical notification. Payloads still require semantic validation before graph updates."
   @type event ::
           {:reply, :ok | :error, guard_id(), [binary()]}
           | {:notification, atom(), binary()}
           | {:unknown, binary()}
+  @typedoc "Immutable parser carry and bounded in-flight frame state; discard it after any parse error."
   @opaque t :: %__MODULE__{}
+  @typedoc "A positive parser ceiling, measured in bytes, lines or emitted events as named."
+  @type option ::
+          {:max_chunk_bytes | :max_line_bytes | :max_frame_bytes | :max_frame_lines | :max_events,
+           pos_integer()}
 
   @doc "Constructs a parser with positive byte, line and event limits."
-  @spec new(keyword()) :: t()
+  @spec new([option()]) :: t()
   def new(options \\ []) do
     limits = options |> Keyword.validate!(Map.to_list(@limits)) |> Map.new()
 

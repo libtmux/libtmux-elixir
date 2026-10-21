@@ -206,7 +206,7 @@ defmodule LibTmux.ControlPublisherIntegrationTest do
       Module.concat(__MODULE__, if(action == :dies, do: DeadPublisher, else: LatePublisher))
 
     source = File.read!(Path.join(__DIR__, "../lib/libtmux/control.ex"))
-    binding = "      operation = Operation.bind(template, lease)"
+    binding = "      %Operation{} = operation = Operation.bind(template, lease)"
 
     gate = """
 

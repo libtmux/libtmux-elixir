@@ -19,7 +19,28 @@ defmodule LibTmux.Control do
   @enforce_keys [:owner, :view, :lifetime, :endpoint]
   @derive {Inspect, only: []}
   defstruct @enforce_keys
+  @typedoc "A handle pinned to one owner and connection epoch; it never follows a replacement."
   @opaque t :: %__MODULE__{}
+
+  @typedoc "Explicit attachment policy and bounded startup settings; capacities count slots and timeouts use milliseconds."
+  @type start_option ::
+          {:server, LibTmux.Server.t()}
+          | {:session, {:existing, String.t()}}
+          | {:lane, :host_qualified}
+          | {:timeout, 1..600_000}
+          | {:capacity | :metadata_capacity | :waiter_capacity, 1..256}
+          | {:retention_ms, 1..600_000}
+
+  @typedoc "A positive millisecond budget shared by all stages of one lifecycle or submission call."
+  @type call_option :: {:timeout, pos_integer()}
+
+  @typedoc "A pinned epoch's current phase and identity; retirement and unknown cleanup are distinct."
+  @type connection_status :: %{
+          epoch: reference() | nil,
+          generation: non_neg_integer(),
+          phase: :starting | :ready | :closing | :retired | :unknown,
+          instance: String.t() | nil
+        }
 
   @doc """
   Starts a linked connection and returns `{:ok, root, control}`.
@@ -47,7 +68,7 @@ defmodule LibTmux.Control do
   reader. Overflow closes the whole epoch with `resource_limit`; it never
   replays commands. These receive limits do not cap borrowed-server memory.
   """
-  @spec start_link(keyword()) :: {:ok, pid(), t()} | {:error, Error.t()}
+  @spec start_link([start_option()]) :: {:ok, pid(), t()} | {:error, Error.t()}
   def start_link(options) do
     entered_at = System.monotonic_time(:millisecond)
     Start.start(options, entered_at)
@@ -67,7 +88,7 @@ defmodule LibTmux.Control do
   `Supervisor.terminate_child/2` followed by `Supervisor.restart_child/2` for
   fresh info. This does not clear unknown cleanup or authorize replay.
   """
-  @spec child_spec(keyword()) :: Supervisor.child_spec()
+  @spec child_spec([start_option()]) :: Supervisor.child_spec()
   def child_spec(options), do: Start.child_spec(options)
 
   @doc false
@@ -119,7 +140,7 @@ defmodule LibTmux.Control do
   Closing the connection can affect sibling operations. Command replies do
   not prove external program exit. Caller timeout does not authorize replay.
   """
-  @spec submit(t(), Request.t(), keyword()) :: {:ok, Operation.t()} | {:error, Error.t()}
+  @spec submit(t(), Request.t(), [call_option()]) :: {:ok, Operation.t()} | {:error, Error.t()}
   def submit(%__MODULE__{} = control, %Request{} = request, options \\ []) do
     entered_at = System.monotonic_time(:millisecond)
     options = Keyword.validate!(options, timeout: 5000)
@@ -138,7 +159,7 @@ defmodule LibTmux.Control do
              deadline,
              byte_size(line)
            ) do
-      operation = Operation.bind(template, lease)
+      %Operation{} = operation = Operation.bind(template, lease)
       publish(control, endpoint, lease, request, deadline)
       {:ok, operation}
     else
@@ -148,10 +169,11 @@ defmodule LibTmux.Control do
   end
 
   @doc "Admits a request or raises the same structured error."
+  @spec submit!(t(), Request.t(), [call_option()]) :: Operation.t()
   def submit!(control, request, options \\ []), do: unwrap(submit(control, request, options))
 
   @doc "Reads the pinned epoch's current phase and identity without contacting tmux."
-  @spec status(t()) :: {:ok, map()} | {:error, Error.t()}
+  @spec status(t()) :: {:ok, connection_status()} | {:error, Error.t()}
   def status(%__MODULE__{} = control) do
     result =
       with {:ok, endpoint} <- current(control) do
@@ -177,6 +199,7 @@ defmodule LibTmux.Control do
   end
 
   @doc "Reads pinned connection status or raises the same structured error."
+  @spec status!(t()) :: connection_status()
   def status!(control), do: unwrap(status(control))
 
   @doc """
@@ -209,6 +232,7 @@ defmodule LibTmux.Control do
   end
 
   @doc "Requests epoch closure or raises the same structured error."
+  @spec request_close!(t()) :: :ok
   def request_close!(control), do: unwrap(request_close(control))
 
   @doc """
@@ -223,7 +247,7 @@ defmodule LibTmux.Control do
   reconnect and inspection. This does not stop the supervisor or roll back
   sibling effects.
   """
-  @spec close(t(), keyword()) :: :ok | {:error, Error.t()}
+  @spec close(t(), [call_option()]) :: :ok | {:error, Error.t()}
   def close(%__MODULE__{} = control, options \\ []) do
     deadline = lifecycle_deadline(options)
 
@@ -243,6 +267,7 @@ defmodule LibTmux.Control do
   end
 
   @doc "Waits for retirement or raises the same structured error."
+  @spec close!(t(), [call_option()]) :: :ok
   def close!(control, options \\ []), do: unwrap(close(control, options))
 
   @doc """
@@ -255,7 +280,7 @@ defmodule LibTmux.Control do
   Errors report unknown certainty about existing effects. Attachment counts
   include the control client; reconnect can attach one replacement client.
   """
-  @spec reconnect(t(), keyword()) :: {:ok, t()} | {:error, Error.t()}
+  @spec reconnect(t(), [call_option()]) :: {:ok, t()} | {:error, Error.t()}
   def reconnect(%__MODULE__{} = control, options \\ []) do
     deadline = lifecycle_deadline(options)
 
@@ -270,6 +295,7 @@ defmodule LibTmux.Control do
   end
 
   @doc "Obtains the ready epoch or raises the same structured error."
+  @spec reconnect!(t(), [call_option()]) :: t()
   def reconnect!(control, options \\ []), do: unwrap(reconnect(control, options))
 
   defp bind_reconnected(control, acknowledged) do

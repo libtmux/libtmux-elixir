@@ -28,11 +28,34 @@ defmodule LibTmux.Transport.OneShot do
   alias LibTmux.Transport.Native
   alias LibTmux.Transport.Native.Protocol, as: NativeProtocol
 
+  @typedoc "Captured bytes and child exit status after proven owned-process retirement; nonzero exit remains a transport result."
+  @type result :: %{
+          stdout: binary(),
+          stderr: binary(),
+          exit_status: non_neg_integer(),
+          cleanup: :retired
+        }
+
+  @typedoc """
+  Per-call input and capture limits; bytes and chunks are bounded independently.
+
+  Timeout and deadline are exclusive. A supplied deadline must have at most
+  600,000 ms remaining at validation; it preserves its original cutoff.
+  """
+  @type option ::
+          {:timeout, 1..600_000}
+          | {:deadline, Deadline.t()}
+          | {:cwd, String.t()}
+          | {:env, %{optional(binary()) => binary()}}
+          | {:max_stdout_bytes | :max_stderr_bytes, 0..16_777_216}
+          | {:max_total_bytes, nil | 0..33_554_432}
+          | {:max_chunks, 1..65_536}
+
   @cleanup_ms 750
   @chunk_bytes 8192
 
   @doc "Runs argv without a shell, retaining exit status separately from stdout and stderr."
-  @spec run(binary(), [binary()], keyword()) :: {:ok, map()} | {:error, Error.t()}
+  @spec run(binary(), [binary()], [option()]) :: {:ok, result()} | {:error, Error.t()}
   def run(executable, arguments, options \\ []) do
     if length(options) != map_size(Map.new(options)),
       do: raise(ArgumentError, "duplicate transport options")
@@ -65,7 +88,7 @@ defmodule LibTmux.Transport.OneShot do
   end
 
   @doc "Runs argv, raising the same structured transport error on failure."
-  @spec run!(binary(), [binary()], keyword()) :: map()
+  @spec run!(binary(), [binary()], [option()]) :: result()
   def run!(executable, arguments, options \\ []) do
     case run(executable, arguments, options) do
       {:ok, result} -> result

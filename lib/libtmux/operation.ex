@@ -23,13 +23,32 @@ defmodule LibTmux.Operation do
   @enforce_keys [:records, :lease, :inbox, :waiter_inbox, :births]
   @derive {Inspect, only: []}
   defstruct @enforce_keys
+  @typedoc "A retained owner-bound operation handle; it is not a command result or a reservation."
   @opaque t :: %__MODULE__{}
-  @type result :: %{
-          required(:outcome) => atom(),
-          required(:certainty) => atom(),
-          optional(atom()) => term()
+  @typedoc "A qualified command reply, independently of wire retirement or program completion."
+  @type command_result :: %{
+          outcome: :completed | :failed,
+          certainty: :acknowledged,
+          evidence: :command_reply,
+          guard: LibTmux.Protocol.guard_id(),
+          lines: [binary()]
         }
-  @type status :: %{wire: atom(), result: result() | nil}
+  @typedoc "A canonical no-write outcome, with the reason it was skipped before dispatch."
+  @type skipped_result :: %{
+          outcome: :skipped,
+          certainty: :no_write,
+          evidence: :cancelled | :timeout | :epoch_closed
+        }
+  @typedoc "An epoch closed without enough evidence to classify the operation's effects."
+  @type unknown_result :: %{outcome: :unknown, certainty: :unknown, evidence: :epoch_closed}
+  @typedoc "The immutable canonical outcome; failed, skipped and unknown outcomes remain values."
+  @type result :: command_result() | skipped_result() | unknown_result()
+  @typedoc "Wire progress for this operation; retired wire does not prove connection cleanup."
+  @type wire :: :unpublished | :unsent | :writing | :awaiting | :closing | :retired
+  @typedoc "Retained wire progress and the canonical result, or nil while no outcome is established."
+  @type status :: %{wire: wire(), result: result() | nil}
+  @typedoc "A positive millisecond budget for one waiter or record-reclamation call."
+  @type option :: {:timeout, pos_integer()}
 
   @doc false
   def new(endpoint, %Admission.Lease{} = lease) do
@@ -96,6 +115,7 @@ defmodule LibTmux.Operation do
   end
 
   @doc "Reads retained status or raises the same structured error."
+  @spec status!(t()) :: status()
   def status!(operation), do: unwrap(status(operation))
 
   @doc "Returns a canonical result, `:pending`, or a retained-context error."
@@ -109,6 +129,7 @@ defmodule LibTmux.Operation do
   end
 
   @doc "Reads a result or `:pending`; raises API errors, preserving all canonical outcomes."
+  @spec result!(t()) :: :pending | result()
   def result!(operation), do: unwrap(result(operation))
 
   @doc """
@@ -119,13 +140,14 @@ defmodule LibTmux.Operation do
   Completed waiter copies survive record reclamation until this caller reads
   them. Timeout, overload and caller death affect only this waiter.
   """
-  @spec await(t(), keyword()) :: {:ok, result()} | {:error, Error.t()}
+  @spec await(t(), [option()]) :: {:ok, result()} | {:error, Error.t()}
   def await(%__MODULE__{} = operation, options \\ []) do
     deadline = deadline(options)
     exchange(operation, operation.waiter_inbox, :await, deadline, :wait)
   end
 
   @doc "Waits or raises API errors; canonical failed, skipped and unknown outcomes remain values."
+  @spec await!(t(), [option()]) :: result()
   def await!(operation, options \\ []), do: unwrap(await(operation, options))
 
   @doc """
@@ -135,13 +157,14 @@ defmodule LibTmux.Operation do
   owned after caller timeout. Successful reclamation invalidates this record
   handle while preserving already-accepted waiter copies.
   """
-  @spec forget(t(), keyword()) :: :ok | {:error, Error.t()}
+  @spec forget(t(), [option()]) :: :ok | {:error, Error.t()}
   def forget(%__MODULE__{} = operation, options \\ []) do
     deadline = deadline(options)
     exchange(operation, operation.inbox, :forget, deadline, :forget)
   end
 
   @doc "Forgets the retained record or raises the same structured error."
+  @spec forget!(t(), [option()]) :: :ok
   def forget!(operation, options \\ []), do: unwrap(forget(operation, options))
 
   @doc """
@@ -170,6 +193,7 @@ defmodule LibTmux.Operation do
   end
 
   @doc "Requests epoch closure or raises the same structured error."
+  @spec stop!(t()) :: :ok
   def stop!(operation), do: unwrap(stop(operation))
 
   defp revoke(operation) do

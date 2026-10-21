@@ -40,10 +40,50 @@ defmodule LibTmux.Snapshot do
     indexes: %{}
   ]
 
-  @type t :: %__MODULE__{}
+  @typedoc "Coverage of one captured entity domain; missing field entries are unloaded."
+  @type entity_coverage :: %{
+          ids: MapSet.t(Ref.id()),
+          complete: boolean(),
+          fields: %{optional(atom()) => :loaded | :unavailable}
+        }
+  @typedoc "Declared entity sets and field availability; completeness is separate from an empty captured set."
+  @type coverage :: %{entities: %{Schema.entity() => entity_coverage()}}
+  @typep indexes :: %{
+           session_links: %{optional(String.t()) => [Ref.id()]},
+           window_links: %{optional(String.t()) => [Ref.id()]},
+           window_panes: %{optional(Schema.observed(String.t())) => [String.t()]},
+           session_clients: %{optional(Schema.observed(String.t())) => [String.t()]}
+         }
+  @typedoc "Observed rows grouped by canonical entity; construction validates and deduplicates their identities."
+  @type rows :: %{optional(Schema.entity()) => [map() | Schema.observation()]}
+  @typedoc "Construction metadata: one server instance, ordered millisecond timestamps and explicit coverage declarations."
+  @type option ::
+          {:server_instance, String.t()}
+          | {:captured_from, integer()}
+          | {:captured_until, integer()}
+          | {:fields, %{optional(Schema.entity()) => [atom()]}}
+          | {:complete, [Schema.entity()]}
+          | {:unavailable, %{optional(Schema.entity()) => [atom()]}}
+
+  @typedoc "An immutable observation interval with indexed entities and explicit coverage."
+  @type t :: %__MODULE__{
+          id: pos_integer(),
+          server_instance: String.t(),
+          captured_from: integer(),
+          captured_until: integer(),
+          coverage: coverage(),
+          schema_version: 1,
+          sessions: %{optional(String.t()) => LibTmux.Session.t()},
+          windows: %{optional(String.t()) => LibTmux.Window.t()},
+          window_links: %{optional(Ref.id()) => LibTmux.WindowLink.t()},
+          panes: %{optional(String.t()) => LibTmux.Pane.t()},
+          clients: %{optional(String.t()) => LibTmux.Client.t()},
+          order: %{Schema.entity() => [Ref.id()]},
+          indexes: indexes()
+        }
 
   @doc "Validates observed rows, rejecting conflicts, invalid fields and dangling covered references."
-  @spec new(map(), keyword()) :: {:ok, t()} | {:error, Error.t()}
+  @spec new(rows(), [option()]) :: {:ok, t()} | {:error, Error.t()}
   def new(rows, options) do
     options =
       Keyword.validate!(options, [
@@ -111,6 +151,7 @@ defmodule LibTmux.Snapshot do
   end
 
   @doc "Returns plain observed items in stable identity order without loading data."
+  @spec items(t(), Schema.entity_selector()) :: [Schema.observation()]
   def items(%__MODULE__{} = snapshot, entity) do
     entity = Schema.entity(entity)
     table = table(snapshot, entity)
@@ -118,17 +159,24 @@ defmodule LibTmux.Snapshot do
   end
 
   @doc "Returns a materialized session selection without I/O."
+  @spec sessions(t()) :: LibTmux.Selection.t(LibTmux.Session.t())
   def sessions(snapshot), do: LibTmux.Selection.new(snapshot, :session)
   @doc "Returns a materialized physical window selection without I/O."
+  @spec windows(t()) :: LibTmux.Selection.t(LibTmux.Window.t())
   def windows(snapshot), do: LibTmux.Selection.new(snapshot, :window)
   @doc "Returns a materialized physical pane selection without I/O."
+  @spec panes(t()) :: LibTmux.Selection.t(LibTmux.Pane.t())
   def panes(snapshot), do: LibTmux.Selection.new(snapshot, :pane)
   @doc "Returns a materialized membership selection without I/O."
+  @spec window_links(t()) :: LibTmux.Selection.t(LibTmux.WindowLink.t())
   def window_links(snapshot), do: LibTmux.Selection.new(snapshot, :window_link)
   @doc "Returns a materialized attached-client selection without I/O."
+  @spec clients(t()) :: LibTmux.Selection.t(LibTmux.Client.t())
   def clients(snapshot), do: LibTmux.Selection.new(snapshot, :client)
 
   @doc "Looks up one exact observed ID without I/O."
+  @spec fetch(t(), Schema.entity_selector(), Ref.id()) ::
+          {:ok, Schema.observation()} | {:error, Error.t()}
   def fetch(%__MODULE__{} = snapshot, entity, id) do
     entity = Schema.entity(entity)
 
@@ -143,6 +191,7 @@ defmodule LibTmux.Snapshot do
   end
 
   @doc "Requires a declared complete entity set, even when it has no rows."
+  @spec require_complete!(t(), Schema.entity_selector()) :: :ok
   def require_complete!(snapshot, entity) do
     entity = Schema.entity(entity)
 
@@ -153,6 +202,7 @@ defmodule LibTmux.Snapshot do
   end
 
   @doc "Requires a loaded field over the captured entity domain before evaluation."
+  @spec require_field!(t(), Schema.entity_selector(), atom()) :: :ok
   def require_field!(snapshot, entity, field) do
     entity = Schema.entity(entity)
     unless Schema.field(entity, field), do: raise_error(:invalid_field, [entity, field])
@@ -165,6 +215,7 @@ defmodule LibTmux.Snapshot do
   end
 
   @doc "Requires a complete relation domain, including known-empty domains."
+  @spec require_relation!(t(), Schema.entity_selector(), atom(), :all | [Ref.id()]) :: :ok
   def require_relation!(snapshot, entity, relation, ids \\ :all) do
     entity = Schema.entity(entity)
 
@@ -181,6 +232,8 @@ defmodule LibTmux.Snapshot do
   end
 
   @doc "Resolves a covered relation through captured indexes; never refreshes."
+  @spec related(t(), Schema.entity_selector(), Ref.id(), atom()) ::
+          Schema.observation() | nil | [Schema.observation()]
   def related(snapshot, entity, id, relation) do
     entity = Schema.entity(entity)
     require_relation!(snapshot, entity, relation, [id])

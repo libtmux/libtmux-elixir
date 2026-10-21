@@ -11,10 +11,21 @@ defmodule LibTmux.Codec do
 
   alias LibTmux.Error
 
+  @typedoc "The required decoded field category; string additionally requires valid UTF-8."
   @type field_type :: :bytes | :string | :integer | :boolean
+  @typedoc "Field framing and value validation options; min and max apply only to integer fields."
+  @type field_option ::
+          {:encoding, :raw | :escaped_v1}
+          | {:max_bytes, pos_integer()}
+          | {:min | :max, integer() | nil}
 
   @doc "Removes one framing newline and validates the complete field value."
-  @spec decode_field(binary(), field_type(), keyword()) :: {:ok, term()} | {:error, Error.t()}
+  @spec decode_field(binary(), :bytes | :string, [field_option()]) ::
+          {:ok, binary()} | {:error, Error.t()}
+  @spec decode_field(binary(), :integer, [field_option()]) ::
+          {:ok, integer()} | {:error, Error.t()}
+  @spec decode_field(binary(), :boolean, [field_option()]) ::
+          {:ok, boolean()} | {:error, Error.t()}
   def decode_field(response, type, options \\ []) when is_binary(response) do
     cond do
       byte_size(response) > max_bytes(options) ->
@@ -33,7 +44,8 @@ defmodule LibTmux.Codec do
   end
 
   @doc "Decodes tmux's three-digit octal output escapes as bytes."
-  @spec decode_output(binary(), keyword()) :: {:ok, binary()} | {:error, Error.t()}
+  @spec decode_output(binary(), [{:max_bytes, pos_integer()}]) ::
+          {:ok, binary()} | {:error, Error.t()}
   def decode_output(value, options \\ []) when is_binary(value) do
     if byte_size(value) > max_bytes(options) do
       error(:resource_limit, :output_bytes)

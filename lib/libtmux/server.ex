@@ -14,9 +14,21 @@ defmodule LibTmux.Server do
   @enforce_keys [:executable, :socket, :cwd, :env]
   @derive {Inspect, only: []}
   defstruct [:executable, :socket, :cwd, :env]
-  @type t :: %__MODULE__{executable: binary(), socket: binary(), cwd: binary(), env: map()}
+
+  @typedoc "An explicit local server descriptor; constructing it neither connects nor reserves server identity."
+  @type t :: %__MODULE__{
+          executable: String.t(),
+          socket: String.t(),
+          cwd: String.t(),
+          env: %{optional(binary()) => binary()}
+        }
+  @typedoc "Descriptor inputs; executable, socket and cwd are absolute NUL-free paths."
+  @type option ::
+          {:executable | :socket | :cwd, String.t()}
+          | {:env, %{optional(binary()) => binary()}}
 
   @doc "Constructs a descriptor for an existing server without connecting or creating it."
+  @spec new([option()]) :: t()
   def new(options) do
     options =
       Keyword.validate!(options, [:executable, :socket, cwd: File.cwd!(), env: System.get_env()])
@@ -38,7 +50,7 @@ defmodule LibTmux.Server do
   end
 
   @doc "Runs one trusted command without attaching; returns bounded output and exit evidence."
-  @spec run(t(), Command.t(), keyword()) :: {:ok, map()} | {:error, Error.t()}
+  @spec run(t(), Command.t(), [OneShot.option()]) :: {:ok, OneShot.result()} | {:error, Error.t()}
   def run(%__MODULE__{} = server, %Command{} = command, options \\ []) do
     arguments = ["-N", "-u", "-S", server.socket | Command.argv(command)]
     options = Keyword.merge([cwd: server.cwd, env: server.env], options)
@@ -62,10 +74,11 @@ defmodule LibTmux.Server do
   end
 
   @doc "Captures a new graph explicitly, with bounded work and read retries."
-  @spec snapshot(t(), keyword()) :: {:ok, LibTmux.Snapshot.t()} | {:error, Error.t()}
+  @spec snapshot(t(), [Capture.option()]) :: {:ok, LibTmux.Snapshot.t()} | {:error, Error.t()}
   def snapshot(server, options \\ []), do: Capture.fetch(server, options)
 
   @doc "Captures a graph or raises the same structured capture error."
+  @spec snapshot!(t(), [Capture.option()]) :: LibTmux.Snapshot.t()
   def snapshot!(server, options \\ []) do
     case snapshot(server, options) do
       {:ok, snapshot} -> snapshot

@@ -9,12 +9,13 @@ defmodule LibTmux.Session do
     attached: :unloaded
   ]
 
+  @typedoc "A session with explicit field coverage and an attachment count separate from its Boolean projection."
   @type t :: %__MODULE__{
           id: String.t(),
           server_instance: String.t(),
-          name: String.t() | :unloaded | :unavailable,
-          attached_count: non_neg_integer() | :unloaded | :unavailable,
-          attached: boolean() | :unloaded | :unavailable
+          name: LibTmux.Schema.observed(String.t()),
+          attached_count: LibTmux.Schema.observed(non_neg_integer()),
+          attached: LibTmux.Schema.observed(boolean())
         }
 end
 
@@ -31,7 +32,16 @@ defmodule LibTmux.Window do
     zoomed: :unloaded
   ]
 
-  @type t :: %__MODULE__{id: String.t(), server_instance: String.t()}
+  @typedoc "A physical window; session index and active-window state belong to a WindowLink."
+  @type t :: %__MODULE__{
+          id: String.t(),
+          server_instance: String.t(),
+          name: LibTmux.Schema.observed(String.t()),
+          width: LibTmux.Schema.observed(non_neg_integer()),
+          height: LibTmux.Schema.observed(non_neg_integer()),
+          layout: LibTmux.Schema.observed(String.t()),
+          zoomed: LibTmux.Schema.observed(boolean())
+        }
 end
 
 defmodule LibTmux.WindowLink do
@@ -46,9 +56,14 @@ defmodule LibTmux.WindowLink do
     active: :unloaded
   ]
 
+  @typedoc "A captured session/index/window binding, including its session-relative active state."
   @type t :: %__MODULE__{
           id: {String.t(), non_neg_integer(), String.t()},
-          server_instance: String.t()
+          server_instance: String.t(),
+          session_id: LibTmux.Schema.observed(String.t()),
+          window_id: LibTmux.Schema.observed(String.t()),
+          index: LibTmux.Schema.observed(non_neg_integer()),
+          active: LibTmux.Schema.observed(boolean())
         }
 end
 
@@ -71,11 +86,21 @@ defmodule LibTmux.Pane do
     exit_status: :unloaded
   ]
 
+  @typedoc "A physical pane; exit status can be known absent, while other missing fields retain coverage sentinels."
   @type t :: %__MODULE__{
           id: String.t(),
           server_instance: String.t(),
-          window_id: String.t() | :unloaded | :unavailable,
-          exit_status: non_neg_integer() | nil | :unloaded | :unavailable
+          window_id: LibTmux.Schema.observed(String.t()),
+          index: LibTmux.Schema.observed(non_neg_integer()),
+          active: LibTmux.Schema.observed(boolean()),
+          dead: LibTmux.Schema.observed(boolean()),
+          width: LibTmux.Schema.observed(non_neg_integer()),
+          height: LibTmux.Schema.observed(non_neg_integer()),
+          pid: LibTmux.Schema.observed(non_neg_integer()),
+          current_command: LibTmux.Schema.observed(String.t()),
+          current_path: LibTmux.Schema.observed(String.t()),
+          title: LibTmux.Schema.observed(String.t()),
+          exit_status: LibTmux.Schema.observed(non_neg_integer() | nil)
         }
 end
 
@@ -92,5 +117,14 @@ defmodule LibTmux.Client do
     control_mode: :unloaded
   ]
 
-  @type t :: %__MODULE__{id: String.t(), server_instance: String.t()}
+  @typedoc "An attached client; a known absent height is distinct from unloaded or unavailable coverage."
+  @type t :: %__MODULE__{
+          id: String.t(),
+          server_instance: String.t(),
+          session_id: LibTmux.Schema.observed(String.t()),
+          pid: LibTmux.Schema.observed(non_neg_integer()),
+          width: LibTmux.Schema.observed(non_neg_integer()),
+          height: LibTmux.Schema.observed(non_neg_integer() | nil),
+          control_mode: LibTmux.Schema.observed(boolean())
+        }
 end

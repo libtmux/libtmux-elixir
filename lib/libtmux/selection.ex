@@ -12,14 +12,22 @@ defmodule LibTmux.Selection do
   @enforce_keys [:entity, :items, :count, :snapshot]
   defstruct [:entity, :items, :count, :snapshot]
 
+  @typedoc "An ordered selection retaining items of one observation type and their originating snapshot."
   @opaque t(item) :: %__MODULE__{
-            entity: module(),
+            entity: Schema.entity_module(),
             items: [item],
             count: non_neg_integer(),
             snapshot: Snapshot.t()
           }
+  @typedoc "A selection without a concrete observation type; use `t:t/1` to preserve item types."
+  @type t :: t(Schema.observation())
 
   @doc "Materializes the observed items of an entity without I/O."
+  @spec new(Snapshot.t(), :session | LibTmux.Session) :: t(LibTmux.Session.t())
+  @spec new(Snapshot.t(), :window | LibTmux.Window) :: t(LibTmux.Window.t())
+  @spec new(Snapshot.t(), :pane | LibTmux.Pane) :: t(LibTmux.Pane.t())
+  @spec new(Snapshot.t(), :window_link | LibTmux.WindowLink) :: t(LibTmux.WindowLink.t())
+  @spec new(Snapshot.t(), :client | LibTmux.Client) :: t(LibTmux.Client.t())
   def new(%Snapshot{} = snapshot, entity) do
     entity = Schema.entity(entity)
     items = Snapshot.items(snapshot, entity)
@@ -33,14 +41,18 @@ defmodule LibTmux.Selection do
   end
 
   @doc "Returns cached materialized size in constant time."
+  @spec size(t()) :: non_neg_integer()
   def size(%__MODULE__{count: count}), do: count
 
   @doc "Filters validated data while retaining order and captured graph context."
+  @spec where(t(item), Filter.input()) :: t(item) when item: Schema.observation()
   def where(%__MODULE__{} = selection, criteria) do
     filter(selection, predicate(selection, criteria))
   end
 
   @doc "Filters with a unary local function; normal predicate exceptions propagate."
+  @spec filter(t(item), (item -> as_boolean(term()))) :: t(item)
+        when item: Schema.observation()
   def filter(%__MODULE__{} = selection, predicate) when is_function(predicate, 1) do
     items = Enum.filter(selection.items, predicate)
     %{selection | items: items, count: length(items)}
@@ -50,25 +62,34 @@ defmodule LibTmux.Selection do
     do: raise(ArgumentError, "filter requires a unary function")
 
   @doc "Checks native identity separately from Enumerable element membership."
+  @spec member_id?(t(), LibTmux.Ref.id()) :: boolean()
   def member_id?(selection, id), do: Enum.any?(selection.items, &(&1.id == id))
 
   @doc "Returns exactly one match, or a structured cardinality error; stops at the second match."
+  @spec one(t(item), Filter.input()) :: {:ok, item} | {:error, Error.t()}
+        when item: Schema.observation()
   def one(selection, criteria \\ []), do: cardinality(selection, criteria, false)
 
   @doc "Returns exactly one match or raises its cardinality error."
+  @spec one!(t(item), Filter.input()) :: item when item: Schema.observation()
   def one!(selection, criteria \\ []), do: unwrap(one(selection, criteria))
 
   @doc "Returns one match or nil; a second match remains an error."
+  @spec one_or_nil(t(item), Filter.input()) :: {:ok, item | nil} | {:error, Error.t()}
+        when item: Schema.observation()
   def one_or_nil(selection, criteria \\ []), do: cardinality(selection, criteria, true)
 
   @doc "Returns one match or nil, raising on multiple matches."
+  @spec one_or_nil!(t(item), Filter.input()) :: item | nil when item: Schema.observation()
   def one_or_nil!(selection, criteria \\ []), do: unwrap(one_or_nil(selection, criteria))
 
   @doc "Returns true on the first matching observed item."
+  @spec exists?(t(), Filter.input()) :: boolean()
   def exists?(selection, criteria \\ []),
     do: Enum.any?(selection.items, predicate(selection, criteria))
 
   @doc "Counts observed matching items; use size/1 for cached unfiltered size."
+  @spec count(t(), Filter.input()) :: non_neg_integer()
   def count(selection, criteria \\ []),
     do: Enum.count(selection.items, predicate(selection, criteria))
 

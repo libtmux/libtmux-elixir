@@ -7,6 +7,54 @@ defmodule LibTmux.Schema do
   remains text; only explicitly nullable fields admit `nil`.
   """
 
+  @typedoc "An entity's canonical local name. Physical windows and membership links are distinct."
+  @type entity :: :session | :window | :window_link | :pane | :client
+
+  @typedoc "The observation struct modules accepted alongside canonical entity names."
+  @type entity_module ::
+          LibTmux.Session | LibTmux.Window | LibTmux.WindowLink | LibTmux.Pane | LibTmux.Client
+
+  @typedoc "A canonical entity atom or its corresponding observation module."
+  @type entity_selector :: entity() | entity_module()
+
+  @typedoc "A known value, unloaded coverage, or an unavailable capability; nil belongs to the value type."
+  @type observed(value) :: value | :unloaded | :unavailable
+
+  @typedoc "One physical or contextual observation from a captured graph."
+  @type observation ::
+          LibTmux.Session.t()
+          | LibTmux.Window.t()
+          | LibTmux.WindowLink.t()
+          | LibTmux.Pane.t()
+          | LibTmux.Client.t()
+
+  @typedoc "A field's validation category; integer fields use the schema's nonnegative 32-bit range."
+  @type value_type :: :string | :integer | :nullable_integer | :boolean | {:id, entity()}
+  @typedoc "Field metadata shared by validation and documentation; nil format identifies a derived field."
+  @type field :: %{
+          name: atom(),
+          wire: String.t(),
+          format: String.t() | nil,
+          type: value_type(),
+          since: String.t(),
+          nullable: boolean()
+        }
+  @typedoc "The cardinality and target entity of one indexed graph relation."
+  @type relation :: {:one | :many, entity()}
+  @typedoc "A scalar filter operator; each field category permits only its applicable subset."
+  @type operator ::
+          :equals
+          | :not
+          | :in
+          | :not_in
+          | :lt
+          | :lte
+          | :gt
+          | :gte
+          | :contains
+          | :starts_with
+          | :ends_with
+
   @entities [:session, :window, :window_link, :pane, :client]
   @modules %{
     session: LibTmux.Session,
@@ -89,12 +137,15 @@ defmodule LibTmux.Schema do
   }
 
   @doc "Returns supported entity names in a stable order."
+  @spec entities() :: [entity()]
   def entities, do: @entities
 
   @doc "Returns the ordinary observation struct module for an entity."
+  @spec module(entity()) :: entity_module()
   def module(entity), do: Map.fetch!(@modules, entity)
 
   @doc "Resolves an entity atom or its observation module."
+  @spec entity(entity_selector()) :: entity()
   def entity(entity) when entity in @entities, do: entity
 
   def entity(module),
@@ -103,6 +154,7 @@ defmodule LibTmux.Schema do
         raise(ArgumentError, "unknown entity")
 
   @doc "Returns the whitelisted field metadata for an entity."
+  @spec fields(entity_selector()) :: %{atom() => field()}
   def fields(entity) do
     Map.new(Map.fetch!(@fields, entity(entity)), fn {name, wire, format, type} ->
       {name,
@@ -118,15 +170,19 @@ defmodule LibTmux.Schema do
   end
 
   @doc "Returns field metadata, or nil for a field outside the schema."
+  @spec field(entity_selector(), atom()) :: field() | nil
   def field(entity, name), do: Map.get(fields(entity), name)
 
   @doc "Returns each relation's cardinality and target entity."
+  @spec relations(entity_selector()) :: %{atom() => relation()}
   def relations(entity), do: Map.fetch!(@relations, entity(entity))
 
   @doc "Returns a relation's explicit stable wire name."
+  @spec relation_wire(atom()) :: String.t()
   def relation_wire(name), do: Map.fetch!(@relation_names, name)
 
   @doc "Returns the portable operators allowed by a scalar field's value category."
+  @spec operators(field()) :: [operator()]
   def operators(%{type: type}) do
     [:equals, :not, :in, :not_in] ++
       case type do

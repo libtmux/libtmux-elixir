@@ -11,6 +11,8 @@ defmodule LibTmux.Control.Request do
 
   @enforce_keys [:kind, :value]
   defstruct [:kind, :value, :target]
+
+  @typedoc "Command data for the qualified lane; construction does not validate admission or perform I/O."
   @opaque t :: %__MODULE__{}
 
   @doc "Reads a named format variable, optionally from an exact instance-bound target."
@@ -60,6 +62,8 @@ defmodule LibTmux.Control.Request do
       {:error, %Error{kind: :invalid_command, phase: :validation, certainty: :no_write}}
   end
 
+  @doc "Checks a qualified request's reply shape; a tmux error reply remains a command outcome."
+  @spec verify_reply(t(), :ok | :error, [binary()]) :: :ok | {:error, Error.t()}
   def verify_reply(_request, :error, _lines), do: :ok
 
   def verify_reply(%{kind: :field}, :ok, [field]) do

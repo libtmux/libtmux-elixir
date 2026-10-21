@@ -12,7 +12,36 @@ defmodule LibTmux.Filter do
   alias LibTmux.{Error, Schema}
   @enforce_keys [:entity, :tree]
   defstruct [:entity, :tree]
-  @opaque t :: %__MODULE__{entity: atom(), tree: tuple()}
+
+  @typedoc "Local map criteria or keyword shorthand; field and operand domains are validated at construction."
+  @type criteria :: %{optional(atom()) => term()} | keyword(term())
+  @typedoc "Trusted criteria data or a previously validated filter for the same entity."
+  @type input :: criteria() | t()
+  @typedoc "A positive resource ceiling; byte, depth, node, list and string budgets validate independently."
+  @type limit_option ::
+          {:max_bytes, pos_integer()}
+          | {:max_depth, pos_integer()}
+          | {:max_nodes, pos_integer()}
+          | {:max_list, pos_integer()}
+          | {:max_string_bytes, pos_integer()}
+  @typedoc "Resolved constructor budgets; wire limits also cover the versioned envelope."
+  @type limits :: %{
+          max_bytes: pos_integer(),
+          max_depth: pos_integer(),
+          max_nodes: pos_integer(),
+          max_list: pos_integer(),
+          max_string_bytes: pos_integer()
+        }
+  @typep scalar :: binary() | non_neg_integer() | boolean() | nil | LibTmux.Ref.id()
+  @typep predicate_node ::
+           {:and | :or, [predicate_node()]}
+           | {:not, predicate_node()}
+           | {:field, atom(), Schema.operator(), scalar() | [scalar()]}
+           | {:count, atom(), [{Schema.operator(), non_neg_integer() | [non_neg_integer()]}]}
+           | {:relation, atom(), :some | :every | :none | :is | :is_not, predicate_node() | nil}
+
+  @typedoc "Validated portable predicate data; executable predicates are prepared separately."
+  @opaque t :: %__MODULE__{entity: Schema.entity(), tree: predicate_node()}
 
   @doc """
   Normalizes criteria and validates field/operator/value domains before evaluation.
@@ -21,6 +50,8 @@ defmodule LibTmux.Filter do
   are supplied. Explicit limits check the normalized tree directly, without
   expanding it into synthetic input syntax.
   """
+  @spec new(Schema.entity_selector(), input(), [limit_option()]) ::
+          {:ok, t()} | {:error, Error.t()}
   def new(entity, criteria, options \\ [])
 
   def new(entity, %__MODULE__{} = filter, []) do
@@ -63,6 +94,7 @@ defmodule LibTmux.Filter do
   end
 
   @doc "Constructs a filter or raises its structured validation error."
+  @spec new!(Schema.entity_selector(), input(), [limit_option()]) :: t()
   def new!(entity, criteria, options \\ []) do
     case new(entity, criteria, options) do
       {:ok, filter} -> filter
@@ -71,23 +103,31 @@ defmodule LibTmux.Filter do
   end
 
   @doc "Prepares a local unary predicate after validating captured coverage, including empty domains."
+  @spec to_predicate(t(), [{:snapshot, LibTmux.Snapshot.t()}]) ::
+          (Schema.observation() -> boolean())
   def to_predicate(%__MODULE__{} = filter, options) do
     filter = new!(filter.entity, filter)
     LibTmux.Filter.Evaluator.prepare(filter, Keyword.fetch!(options, :snapshot))
   end
 
   @doc "Decodes a whitelisted versioned map; raw JSON must use from_json to retain duplicate keys."
+  @spec from_wire(Schema.entity_selector(), term(), [limit_option()]) ::
+          {:ok, t()} | {:error, Error.t()}
   def from_wire(entity, payload, options \\ []),
     do: LibTmux.Filter.Wire.decode(entity, payload, options)
 
   @doc "Decodes bounded JSON, rejecting duplicate object keys and trailing data."
+  @spec from_json(Schema.entity_selector(), binary(), [limit_option()]) ::
+          {:ok, t()} | {:error, Error.t()}
   def from_json(entity, json, options \\ []),
     do: LibTmux.Filter.Wire.decode_json(entity, json, options)
 
   @doc "Returns the explicit versioned string-keyed wire representation."
+  @spec to_wire(t()) :: LibTmux.Wire.object()
   def to_wire(%__MODULE__{} = filter), do: LibTmux.Filter.Wire.encode(new!(filter.entity, filter))
 
   @doc false
+  @spec limits([limit_option()]) :: limits()
   def limits(options) do
     values =
       Keyword.validate!(options,

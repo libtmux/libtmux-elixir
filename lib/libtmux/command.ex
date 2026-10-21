@@ -11,10 +11,13 @@ defmodule LibTmux.Command do
   @enforce_keys [:name, :args]
   defstruct [:name, :args]
 
+  @typedoc "Trusted command data without I/O. Format operands need separate encoding before execution."
   @opaque t :: %__MODULE__{name: String.t(), args: [binary()]}
+  @typedoc "A positive byte ceiling for the selected argv or text rendering; encoded output is charged separately."
+  @type option :: {:max_bytes, pos_integer()}
 
   @doc "Constructs a trusted command, rejecting invalid arguments and input size."
-  @spec new(String.t(), [binary()], keyword()) :: t()
+  @spec new(String.t(), [binary()], [option()]) :: t()
   def new(name, args, options \\ []) do
     limit = limit(options)
 
@@ -30,7 +33,7 @@ defmodule LibTmux.Command do
   end
 
   @doc "Returns process arguments, preserving terminal semicolons in tmux's argv parser."
-  @spec argv(t(), keyword()) :: [binary()]
+  @spec argv(t(), [option()]) :: [binary()]
   def argv(%__MODULE__{name: name, args: args}, options \\ []) do
     _ = new(name, args, options)
     result = [name | Enum.map(args, &argv_argument/1)]
@@ -39,7 +42,7 @@ defmodule LibTmux.Command do
   end
 
   @doc "Renders one newline-free tmux command line within its encoded byte budget."
-  @spec render(t(), keyword()) :: binary()
+  @spec render(t(), [option()]) :: binary()
   def render(%__MODULE__{name: name, args: args}, options \\ []) do
     _ = new(name, args, options)
 

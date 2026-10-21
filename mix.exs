@@ -11,6 +11,7 @@ defmodule LibTmux.MixProject do
       version: "0.1.0-dev",
       elixir: ">= 1.20.4 and < 2.0.0",
       elixirc_paths: elixirc_paths(Mix.env()),
+      test_ignore_filters: [&String.starts_with?(&1, "test/fixtures/compiler/")],
       compilers: [:libtmux_io | Mix.compilers()],
       description: "Elixir tmux client with explicit observations and operation outcomes",
       source_url: @source_url,

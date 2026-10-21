@@ -15,6 +15,20 @@ defmodule LibTmux.Capture do
   """
 
   alias LibTmux.{Codec, Command, Deadline, Error, Format, Schema, Server, Snapshot}
+
+  @typedoc """
+  Capture-wide budgets shared by all attempts and reads.
+
+  Each read uses the smaller of remaining `max_bytes` and `max_response_bytes`.
+  That effective ceiling must fit OneShot's 16 MiB stdout limit. The shared
+  deadline must have at most 600,000 ms remaining when OneShot validates a read.
+  Invalid combinations raise `ArgumentError` before that command executes.
+  """
+  @type option ::
+          {:timeout, pos_integer()}
+          | {:deadline, Deadline.t()}
+          | {:attempts, 1..3}
+          | {:max_entities | :max_commands | :max_bytes | :max_response_bytes, pos_integer()}
   @session_fields [:id, :attached_count]
   @window_fields [:width, :height, :zoomed]
   @link_fields [:session_id, :index, :window_id, :active]
@@ -26,7 +40,13 @@ defmodule LibTmux.Capture do
     pane: [:current_command, :current_path, :title]
   }
 
-  @doc "Performs bounded capture through an explicit server descriptor."
+  @doc """
+  Performs bounded capture through an explicit server descriptor.
+
+  See `t:option/0` for the composed work, response and remaining-deadline
+  constraints inherited from `LibTmux.Transport.OneShot.run/3`.
+  """
+  @spec fetch(Server.t(), [option()]) :: {:ok, Snapshot.t()} | {:error, Error.t()}
   def fetch(%Server{} = server, options \\ []) do
     if Keyword.has_key?(options, :deadline) and Keyword.has_key?(options, :timeout),
       do: raise(ArgumentError, "pass a deadline or timeout, not both")

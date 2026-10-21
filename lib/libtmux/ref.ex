@@ -12,8 +12,11 @@ defmodule LibTmux.Ref do
   @enforce_keys [:entity, :id, :server_instance]
   defstruct [:entity, :id, :server_instance]
 
+  @typedoc "The target kind; physical windows and session-relative links have different identities."
   @type entity :: :session | :window | :pane | :window_link | :client
+  @typedoc "A native ID or observed session/index/window link binding; neither reserves an object's lifetime."
   @type id :: String.t() | {String.t(), non_neg_integer(), String.t()}
+  @typedoc "An exact observed identity bound to a tmux server incarnation, separate from a connection epoch."
   @type t :: %__MODULE__{entity: entity(), id: id(), server_instance: String.t()}
 
   @doc "Validates a native identity and binds it to a nonempty instance token."

@@ -12,7 +12,13 @@ defmodule LibTmux.Wire do
 
   alias LibTmux.{Error, Filter}
 
+  @typedoc "A JSON value with string-keyed objects; invalid external terms return a validation error."
+  @type value :: nil | boolean() | integer() | float() | String.t() | [value()] | object()
+  @typedoc "A JSON object whose keys remain strings; validation never creates atoms from external names."
+  @type object :: %{optional(String.t()) => value()}
+
   @doc "Decodes one complete bounded JSON value, rejecting duplicate keys and trailing data."
+  @spec decode(binary(), [Filter.limit_option()]) :: {:ok, value()} | {:error, Error.t()}
   def decode(binary, options \\ []) when is_binary(binary) do
     limits = Filter.limits(options)
 
@@ -75,6 +81,7 @@ defmodule LibTmux.Wire do
   end
 
   @doc "Validates already-decoded JSON data and its complete encoded byte size."
+  @spec validate(term(), [Filter.limit_option()]) :: {:ok, value()} | {:error, Error.t()}
   def validate(value, options \\ []) do
     limits = Filter.limits(options)
 

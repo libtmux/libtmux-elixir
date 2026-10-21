@@ -16,12 +16,17 @@ defmodule LibTmux.Error do
     details: %{}
   ]
 
+  @typedoc "Evidence about effects, independent of whether cleanup or arbitrary program completion is proved."
+  @type certainty :: :no_write | :acknowledged | :observed | :unknown
+  @typedoc "A field, array index or observed identity locating an error; links retain their contextual tuple ID."
+  @type path_component :: atom() | non_neg_integer() | LibTmux.Ref.id()
+  @typedoc "A structured API failure. Kind and phase are extensible; retryable never permits automatic mutation replay."
   @type t :: %__MODULE__{
           kind: atom(),
           phase: atom(),
-          certainty: :no_write | :acknowledged | :observed | :unknown,
+          certainty: certainty(),
           retryable: boolean(),
-          path: [atom() | String.t() | non_neg_integer()],
+          path: [path_component()],
           details: map()
         }
 
