@@ -36,8 +36,8 @@ exports. Keep those generators in the kit.
 ## Documentation and previews
 
 Use `logo.svg` for a documentation logo and `favicon.ico` for its favicon.
-ExDoc is not configured in this package yet; its eventual configuration can
-use those local files. Crawler metadata needs absolute public URLs to the
+ExDoc uses the local SVG logo and includes the artwork in its output.
+Crawler metadata needs absolute public URLs to the
 1200 × 630 `opengraph-light.png` and 1200 × 600 `twitter-light.png` images.
 The private source repository is not an image host for previews.
 

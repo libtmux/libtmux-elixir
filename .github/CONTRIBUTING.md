@@ -45,9 +45,14 @@ the check loops if it is missing:
 $ mix local.hex --force
 ```
 
-The core currently declares no dependencies. Keep third-party runtime
-dependencies at zero; development tools may be added when they serve an
-actual check. tmux is not needed for pure unit or packed-core checks. The
+The core has no third-party runtime dependencies. ExDoc is a development-only
+dependency; install it before timing documentation checks:
+
+```console
+$ mix deps.get
+```
+
+tmux is not needed for pure unit or packed-core checks. The
 implementation floor is tmux `3.3`, and support must be proved against that
 version rather than inferred from a newer local binary.
 
@@ -65,6 +70,44 @@ as errors:
 ```console
 $ time mix compile --warnings-as-errors
 ```
+
+Check public function specs and type documentation against the compiled API:
+
+```console
+$ time mix run scripts/check_public_contracts.exs
+```
+
+Compile the consumer fixtures and check the expected Elixir 1.20 diagnostics:
+
+```console
+$ time mix run scripts/check_consumer_types.exs
+```
+
+Typespecs document contracts; the compiler infers types from implementation
+patterns and guards. These fixtures verify selected valid and invalid uses,
+not arbitrary criteria or every value-dependent return type. The codec fixture
+records a case inference does not currently reject; runtime validation remains
+required. Neither a declaration count nor a silent compiler proves every
+contract.
+
+With dependencies already installed, render the public reference and guides:
+
+```console
+$ time mix docs --warnings-as-errors
+```
+
+Check rendered local files and HTML fragments without network requests:
+
+```console
+$ time python3 scripts/check_docs_links.py
+```
+
+The link check reports ExDoc's optional host-provided version catalogue
+separately. It does not verify external websites or publication.
+
+Set `DOCS_SOURCE_REF` to the reviewed commit, branch or release tag when building
+documentation for that revision. ExDoc uses `main` by default. Rendered copies
+resolve source-file and artwork-directory links without changing the originals.
 
 With Hex already installed, build the local archive:
 
@@ -119,7 +162,8 @@ resource ceilings and remaining distribution gates.
 These gates prove current foundations and fixture ownership. They do not
 establish a complete client API, installed adapter graphs or compatibility
 for unexercised operations. Do not add empty source or tests to make a
-command appear useful. Docs and consumer checks arrive with those components.
+command appear useful. Complete runnable examples and adapter consumer checks
+arrive with those components.
 
 ## Check budgets
 
@@ -134,7 +178,8 @@ scope in the pull request. Tool installation happens before a timed loop.
 
 Formatting and changed pure tests belong in the inner loop; the complete
 unit suite belongs in the mid loop. Compilation, packaging and real tmux
-fixtures belong in the outer loop.
+fixtures and documentation rendering belong in the outer loop. Dependency
+installation stays outside all check loops.
 Do not run network operations, installs, builds, browsers, sleeps, or broad
 corpus scans in the inner or mid loop.
 
