@@ -3,6 +3,25 @@ defmodule LibTmux.ControlInboxTest do
   alias LibTmux.{Deadline, Error}
   alias LibTmux.Control.Inbox
 
+  test "a closed completed receipt is reusable before the next owner sweep" do
+    inbox = Inbox.new(1, kinds: [:reconnect])
+    ticket = publish(inbox)
+    assert {:ok, [{^ticket, _}]} = Inbox.take(inbox, now: 1)
+    assert :ok = Inbox.close(inbox, ticket)
+
+    assert {:error, %Error{kind: :resource_limit}} =
+             Inbox.publish(inbox, make_ref(), Deadline.new(100, now: 0), {:reconnect, nil},
+               now: 1
+             )
+
+    assert :ok = Inbox.finish(inbox, ticket, :ok, now: 2)
+    replacement = publish(inbox)
+    assert replacement.generation == ticket.generation + 1
+    assert {:error, %Error{kind: :stale_ticket}} = Inbox.close(inbox, ticket)
+    assert :pending = Inbox.result(inbox, replacement)
+    assert :ok = Inbox.close(inbox, replacement)
+  end
+
   test "retained results copy binary leaves without losing reference identity" do
     inbox = Inbox.new(1, kinds: [:reconnect])
     ticket = publish(inbox)

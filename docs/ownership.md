@@ -188,6 +188,35 @@ If native retirement was already proved, that lifetime remains retired;
 the Manager's fault does not erase cleanup knowledge or preserve lost tables
 across its replacement.
 
+### Managed execution
+
+`Control.execute/3` uses the same operation slots and a collection request in
+the existing waiter Inbox. It waits for wire retirement, detaches the result
+for every accepted collector, releases the exact operation lease, then makes
+collector copies readable. Ordinary `Operation.await/2` may still return an
+acknowledged result before wire retirement. It does not reclaim the record.
+
+Expired or closed collectors settle independently. Failure to prepare the
+remaining bounded result copies preserves the record. Expiry after release
+can still prevent delivery: `Control.ExecutionError` then reports lost
+context. No timeout establishes no effects or authorizes replay. Already
+completed waiter copies stay in their fixed Inbox slots until receipt or
+caller death. An acknowledged completed row may be reused by a publisher
+through an exact-generation compare-and-swap, without waiting for a sweep;
+unfinished work cannot be recycled this way.
+
+A managed lease names its original publisher at admission. The Manager keeps
+at most one monitor per managed lease and reclaims a dead publisher's record
+only after wire retirement, including death before collection registration.
+Existing actor events and publisher DOWN signals service this work; no
+per-command cleanup process is created. Existing unpublished-lease accounting
+still fences a publication that never arrives before its deadline.
+
+After an execution error, a live caller can inspect its retained Operation
+until forget, expiry or Manager loss. Death of that original caller also
+permits reclamation, even if it passed the handle elsewhere. Use
+`Control.submit/3` for retention independent of the submitting process.
+
 Accounting finalizes retained records for all observed dead destinations in
 one lease scan, matching each epoch and PID together. It preserves acknowledged
 results and dispatched uncertainty, and releases no live destination's record.

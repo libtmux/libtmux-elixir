@@ -14,6 +14,8 @@ defmodule LibTmux.Operation do
 
   Normal reconnect preserves retained records until forget or expiry. Owner
   replacement loses those tables; a handle never follows a replacement view.
+  Handles recovered from `LibTmux.Control.execute/3` errors also remain owned
+  by that original caller: its death permits reclamation after wire retirement.
   """
 
   alias LibTmux.{Deadline, Error}
@@ -149,6 +151,10 @@ defmodule LibTmux.Operation do
   @doc "Waits or raises API errors; canonical failed, skipped and unknown outcomes remain values."
   @spec await!(t(), [option()]) :: result()
   def await!(operation, options \\ []), do: unwrap(await(operation, options))
+
+  @doc false
+  def collect(%__MODULE__{} = operation, %Deadline{} = deadline),
+    do: exchange(operation, operation.waiter_inbox, :collect, deadline, :collect)
 
   @doc """
   Requests exact-record reclamation with a default 5000ms timeout.

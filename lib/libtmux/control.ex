@@ -14,7 +14,17 @@ defmodule LibTmux.Control do
   """
 
   alias LibTmux.{Deadline, Error, Operation}
-  alias LibTmux.Control.{Admission, Exchange, Inbox, Lifetime, Records, Request, Start}
+
+  alias LibTmux.Control.{
+    Admission,
+    Exchange,
+    ExecutionError,
+    Inbox,
+    Lifetime,
+    Records,
+    Request,
+    Start
+  }
 
   @enforce_keys [:owner, :view, :lifetime, :endpoint]
   @derive {Inspect, only: []}
@@ -146,6 +156,61 @@ defmodule LibTmux.Control do
     options = Keyword.validate!(options, timeout: 5000)
     deadline = Deadline.new(options[:timeout], now: entered_at)
 
+    admit(control, request, deadline, :retained)
+  end
+
+  @doc """
+  Executes one qualified request, returning its result after wire retirement
+  and record reclamation. Repeated successful calls need no manual forget.
+
+  The default 5000ms budget covers preparation, admission, execution and
+  collection. Failed, skipped and unknown canonical outcomes remain values;
+  acknowledgement does not establish external program completion.
+
+  Pre-admission errors have no-write certainty. An error after admission is
+  a `LibTmux.Control.ExecutionError` with the exact Operation and retained or
+  lost context. Inspect that handle when available; never replay on timeout.
+  The original caller owns recovery: its death permits reclamation after wire
+  retirement, even if it passed the handle to another process. A live caller's
+  timeout leaves the record subject to normal retention and explicit forget.
+  Use `submit/3` when a retained handle is required after successful waiting.
+
+      Control.execute(control, LibTmux.Control.Request.field("pid"))
+  """
+  @spec execute(t(), Request.t(), [call_option()]) ::
+          {:ok, Operation.result()} | {:error, Error.t() | ExecutionError.t()}
+  def execute(%__MODULE__{} = control, %Request{} = request, options \\ []) do
+    entered_at = System.monotonic_time(:millisecond)
+    options = Keyword.validate!(options, timeout: 5000)
+    deadline = Deadline.new(options[:timeout], now: entered_at)
+
+    with {:ok, operation} <- admit(control, request, deadline, :managed) do
+      case Operation.collect(operation, deadline) do
+        {:ok, result} ->
+          {:ok, result}
+
+        {:error, error} ->
+          context =
+            case Operation.status(operation) do
+              {:ok, _status} -> :retained
+              {:error, _error} -> :lost
+            end
+
+          {:error, %ExecutionError{error: error, operation: operation, context: context}}
+      end
+    end
+  end
+
+  @doc "Executes and reclaims as in `execute/3`; raises API/context errors, preserving canonical failures as values."
+  @spec execute!(t(), Request.t(), [call_option()]) :: Operation.result()
+  def execute!(control, request, options \\ []) do
+    case execute(control, request, options) do
+      {:ok, result} -> result
+      {:error, error} -> raise error
+    end
+  end
+
+  defp admit(control, request, deadline, mode) do
     with :ok <- unexpired(deadline),
          {:ok, endpoint} <- current(control),
          :ok <- ready(endpoint),
@@ -157,7 +222,8 @@ defmodule LibTmux.Control do
              endpoint.epoch,
              endpoint.router,
              deadline,
-             byte_size(line)
+             byte_size(line),
+             mode: mode
            ) do
       %Operation{} = operation = Operation.bind(template, lease)
       publish(control, endpoint, lease, request, deadline)

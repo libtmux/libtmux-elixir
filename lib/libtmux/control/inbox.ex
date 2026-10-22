@@ -23,7 +23,7 @@ defmodule LibTmux.Control.Inbox do
 
     unless is_integer(max_outcome_bytes) and max_outcome_bytes in 1024..131_072 and
              is_list(kinds) and length(kinds) in 1..3 and Enum.uniq(kinds) == kinds and
-             Enum.all?(kinds, &(&1 in [:reconnect, :forget, :await, :connection])),
+             Enum.all?(kinds, &(&1 in [:reconnect, :forget, :await, :collect, :connection])),
            do: raise(ArgumentError, "inbox requires fixed kinds and 1024..131072 outcome bytes")
 
     table = :ets.new(__MODULE__, [:set, :public, read_concurrency: true, write_concurrency: true])
@@ -68,28 +68,20 @@ defmodule LibTmux.Control.Inbox do
           try do
             result =
               Enum.reduce_while(1..inbox.capacity, rejected(:resource_limit), fn slot, full ->
-                case :ets.lookup(inbox.table, slot) do
-                  [{^slot, %{state: :free, generation: generation} = current}]
-                  when generation < @max_generation ->
-                    next = %{
-                      generation: generation + 1,
-                      state: :pending,
-                      epoch: epoch,
-                      expires_at: deadline.expires_at,
-                      caller: self(),
-                      reply: reply,
-                      token: token,
-                      request: request,
-                      outcome: nil
-                    }
+                data = %{
+                  state: :pending,
+                  epoch: epoch,
+                  expires_at: deadline.expires_at,
+                  caller: self(),
+                  reply: reply,
+                  token: token,
+                  request: request,
+                  outcome: nil
+                }
 
-                    case replace(inbox, slot, current, next) do
-                      :ok -> {:halt, {:ok, ticket(inbox, slot, next)}}
-                      _lost -> {:cont, full}
-                    end
-
-                  _ ->
-                    {:cont, full}
+                case claim(inbox, slot, data, 2) do
+                  {:ok, ticket} -> {:halt, {:ok, ticket}}
+                  :full -> {:cont, full}
                 end
               end)
 
@@ -190,21 +182,41 @@ defmodule LibTmux.Control.Inbox do
   end
 
   def finish(inbox, %Ticket{} = ticket, outcome, options \\ []) do
+    case prepare(inbox, ticket, outcome, options) do
+      {:ok, copy} -> finish_prepared(inbox, ticket, copy, options)
+      {:error, error} -> finish_prepared(inbox, ticket, {:error, error}, options)
+    end
+  end
+
+  # Preparation detaches bounded result data without making the ticket readable.
+  # A collector must release its exact retired record before publishing this copy.
+  def prepare(inbox, %Ticket{} = ticket, outcome, options \\ []) do
+    owned(inbox, fn ->
+      with {:ok, %{state: :working} = data} <- fetch(inbox, ticket) do
+        if Deadline.remaining(%Deadline{expires_at: data.expires_at}, options) == 0 do
+          {:error, failure(:timeout, :unknown)}
+        else
+          references = [
+            inbox.table,
+            inbox.wake,
+            inbox.receipts | Keyword.get(options, :references, [])
+          ]
+
+          case OwnedTerm.copy(outcome, inbox.max_outcome_bytes, references) do
+            {:ok, copy} -> {:ok, copy}
+            {:error, kind} -> {:error, failure(kind, known_certainty(outcome))}
+          end
+        end
+      else
+        {:ok, _data} -> rejected(:settled_ticket)
+        error -> error
+      end
+    end)
+  end
+
+  def finish_prepared(inbox, %Ticket{} = ticket, outcome, options \\ []) do
     owned(inbox, fn ->
       with {:ok, data} <- fetch(inbox, ticket) do
-        outcome =
-          if Deadline.remaining(%Deadline{expires_at: data.expires_at}, options) == 0 do
-            {:error, failure(:timeout, :unknown)}
-          else
-            references =
-              [inbox.table, inbox.wake, inbox.receipts | Keyword.get(options, :references, [])]
-
-            case OwnedTerm.copy(outcome, inbox.max_outcome_bytes, references) do
-              {:ok, copy} -> copy
-              {:error, kind} -> {:error, failure(kind, known_certainty(outcome))}
-            end
-          end
-
         outcome =
           if Deadline.remaining(%Deadline{expires_at: data.expires_at}, options) == 0,
             do: {:error, failure(:timeout, :unknown)},
@@ -213,6 +225,31 @@ defmodule LibTmux.Control.Inbox do
         complete(inbox, ticket, outcome, 2)
       end
     end)
+  end
+
+  defp claim(_inbox, _slot, _data, 0), do: :full
+
+  defp claim(inbox, slot, data, attempts) do
+    case :ets.lookup(inbox.table, slot) do
+      [{^slot, %{generation: generation} = current}] when generation < @max_generation ->
+        reusable =
+          current.state == :free or
+            (current.state == :done and receiver_closed?(inbox, slot, current))
+
+        if reusable do
+          next = Map.put(data, :generation, generation + 1)
+
+          case replace(inbox, slot, current, next) do
+            :ok -> {:ok, ticket(inbox, slot, next)}
+            _changed -> claim(inbox, slot, data, attempts - 1)
+          end
+        else
+          :full
+        end
+
+      _ ->
+        :full
+    end
   end
 
   def result(inbox, %Ticket{} = ticket) do
@@ -370,12 +407,13 @@ defmodule LibTmux.Control.Inbox do
   defp valid_request?(inbox, {:connection, action}) when action in [:ready, :retired],
     do: :connection in inbox.kinds
 
-  defp valid_request?(inbox, {kind, %Lease{} = lease}) when kind in [:forget, :await] do
+  defp valid_request?(inbox, {kind, %Lease{} = lease}) when kind in [:forget, :await, :collect] do
     kind in inbox.kinds and local_ref?(lease.table) and local_ref?(lease.epoch) and
       is_integer(lease.slot) and lease.slot in 1..256 and is_integer(lease.generation) and
       lease.generation in 1..@max_generation and is_integer(lease.expires_at) and
       lease.expires_at in -9_223_372_036_854_775_808..9_223_372_036_854_775_807 and
       is_integer(lease.bytes) and lease.bytes in 1..65_536 and
+      lease.mode in [:retained, :managed] and
       is_pid(lease.destination) and node(lease.destination) == node() and
       is_pid(lease.publisher) and node(lease.publisher) == node()
   end
@@ -383,6 +421,7 @@ defmodule LibTmux.Control.Inbox do
   defp valid_request?(_inbox, _request), do: false
 
   defp pending_certainty(%{request: {:await, _lease}}), do: :unknown
+  defp pending_certainty(%{request: {:collect, _lease}}), do: :unknown
   defp pending_certainty(%{request: {:connection, _action}}), do: :unknown
   defp pending_certainty(_data), do: :no_write
 

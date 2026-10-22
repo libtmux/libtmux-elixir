@@ -15,7 +15,7 @@ defmodule LibTmux.Control.Admission do
       :expires_at,
       :bytes
     ]
-    defstruct @enforce_keys
+    defstruct @enforce_keys ++ [mode: :retained]
     @opaque t :: %__MODULE__{}
   end
 
@@ -59,7 +59,10 @@ defmodule LibTmux.Control.Admission do
              node(destination) == node() and is_integer(expires_at) and
              expires_at in -9_223_372_036_854_775_808..9_223_372_036_854_775_807 and
              is_integer(bytes) and bytes > 0 do
-    options = Keyword.validate!(options, [:now])
+    options = Keyword.validate!(options, [:now, mode: :retained])
+
+    unless options[:mode] in [:retained, :managed],
+      do: raise(ArgumentError, "invalid admission ownership mode")
 
     with_table(pool, fn ->
       cond do
@@ -73,7 +76,7 @@ defmodule LibTmux.Control.Admission do
           rejected(:stale_epoch)
 
         true ->
-          reserve(pool, epoch, destination, deadline, bytes)
+          reserve(pool, epoch, destination, deadline, bytes, options[:mode])
       end
     end)
   end
@@ -139,7 +142,7 @@ defmodule LibTmux.Control.Admission do
   def entries(%__MODULE__{} = pool) do
     owned(pool, fn ->
       entries =
-        for {_slot, _generation, state, _epoch, _destination, _publisher, _expires, _bytes} =
+        for {_slot, _generation, state, _epoch, _destination, _publisher, _expires, _bytes, _mode} =
               entry <- :ets.tab2list(pool.table),
             state in [:reserved, :consumed],
             do: {state, lease(pool, entry)}
@@ -181,7 +184,8 @@ defmodule LibTmux.Control.Admission do
 
     owned(pool, fn ->
       leases =
-        for {_slot, _generation, :reserved, _epoch, _destination, _publisher, expires, _bytes} =
+        for {_slot, _generation, :reserved, _epoch, _destination, _publisher, expires, _bytes,
+             _mode} =
               entry <- :ets.tab2list(pool.table),
             expires <= now,
             do: lease(pool, entry)
@@ -198,7 +202,8 @@ defmodule LibTmux.Control.Admission do
         rejected(:live_destination)
       else
         count =
-          for {slot, generation, :reserved, ^epoch, ^destination, _publisher, _expires, _bytes} =
+          for {slot, generation, :reserved, ^epoch, ^destination, _publisher, _expires, _bytes,
+               _mode} =
                 entry <- :ets.tab2list(pool.table),
               reduce: 0 do
             count ->
@@ -211,14 +216,14 @@ defmodule LibTmux.Control.Admission do
     end)
   end
 
-  defp reserve(pool, epoch, destination, deadline, bytes) do
+  defp reserve(pool, epoch, destination, deadline, bytes, mode) do
     Enum.reduce_while(1..pool.capacity, rejected(:resource_limit), fn slot, full ->
       case :ets.lookup(pool.table, slot) do
-        [{^slot, generation, :free, nil, nil, nil, nil, nil} = entry]
+        [{^slot, generation, :free, nil, nil, nil, nil, nil, nil} = entry]
         when generation < @max_generation ->
           claimed =
             {slot, generation + 1, :reserved, epoch, destination, self(), deadline.expires_at,
-             bytes}
+             bytes, mode}
 
           if :ets.select_replace(pool.table, [{entry, [], [{:const, claimed}]}]) == 1,
             do: {:halt, {:ok, lease(pool, claimed)}},
@@ -230,24 +235,28 @@ defmodule LibTmux.Control.Admission do
     end)
   end
 
-  defp lease(pool, {slot, generation, _state, epoch, destination, publisher, expires_at, bytes}),
-    do: %Lease{
-      table: pool.table,
-      slot: slot,
-      generation: generation,
-      epoch: epoch,
-      destination: destination,
-      publisher: publisher,
-      expires_at: expires_at,
-      bytes: bytes
-    }
+  defp lease(
+         pool,
+         {slot, generation, _state, epoch, destination, publisher, expires_at, bytes, mode}
+       ),
+       do: %Lease{
+         table: pool.table,
+         slot: slot,
+         generation: generation,
+         epoch: epoch,
+         destination: destination,
+         publisher: publisher,
+         expires_at: expires_at,
+         bytes: bytes,
+         mode: mode
+       }
 
   defp row(lease, state),
     do:
       {lease.slot, lease.generation, state, lease.epoch, lease.destination, lease.publisher,
-       lease.expires_at, lease.bytes}
+       lease.expires_at, lease.bytes, lease.mode}
 
-  defp free(slot, generation), do: {slot, generation, :free, nil, nil, nil, nil, nil}
+  defp free(slot, generation), do: {slot, generation, :free, nil, nil, nil, nil, nil, nil}
 
   defp replace(pool, current, next) do
     if :ets.select_replace(pool.table, [{current, [], [{:const, next}]}]) == 1,
