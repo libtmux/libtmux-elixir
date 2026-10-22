@@ -2,6 +2,8 @@
 
 These are implementation constraints for the unpublished scaffold. Module
 names describe proposed responsibilities; no tmux API exists yet.
+The [implementation contracts](implementation.md) map those responsibilities
+to package boundaries and qualification gates.
 
 ## Values and explicit observation
 
@@ -10,6 +12,9 @@ toolchain, and tmux `3.3` as the proposed compatibility floor. Keep the core
 free of third-party runtime dependencies. Use
 [standard-library JSON][elixir-json] and OTP processes where their contracts
 fit; development dependencies are separate.
+
+The initial declared OTP support minimum is `29.1.2`; the floating
+development selector does not establish support for older OTP 29 releases.
 
 | Responsibility | Planned contract |
 | --- | --- |
@@ -73,9 +78,10 @@ does not prove that an already-dispatched command had no effect.
 ## Package and validation boundaries
 
 Workspace loading and MCP are separate packages that depend on the core.
-The core does not depend on their parsers, hosting, or configuration. Package
-names and adapter dependencies remain undecided until implementation needs
-them.
+The core does not depend on their parsers, hosting, or configuration. The
+[implementation contracts](implementation.md#packages-and-support) select
+the package names and layout; adapter dependency choices still require
+qualification.
 
 Implementation must establish parser and quoting behavior, real-tmux
 compatibility, completion and cancellation semantics, bounded resource

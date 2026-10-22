@@ -1,14 +1,16 @@
 # Contributing
 
-This repository is an unpublished Elixir package scaffold. Current checks
-validate package metadata and formatting; there is no tmux implementation
-or test suite. [WRITING.md](WRITING.md) governs prose, comments, and commits.
+This unpublished Elixir package is under implementation. Pure foundation
+tests, packed-core import checks and owned real-tmux checks are available.
+[WRITING.md](WRITING.md) governs prose, comments, and commits.
 
 ## Setup
 
 Use mise with the ranges in [`.tool-versions`](../.tool-versions): Erlang/OTP
 `29.x` and Elixir `1.20.x`. The Mix project requires at least Elixir `1.20.4`.
-Install the toolchain before timing checks:
+Linux builds also require a C11 compiler and Linux headers for the owned
+I/O helper. No NIF or third-party runtime package is required. `CC` may name
+one compiler executable. Install prerequisites before timing checks:
 
 ```console
 $ mise install
@@ -36,6 +38,13 @@ CI reads both ranges from `.tool-versions` and passes them to `setup-beam`
 in loose mode, which selects the Elixir build for the installed OTP major.
 The action's direct `version-file` mode requires exact versions.
 
+The native Linux matrix reads exact tmux source revisions and the reference
+Elixir/OTP pair from `priv/tmux/support.json`. It also tests the resolved
+`.tool-versions` pair with the newest listed tmux release. Every cell checks
+the actual OTP patch, Elixir version and compiled OTP major before testing.
+Missing prerequisites fail the cell. `Required Linux checks` succeeds only
+when the core checks and every native cell succeed; no macOS job is required.
+
 Hex is required only for package archive checks. Install it separately from
 the check loops if it is missing:
 
@@ -43,13 +52,27 @@ the check loops if it is missing:
 $ mix local.hex --force
 ```
 
-The core currently declares no dependencies. Keep third-party runtime
-dependencies at zero; development tools may be added when they serve an
-actual check. tmux is not needed to validate this scaffold. The proposed
+The core has no third-party runtime dependencies. ExDoc is a development-only
+dependency; install it before timing documentation checks:
+
+```console
+$ mix deps.get
+```
+
+tmux is not needed for pure unit or packed-core checks. The
 implementation floor is tmux `3.3`, and support must be proved against that
 version rather than inferred from a newer local binary.
 
 ## Current checks
+
+Check that the active runtime matches the development selectors, minimum
+versions and compiled OTP major:
+
+```console
+$ time elixir scripts/check_runtime.exs tracking
+```
+
+Use `reference` instead of `tracking` to require the exact reference pair.
 
 Check formatting after an edit:
 
@@ -64,17 +87,105 @@ as errors:
 $ time mix compile --warnings-as-errors
 ```
 
+Check public function specs and type documentation against the compiled API:
+
+```console
+$ time mix run scripts/check_public_contracts.exs
+```
+
+Compile the consumer fixtures and check the expected Elixir 1.20 diagnostics:
+
+```console
+$ time mix run scripts/check_consumer_types.exs
+```
+
+Typespecs document contracts; the compiler infers types from implementation
+patterns and guards. These fixtures verify selected valid and invalid uses,
+not arbitrary criteria or every value-dependent return type. The codec fixture
+records a case inference does not currently reject; runtime validation remains
+required. Neither a declaration count nor a silent compiler proves every
+contract.
+
+With dependencies already installed, render the public reference and guides:
+
+```console
+$ time mix docs --warnings-as-errors
+```
+
+Check rendered local files and HTML fragments without network requests:
+
+```console
+$ time python3 scripts/check_docs_links.py
+```
+
+The link check reports ExDoc's optional host-provided version catalogue
+separately. It does not verify external websites or publication.
+
+Set `DOCS_SOURCE_REF` to the reviewed commit, branch or release tag when building
+documentation for that revision. ExDoc uses `main` by default. Rendered copies
+resolve source-file and artwork-directory links without changing the originals.
+
 With Hex already installed, build the local archive:
 
 ```console
 $ time mix hex.build
 ```
 
-The compile command currently generates application metadata; there are no
-library modules to compile. The archive proves that Hex can package the
-declared files, not that a usable tmux API exists. Do not add empty source
-or tests merely to make a command appear useful. Add `mix test`, docs, and
-installed-consumer gates when the corresponding implementation exists.
+Run critical pure tests in the inner loop, or all unit tests in the mid loop:
+
+```console
+$ time mix test
+```
+
+Check generated field, operator and relation documentation after schema changes:
+
+```console
+$ time mix run scripts/generate_schema.exs --check
+```
+
+Regenerate it with `mix run scripts/generate_schema.exs` before the check.
+
+The default suite excludes the `integration` tag. Linux integration fixtures
+require Python 3.9+ with pidfd support and an explicit tmux executable or tmux
+on PATH. Python is a development fixture tool, not a core runtime dependency.
+The helper owns a foreground tmux server, observes socket readiness through
+inotify and verifies server/pane exit through process handles. It uses no
+fixed readiness sleeps and never starts the default server.
+
+Run the real fixture checks in the outer loop with the exact tmux binary
+being qualified:
+
+```console
+$ LIBTMUX_TMUX=/path/to/tmux mix test --include integration
+```
+
+CI runs the complete existing suite with two ExUnit cases at once and two
+BEAM schedulers to fit the Linux runner. The native tests still exercise
+their explicit concurrent fault schedules. Source download, prerequisites
+and tmux compilation run before the timed test step. These cells qualify
+implemented cases; they do not establish unimplemented API support.
+
+Check packed-core consumption and metadata outside the checkout:
+
+```console
+$ time mix run scripts/check_package.exs
+```
+
+Real checks round-trip command and format syntax with hostile bytes. The
+field encoder protects backslashes and control bytes before tmux prints
+them; the decoder handles one free-form field per response. It does not
+assume separator bytes cannot occur in values. The pure control
+parser enforces byte/event limits, but transport receive bounds and shared
+lane safety need separate qualification.
+
+The [ownership guide](../docs/ownership.md) describes the one-shot helper,
+resource ceilings and remaining distribution gates.
+
+These gates prove current foundations and fixture ownership. They do not
+establish a complete client API, installed adapter graphs or compatibility
+for unexercised operations. Do not add empty source or tests to make a
+command appear useful. Complete runnable examples and adapter consumer checks
+arrive with those components.
 
 ## Check budgets
 
@@ -87,8 +198,10 @@ scope in the pull request. Tool installation happens before a timed loop.
 | Mid | Under 30 seconds | Under 10 seconds | Unit suites, lint, and generated-file checks |
 | Outer | Under 5 minutes | Under 60 seconds | Compilation, packaging, docs, and integration matrices |
 
-The scaffold currently has formatting in the inner loop and compilation
-and packaging in the outer loop. No unit suite exists for the mid loop.
+Formatting and changed pure tests belong in the inner loop; the complete
+unit suite belongs in the mid loop. Compilation, packaging and real tmux
+fixtures and documentation rendering belong in the outer loop. Dependency
+installation stays outside all check loops.
 Do not run network operations, installs, builds, browsers, sleeps, or broad
 corpus scans in the inner or mid loop.
 
@@ -100,8 +213,8 @@ tests to an over-budget loop. Benchmarks are separate: each run stays under
 
 ## Package boundaries
 
-[mix.exs](../mix.exs) owns the core package. The future workspace loader and
-MCP server will be separate Mix packages that consume the core. Do not add
+[mix.exs](../mix.exs) owns the core package. The workspace loader and
+MCP server have separate Mix projects that consume the core. Do not add
 adapter dependencies or adapter configuration to the core. The
 [design note](../docs/design.md) records the planned behavioral boundaries.
 
@@ -142,9 +255,12 @@ runtime compatibility, performance, or release readiness.
 
 ## Publication
 
-No release or publishing workflow is configured. Building a local archive
-does not publish it. Publication needs separate authorization and, once
-implementation exists, an installed-consumer check outside the checkout,
-verified package contents and documentation links, and the required runtime
-matrix. Future adapters must consume real package versions rather than
-repository-relative dependencies in published metadata.
+Pushing a `v<version>` tag runs the required Linux checks at that revision,
+then publishes the core package and its documentation to public Hex. The
+tag must match the root Mix version. The publishing job uses `HEX_API_KEY`
+from the GitHub environment named `hex`, then verifies the public release
+and an installation outside the checkout. Merges and local archive builds
+do not publish. Creating a release tag requires separate authorization.
+
+Workspace and MCP have no publication jobs. Their eventual releases must
+use real dependency versions and pass their own installed-consumer checks.

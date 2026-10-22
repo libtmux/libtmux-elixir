@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/libtmux/assets",
+  "revision": "6f3f04c872c739c2fb184796ed6a27aa42ba7731",
+  "language": "elixir",
+  "primary": "#8847B9",
+  "githubLanguageColors": "https://github.com/github-linguist/linguist/blob/538da05f034fa5c83bd81df128d144e208898da3/lib/linguist/languages.yml",
+  "variant": "workspace",
+  "sourceDirectory": "assets/elixir/workspace",
+  "files": [
+    {
+      "file": "apple-touch-icon-dark.png",
+      "bytes": 1269,
+      "sha256": "7857888c9f5072a4a35daa76429441ad0cfeaaa8a5011272f3bbd05a6399d1d0"
+    },
+    {
+      "file": "apple-touch-icon-light.png",
+      "bytes": 1307,
+      "sha256": "ecb46944bc0d989df17809a7914abfc8926dc065552c6f38670d200f0574c72b"
+    },
+    {
+      "file": "favicon.ico",
+      "bytes": 17569,
+      "sha256": "57e292fb4e2da824188dd6fdef3eec525f79bfa63a52cd5977f4192b6125fc20"
+    },
+    {
+      "file": "logo-32.png",
+      "bytes": 418,
+      "sha256": "c7c4fcf25daf9e29143aaef6e2c74057d62cfbee3490449a297ca41367231a94"
+    },
+    {
+      "file": "logo-512.png",
+      "bytes": 5404,
+      "sha256": "2a1fab6ab705db7281480b8c87da31a8aca6bbf7a7c6d33c0348f1022e9e5c9f"
+    },
+    {
+      "file": "logo.svg",
+      "bytes": 2408,
+      "sha256": "312ea770706de6ed235952f00faa06aa0171db41650d377e2de49f80115d0805"
+    },
+    {
+      "file": "opengraph-dark.png",
+      "bytes": 22586,
+      "sha256": "4751a6c9f1f69e55349ff5ff0117c95e6686e641f31926e41e788d197e14a2ed"
+    },
+    {
+      "file": "opengraph-light.png",
+      "bytes": 22534,
+      "sha256": "02f0dfcf8cc16f02ae03faf96ea78400dc1028e3bf4ecf831a9a32cf59a3a773"
+    },
+    {
+      "file": "twitter-dark.png",
+      "bytes": 22439,
+      "sha256": "6b5dd155e1313e3f1eb38c617e3f392d2d7a03e535f113101f0875c5872c10cf"
+    },
+    {
+      "file": "twitter-light.png",
+      "bytes": 22388,
+      "sha256": "ea167065a0fbea933d3a94a006dea36f8c96d9a02dfb73ca7c2a9ca19294071b"
+    }
+  ]
+}

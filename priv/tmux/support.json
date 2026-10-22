@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "elixir": {"minimum": "1.20.4", "line": "1.20"},
+  "otp": {"minimum": "29.1.2", "line": "29"},
+  "tmux_minimum": "3.3",
+  "required_linux": [
+    {"tmux": "3.3", "source": "87fe00e8b44901240fc22d7120c1b31e4331f6f5"},
+    {"tmux": "3.3a", "source": "0b355ae8114511e1ff6359272b164f1cdf718e80"},
+    {"tmux": "3.4", "source": "9ae69c3795ab5ef6b4d760f6398cd9281151f632"},
+    {"tmux": "3.8", "source": "7f2a35ad3321f9ba57a1062ca73b1f3ff26aca53"}
+  ],
+  "reference": {"elixir": "1.20.4", "otp": "29.1.2"},
+  "tracking": {"source": ".tool-versions", "required": true},
+  "optional_platforms": ["macos"]
+}

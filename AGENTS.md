@@ -1,8 +1,10 @@
 # Agent instructions
 
-This is the bootstrap for libtmux in Elixir. Read [mix.exs](mix.exs) and the
-current tree before editing. The scaffold has no tmux implementation or
-test suite; add them only when the task authorizes implementation.
+This is the Elixir libtmux implementation. Read [mix.exs](mix.exs), the
+current tree and [implementation contracts](docs/implementation.md) before
+editing. Target/deadline, command/codec, parser and bounded Linux one-shot
+foundations and indexed graph capture exist. The domain client, persistent
+control and consumer packages are still under implementation.
 
 ## Which policy applies
 

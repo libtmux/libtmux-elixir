@@ -1,29 +1,67 @@
+<!-- libtmux-logo -->
+<div align="center">
+  <picture>
+    <source srcset="docs/assets/logo.svg" type="image/svg+xml">
+    <img src="docs/assets/logo-512.png" width="128" height="128" alt="libtmux for Elixir">
+  </picture>
+</div>
+<!-- /libtmux-logo -->
+
+<div align="center">
+
 # libtmux for Elixir
 
-An Elixir library for controlling tmux, currently an unpublished scaffold.
-This repository contains package metadata and contributor instructions. It
-does not yet provide a tmux API, executable examples, or a supported release.
+</div>
+
+An Elixir library for controlling tmux, currently under implementation.
+The unpublished core provides exact target references, shared deadlines,
+command encoding, bounded protocol parsing, a Linux one-shot transport and
+immutable graph capture, Enumerable selections and portable filters.
+A tmux client API and supported release are still in development.
 
 [Contributing](.github/CONTRIBUTING.md) ·
-[Design](docs/design.md) · [Writing](.github/WRITING.md)
+[First task](docs/first-task.md) ·
+[Design](docs/design.md) · [Encoding](docs/encoding.md) ·
+[Mental model](docs/mental-model.md) ·
+[Observations](docs/observations.md) ·
+[Filtering](docs/filtering.md) ·
+[Ownership](docs/ownership.md) ·
+[Writing](.github/WRITING.md) · [Artwork](docs/branding.md)
 
 ## Status and requirements
 
 | Component | Current scope |
 | --- | --- |
-| Mix application | `:libtmux`, version `0.1.0-dev`; unpublished |
+| Mix application | `:libtmux`, version `0.0.1-alpha.1`; unpublished |
 | Development toolchain | Elixir `1.20.x` (at least `1.20.4`) on Erlang/OTP `29.x` |
-| Planned tmux floor | `3.3`; compatibility tests do not exist yet |
-| Runtime dependencies | No third-party dependencies |
+| Planned tmux floor | `3.3`; fixture checks precede client compatibility qualification |
+| Runtime dependencies | No third-party packages; own native I/O helper |
 | Platforms | No runtime support matrix has been qualified |
 
 [`.tool-versions`](.tool-versions) selects the development toolchain ranges
-for mise and CI. See [setup](.github/CONTRIBUTING.md#setup) for installation
-and upgrades. tmux is not required for the scaffold checks. A future
-implementation will require an external tmux executable and its own
-compatibility evidence.
+for mise and CI. Linux builds require a C11 compiler for the helper. See
+[setup](.github/CONTRIBUTING.md#setup) for installation
+and upgrades. tmux is not required for the pure checks. Capture, command
+execution and the complete example require an external tmux executable.
+The supported client API and compatibility matrix remain under qualification.
 
-## Check the scaffold
+## Capture, select and execute
+
+From a source checkout, run the complete public API example from the packed
+core on a new isolated tmux server. This requires Linux, a C11 compiler,
+Python 3 and tmux 3.3 or newer:
+
+```console
+$ MIX_ENV=test mix run scripts/check_package.exs --examples
+```
+
+The example captures one graph, selects its active pane, and reads that exact
+pane through one-shot and control commands. It checks the acknowledged
+result, retires its connection, and verifies owned server cleanup. The check
+uses a temporary socket and empty configuration. See the [complete program
+and failure behavior](docs/first-task.md).
+
+## Check the implementation
 
 From the checkout, with the development toolchain on `PATH`, check formatting:
 
@@ -31,7 +69,13 @@ From the checkout, with the development toolchain on `PATH`, check formatting:
 $ mix format --check-formatted
 ```
 
-Validate the Mix project and generate its application metadata:
+Run the pure unit suite:
+
+```console
+$ mix test
+```
+
+Compile with warnings treated as errors:
 
 ```console
 $ mix compile --warnings-as-errors
@@ -43,17 +87,26 @@ With Hex installed, build a local package archive:
 $ mix hex.build
 ```
 
-These commands validate the scaffold. They do not exercise a tmux client or
-prove package usability. There is no application source or test suite yet.
+Check public core imports from a packed archive outside the checkout:
+
+```console
+$ mix run scripts/check_package.exs
+```
+
+The unit and packed-core checks validate the current foundations. Real
+integration checks cover owned startup/teardown and hostile command/format
+bytes through real tmux. They do not qualify the future client API or a
+complete compatibility matrix.
 See [Contributing](.github/CONTRIBUTING.md) for setup, timing budgets, and
 the checks required as implementation arrives.
 
 ## Planned package boundaries
 
-The core will expose immutable observations and explicit tmux operations,
+The core provides immutable observations and explicit tmux operations,
 using Elixir and OTP without third-party runtime dependencies. Workspace
-loading and an MCP server are planned as separate packages that depend on
-the core. Neither adapter is present in this scaffold.
+loading and an MCP server have separate Mix projects under `packages/`.
+Their runtime implementations remain planned. MCP also consumes workspace
+behavior rather than maintaining a second loader or planner.
 
 The [design note](docs/design.md) records these boundaries and the contracts
 that implementation must prove. It is not an API reference.

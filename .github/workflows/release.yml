@@ -1,0 +1,81 @@
+name: Publish core
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hex-publish
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/scaffold.yml
+
+  publish:
+    needs: verify
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: hex
+    env:
+      MIX_ENV: dev
+      DOCS_SOURCE_REF: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Read toolchain ranges
+        id: toolchain
+        shell: bash
+        run: |
+          otp_version=$(awk '$1 == "erlang" {print $2}' .tool-versions)
+          elixir_version=$(awk '$1 == "elixir" {print $2}' .tool-versions)
+          : "${otp_version:?Missing Erlang version in .tool-versions}"
+          : "${elixir_version:?Missing Elixir version in .tool-versions}"
+          printf 'otp-version=%s\nelixir-version=%s\n' \
+            "$otp_version" "$elixir_version" >> "$GITHUB_OUTPUT"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          otp-version: ${{ steps.toolchain.outputs.otp-version }}
+          elixir-version: ${{ steps.toolchain.outputs.elixir-version }}
+          version-type: loose
+          install-hex: true
+          install-rebar: false
+      - name: Verify runtime and compiled OTP identity
+        run: time elixir scripts/check_runtime.exs tracking
+      - name: Validate release metadata
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: elixir scripts/check_release.exs "$RELEASE_TAG"
+      - name: Install development documentation tools
+        run: mix deps.get
+      - name: Build the release archive without publishing
+        run: mix hex.build --output "${RUNNER_TEMP}/libtmux.tar"
+      - name: Render release documentation
+        run: mix docs --warnings-as-errors
+      - name: Check rendered documentation links
+        run: python3 scripts/check_docs_links.py
+      - name: Publish core and documentation to Hex
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: mix hex.publish --yes
+      - name: Verify the public release and documentation
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          curl --fail --silent --show-error \
+            "https://hex.pm/api/packages/libtmux/releases/$RELEASE_VERSION" | \
+            jq --exit-status --arg version "$RELEASE_VERSION" \
+              '.version == $version and .requirements == {}'
+          curl --fail --silent --show-error --location --output /dev/null \
+            "https://hexdocs.pm/libtmux/$RELEASE_VERSION/"
+      - name: Install and execute the public core outside the checkout
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: elixir scripts/check_hex_install.exs "$RELEASE_VERSION"

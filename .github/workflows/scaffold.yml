@@ -1,10 +1,11 @@
-name: Scaffold
+name: Core checks
 
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -15,7 +16,7 @@ concurrency:
 
 jobs:
   scaffold:
-    name: Mix metadata and package
+    name: Core units and package
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -39,11 +40,153 @@ jobs:
           version-type: loose
           install-hex: true
           install-rebar: false
+      - name: Validate release metadata for version tags
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: elixir scripts/check_release.exs "$RELEASE_TAG"
+      - name: Install development documentation tools
+        run: mix deps.get
       - name: Check formatting
         run: time mix format --check-formatted
-      - name: Compile application metadata
+      - name: Check executable documentation drift
+        run: time python3 scripts/check_example_docs.py
+      - name: Compile core
         run: time mix compile --warnings-as-errors
+      - name: Run pure units
+        run: time mix test
+      - name: Check public specs and typedocs
+        run: time mix run scripts/check_public_contracts.exs
+      - name: Check consumer type diagnostics
+        run: time mix run scripts/check_consumer_types.exs
+      - name: Render native documentation
+        env:
+          DOCS_SOURCE_REF: ${{ github.sha }}
+        run: time mix docs --warnings-as-errors
+      - name: Check rendered documentation links
+        run: time python3 scripts/check_docs_links.py
       - name: Build local package
         run: time mix hex.build --output "${RUNNER_TEMP}/libtmux.tar"
       - name: List packaged files
         run: tar -xOf "${RUNNER_TEMP}/libtmux.tar" contents.tar.gz | tar -tzf -
+      - name: Consume packed core outside checkout
+        run: time mix run scripts/check_package.exs
+
+  native-matrix:
+    name: Resolve native support matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.support.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read required releases
+        id: support
+        shell: bash
+        run: |
+          jq --version
+          matrix=$(jq -ce '
+            . as $support |
+            if .schema_version != 1 or
+               (.required_linux | length) == 0 or
+               ([.required_linux[].tmux] | index($support.tmux_minimum)) == null
+            then error("missing required tmux floor") else . end |
+            {include: (
+              ([.required_linux[] | . + {toolchain: "reference"}]) +
+              ([.required_linux[-1] | . + {toolchain: "tracking"}])
+            )}
+          ' priv/tmux/support.json)
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+
+  native:
+    name: Native tmux ${{ matrix.tmux }} / ${{ matrix.toolchain }}
+    needs: native-matrix
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.native-matrix.outputs.matrix) }}
+    env:
+      MIX_ENV: test
+      ERL_FLAGS: +S 2:2
+      TMUX_VERSION: ${{ matrix.tmux }}
+      TMUX_SOURCE: ${{ matrix.source }}
+      TOOLCHAIN_PROFILE: ${{ matrix.toolchain }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve runtime selectors
+        id: toolchain
+        shell: bash
+        run: |
+          if [[ "$TOOLCHAIN_PROFILE" == reference ]]; then
+            otp_version=$(jq -er '.reference.otp' priv/tmux/support.json)
+            elixir_version=$(jq -er '.reference.elixir' priv/tmux/support.json)
+          else
+            otp_version=$(awk '$1 == "erlang" {print $2}' .tool-versions)
+            elixir_version=$(awk '$1 == "elixir" {print $2}' .tool-versions)
+          fi
+          : "${otp_version:?Missing Erlang version}"
+          : "${elixir_version:?Missing Elixir version}"
+          printf 'otp-version=%s\nelixir-version=%s\n' \
+            "$otp_version" "$elixir_version" >> "$GITHUB_OUTPUT"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          otp-version: ${{ steps.toolchain.outputs.otp-version }}
+          elixir-version: ${{ steps.toolchain.outputs.elixir-version }}
+          version-type: loose
+          install-hex: true
+          install-rebar: false
+      - name: Verify runtime and compiled OTP identity
+        run: time elixir scripts/check_runtime.exs "$TOOLCHAIN_PROFILE"
+      - name: Install tmux build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            autoconf automake bison build-essential libevent-dev libncurses-dev pkg-config
+      - name: Build pinned tmux source
+        shell: bash
+        run: |
+          build="$RUNNER_TEMP/tmux-$TMUX_VERSION"
+          mkdir -p "$build/source"
+          curl --fail --location \
+            --output "$build/source.tar.gz" \
+            "https://codeload.github.com/tmux/tmux/tar.gz/$TMUX_SOURCE"
+          sha256sum "$build/source.tar.gz"
+          tar --extract --gzip --file "$build/source.tar.gz" \
+            --strip-components=1 --directory "$build/source"
+          (
+            cd "$build/source"
+            sh autogen.sh
+            ./configure --prefix="$build/install"
+            make -j2
+            make install
+          )
+          tmux_binary="$build/install/bin/tmux"
+          test "$("$tmux_binary" -V)" = "tmux $TMUX_VERSION"
+          sha256sum "$tmux_binary"
+          printf 'LIBTMUX_TMUX=%s\n' "$tmux_binary" >> "$GITHUB_ENV"
+      - name: Compile native test application
+        run: time mix compile --warnings-as-errors
+      - name: Run pure and owned native cases
+        run: time mix test --include integration --warnings-as-errors --max-cases 2 --seed 624498
+      - name: Run packed public caller example
+        run: time mix run scripts/check_package.exs --examples
+
+  required-linux:
+    name: Required Linux checks
+    needs: [scaffold, native]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      CORE_RESULT: ${{ needs.scaffold.result }}
+      NATIVE_RESULT: ${{ needs.native.result }}
+    steps:
+      - name: Require every core and native cell
+        run: |
+          test "$CORE_RESULT" = success
+          test "$NATIVE_RESULT" = success
