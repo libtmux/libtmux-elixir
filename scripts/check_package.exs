@@ -14,37 +14,6 @@ root =
 File.mkdir!(root)
 
 try do
-  source_override = System.get_env("LIBTMUX_SOURCE_DEPS")
-  System.delete_env("LIBTMUX_SOURCE_DEPS")
-
-  try do
-    Enum.reduce(
-      [
-        {:libtmux_workspace, "workspace", [:libtmux]},
-        {:libtmux_mcp, "mcp", [:libtmux, :libtmux_workspace]}
-      ],
-      %{libtmux: Mix.Project.config()[:version]},
-      fn {app, directory, expected}, versions ->
-        {dependencies, version} =
-          Mix.Project.in_project(app, Path.join("packages", directory), fn _ ->
-            config = Mix.Project.config()
-            {config[:deps], config[:version]}
-          end)
-
-        ^expected =
-          Enum.map(dependencies, fn {name, requirement} when is_binary(requirement) -> name end)
-
-        for {name, requirement} <- dependencies do
-          true = Version.match?(Map.fetch!(versions, name), requirement)
-        end
-
-        Map.put(versions, app, version)
-      end
-    )
-  after
-    if source_override, do: System.put_env("LIBTMUX_SOURCE_DEPS", source_override)
-  end
-
   archive = Path.join(root, "libtmux.tar")
   mix = System.find_executable("mix") || raise "mix is required"
   elixir = System.find_executable("elixir") || raise "elixir is required"
