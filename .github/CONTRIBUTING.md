@@ -255,9 +255,12 @@ runtime compatibility, performance, or release readiness.
 
 ## Publication
 
-No release or publishing workflow is configured. Building a local archive
-does not publish it. Publication needs separate authorization and, once
-implementation exists, an installed-consumer check outside the checkout,
-verified package contents and documentation links, and the required runtime
-matrix. Future adapters must consume real package versions rather than
-repository-relative dependencies in published metadata.
+Pushing a `v<version>` tag runs the required Linux checks at that revision,
+then publishes the core package and its documentation to public Hex. The
+tag must match the root Mix version. The publishing job uses `HEX_API_KEY`
+from the GitHub environment named `hex`, then verifies the public release
+and an installation outside the checkout. Merges and local archive builds
+do not publish. Creating a release tag requires separate authorization.
+
+Workspace and MCP have no publication jobs. Their eventual releases must
+use real dependency versions and pass their own installed-consumer checks.

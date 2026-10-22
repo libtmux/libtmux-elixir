@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -39,6 +40,11 @@ jobs:
           version-type: loose
           install-hex: true
           install-rebar: false
+      - name: Validate release metadata for version tags
+        if: github.ref_type == 'tag'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: elixir scripts/check_release.exs "$RELEASE_TAG"
       - name: Install development documentation tools
         run: mix deps.get
       - name: Check formatting
