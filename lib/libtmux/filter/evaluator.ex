@@ -2,44 +2,67 @@ defmodule LibTmux.Filter.Evaluator do
   @moduledoc false
   alias LibTmux.{Schema, Snapshot}
 
-  def prepare(filter, %Snapshot{} = snapshot), do: compile(filter.tree, filter.entity, snapshot)
-
-  defp compile({:and, children}, entity, snapshot) do
-    predicates = Enum.map(children, &compile(&1, entity, snapshot))
-    fn item -> Enum.all?(predicates, & &1.(item)) end
+  def prepare(filter, %Snapshot{} = snapshot) do
+    {predicate, _relations} = compile(filter.tree, filter.entity, snapshot, %{})
+    predicate
   end
 
-  defp compile({:or, children}, entity, snapshot) do
-    predicates = Enum.map(children, &compile(&1, entity, snapshot))
-    fn item -> Enum.any?(predicates, & &1.(item)) end
+  defp compile({:and, children}, entity, snapshot, relations) do
+    {predicates, relations} =
+      Enum.map_reduce(children, relations, &compile(&1, entity, snapshot, &2))
+
+    {fn item -> Enum.all?(predicates, & &1.(item)) end, relations}
   end
 
-  defp compile({:not, child}, entity, snapshot) do
-    predicate = compile(child, entity, snapshot)
-    fn item -> not predicate.(item) end
+  defp compile({:or, children}, entity, snapshot, relations) do
+    {predicates, relations} =
+      Enum.map_reduce(children, relations, &compile(&1, entity, snapshot, &2))
+
+    {fn item -> Enum.any?(predicates, & &1.(item)) end, relations}
   end
 
-  defp compile({:field, field, op, value}, entity, snapshot) do
+  defp compile({:not, child}, entity, snapshot, relations) do
+    {predicate, relations} = compile(child, entity, snapshot, relations)
+    {fn item -> not predicate.(item) end, relations}
+  end
+
+  defp compile({:field, field, op, value}, entity, snapshot, relations) do
     Snapshot.require_field!(snapshot, entity, field)
     predicate = scalar(op, value)
-    fn item -> predicate.(Map.fetch!(item, field)) end
+    {fn item -> predicate.(Map.fetch!(item, field)) end, relations}
   end
 
-  defp compile({:count, relation, operators}, entity, snapshot) do
-    Snapshot.require_relation!(snapshot, entity, relation)
+  defp compile({:count, relation, operators}, entity, snapshot, relations) do
+    {related, relations} = related(snapshot, entity, relation, relations)
     predicates = Enum.map(operators, fn {op, value} -> scalar(op, value) end)
 
-    fn item ->
-      count = snapshot |> Snapshot.related(entity, item.id, relation) |> length()
-      Enum.all?(predicates, & &1.(count))
-    end
+    {fn item ->
+       count = length(related.(item.id))
+       Enum.all?(predicates, & &1.(count))
+     end, relations}
   end
 
-  defp compile({:relation, relation, op, child}, entity, snapshot) do
-    Snapshot.require_relation!(snapshot, entity, relation)
+  defp compile({:relation, relation, op, child}, entity, snapshot, relations) do
+    {related, relations} = related(snapshot, entity, relation, relations)
     {_cardinality, target} = Schema.relations(entity)[relation]
-    predicate = if is_nil(child), do: nil, else: compile(child, target, snapshot)
-    fn item -> quantify(Snapshot.related(snapshot, entity, item.id, relation), op, predicate) end
+
+    {predicate, relations} =
+      if is_nil(child), do: {nil, relations}, else: compile(child, target, snapshot, relations)
+
+    {fn item -> quantify(related.(item.id), op, predicate) end, relations}
+  end
+
+  defp related(snapshot, entity, relation, relations) do
+    key = {entity, relation}
+
+    case Map.fetch(relations, key) do
+      {:ok, related} ->
+        {related, relations}
+
+      :error ->
+        related = Snapshot.prepare_relation!(snapshot, entity, relation)
+        {related, Map.put(relations, key, related)}
+    end
   end
 
   defp quantify(items, :some, predicate), do: Enum.any?(items, predicate)

@@ -215,7 +215,12 @@ defmodule LibTmux.Snapshot do
     end
   end
 
-  @doc "Requires a complete relation domain, including known-empty domains."
+  @doc """
+  Requires relation coverage for the requested source IDs, including known-empty relations.
+
+  The default `:all` validates the entire captured source domain. An explicit
+  ID list does not resolve unrelated sources or their ambiguous relationships.
+  """
   @spec require_relation!(t(), Schema.entity_selector(), atom(), :all | [Ref.id()]) :: :ok
   def require_relation!(snapshot, entity, relation, ids \\ :all) do
     entity = Schema.entity(entity)
@@ -223,16 +228,20 @@ defmodule LibTmux.Snapshot do
     unless Map.has_key?(Schema.relations(entity), relation),
       do: raise_error(:invalid_relation, [entity, relation])
 
-    coverage = relation_coverage(snapshot, entity, relation)
     ids = if ids == :all, do: snapshot.order[entity], else: ids
 
-    unless coverage.loaded and Enum.all?(ids, &MapSet.member?(coverage.ids, &1)),
+    unless relation_covered?(snapshot, entity, relation, ids),
       do: raise_error(:relation_not_loaded, [entity, relation])
 
     :ok
   end
 
-  @doc "Resolves a covered relation through captured indexes; never refreshes."
+  @doc """
+  Resolves one source's covered relation through captured indexes; never refreshes.
+
+  Ambiguity in another source does not affect this lookup. Whole-selection
+  filtering still validates its entire required relationship domain first.
+  """
   @spec related(t(), Schema.entity_selector(), Ref.id(), atom()) ::
           Schema.observation() | nil | [Schema.observation()]
   def related(snapshot, entity, id, relation) do
@@ -240,6 +249,20 @@ defmodule LibTmux.Snapshot do
     require_relation!(snapshot, entity, relation, [id])
     {:ok, item} = fetch(snapshot, entity, id)
     project(snapshot, entity, item, relation)
+  end
+
+  @doc false
+  def prepare_relation!(snapshot, entity, relation) do
+    entity = Schema.entity(entity)
+    require_relation!(snapshot, entity, relation)
+    sources = table(snapshot, entity)
+
+    fn id ->
+      case Map.fetch(sources, id) do
+        {:ok, item} -> project(snapshot, entity, item, relation)
+        :error -> raise_error(:relation_not_loaded, [entity, relation])
+      end
+    end
   end
 
   defp index_rows(entity, rows, instance, unavailable) when is_list(rows) do
@@ -425,22 +448,26 @@ defmodule LibTmux.Snapshot do
     |> Map.new(fn {id, rows} -> {id, rows |> Enum.sort_by(order) |> Enum.map(& &1.id)} end)
   end
 
-  defp relation_coverage(snapshot, entity, relation) do
+  defp relation_covered?(snapshot, entity, relation, ids) do
     {complete, required} = requirements(entity, relation)
 
     loaded =
       Enum.all?(complete, &snapshot.coverage.entities[&1].complete) and
         Enum.all?(required, fn {e, f} -> snapshot.coverage.entities[e].fields[f] == :loaded end)
 
-    ids =
-      if loaded,
-        do:
-          Enum.filter(snapshot.order[entity], fn id ->
-            relation_targets_present?(snapshot, entity, id, relation)
-          end),
-        else: []
+    if loaded do
+      sources = table(snapshot, entity)
 
-    %{loaded: loaded, ids: MapSet.new(ids)}
+      # Visit the whole requested domain so later ambiguity remains visible.
+      Enum.reduce(ids, true, fn id, covered ->
+        present =
+          Map.has_key?(sources, id) and relation_targets_present?(snapshot, entity, id, relation)
+
+        present and covered
+      end)
+    else
+      false
+    end
   end
 
   defp requirements(:pane, :window), do: {[], [pane: :window_id]}
@@ -513,10 +540,12 @@ defmodule LibTmux.Snapshot do
       |> Enum.sort_by(&if(&1, do: sort_key(:session, &1.id)))
 
   defp project(s, :session, item, :panes) do
-    windows =
-      project(s, :session, item, :window_links) |> Enum.map(& &1.window_id) |> MapSet.new()
-
-    items(s, :pane) |> Enum.filter(&MapSet.member?(windows, &1.window_id))
+    project(s, :session, item, :window_links)
+    |> Enum.map(& &1.window_id)
+    |> Enum.uniq()
+    |> Enum.flat_map(&Map.get(s.indexes.window_panes, &1, []))
+    |> Enum.sort_by(&sort_key(:pane, &1))
+    |> Enum.map(&s.panes[&1])
   end
 
   defp table(snapshot, entity), do: Map.fetch!(snapshot, @collections[entity])
