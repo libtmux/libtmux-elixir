@@ -32,7 +32,7 @@ A tmux client API and supported release are still in development.
 
 | Component | Current scope |
 | --- | --- |
-| Mix application | `:libtmux`, version `0.1.0-dev`; unpublished |
+| Mix application | `:libtmux`, version `0.0.1-alpha.1`; unpublished |
 | Development toolchain | Elixir `1.20.x` (at least `1.20.4`) on Erlang/OTP `29.x` |
 | Planned tmux floor | `3.3`; fixture checks precede client compatibility qualification |
 | Runtime dependencies | No third-party packages; own native I/O helper |
