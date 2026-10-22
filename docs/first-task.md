@@ -143,9 +143,12 @@ that an arbitrary program started by another command has exited.
 ## Failure behavior and cleanup
 
 The program uses assertions so unexpected results make the example fail.
-Capture and execution errors return `{:error, %LibTmux.Error{}}`, with `kind`,
-`phase` and `certainty` describing the failure. A disappeared exact target
-returns a command error; the library does not retry with a positional target.
+Capture and transport errors return `{:error, %LibTmux.Error{}}`, with `kind`,
+`phase` and `certainty` describing the failure. A control field read whose
+target disappeared returns an acknowledged `:failed` operation; a present
+empty field remains `:completed`. Raw one-shot commands retain tmux's native
+semantics, so the example also checks the returned pane ID. Neither path
+retries with a positional target.
 `LibTmux.Selection.one!/2` raises `:no_match` or `:multiple_matches` rather
 than selecting arbitrarily.
 

@@ -308,18 +308,19 @@ defmodule LibTmux.Control.Router do
       {{:value, {slot, token}}, rest} ->
         case Map.get(state.operations, slot) do
           %{token: ^token, reply: nil} = entry when entry.sent_until == byte_size(entry.line) ->
-            case Request.verify_reply(entry.request, status, lines) do
-              :ok ->
+            case Request.normalize_reply(entry.request, status, lines) do
+              {:ok, qualified_status, qualified_lines} ->
                 observation = %{
-                  status: status,
+                  status: qualified_status,
                   guard: guard,
-                  lines: lines,
+                  lines: qualified_lines,
                   observed_at: System.monotonic_time(:millisecond)
                 }
 
                 case Lifecycle.step(
                        entry.life,
-                       {:owner, state.epoch, token, {:reply, status, guard, lines}},
+                       {:owner, state.epoch, token,
+                        {:reply, qualified_status, guard, qualified_lines}},
                        now: observation.observed_at
                      ) do
                   {:ok, life, actions} ->
