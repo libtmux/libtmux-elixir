@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Documentation
+
+- Add `examples/quickstart.exs`, a script that starts a private tmux
+  server, captures it and prints its window and pane counts. (#7)
+
 ## libtmux 0.0.1-alpha.1 (2026-10-21)
 
 ### Added
