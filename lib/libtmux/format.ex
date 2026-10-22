@@ -29,8 +29,9 @@ defmodule LibTmux.Format do
   Backslashes are replaced first, then dollars and ASCII control bytes.
   This protects values from tmux 3.4's ambiguous print escaping. The `v1:`
   prefix and encoded newlines prevent field text from becoming reply guards.
-  This is one field per response, not a delimiter-framed row or arbitrary
-  format wrapper. The caller must still bound the response and validate the
+  This encodes one field. Capture composes these fields inside its versioned
+  row framing; this is not an arbitrary format wrapper. The caller must still
+  bound the response and validate the
   field against its schema and the connected server's capabilities.
   """
   @spec field(String.t()) :: binary()
