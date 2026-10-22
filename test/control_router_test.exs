@@ -176,6 +176,10 @@ defmodule LibTmux.ControlRouterTest do
     state = connection()
     first = submit(state, Request.field("pid"))
     second = submit(state, Request.field("pid"))
+
+    assert %{lease: ^second, life: %{wire: :unsent}} =
+             :sys.get_state(state.router).operations[second.slot]
+
     assert_receive {:driver_command, _, _, <<?W, 1::32, _line::binary>>}
     send(state.guardian, {:close, self(), state.epoch, :test_close})
     retire(state)
