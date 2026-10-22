@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## libtmux 0.0.1-alpha.1 (2026-10-21)
+
 ### Added
 
 - Capture sessions, windows, panes, clients and linked-window membership as

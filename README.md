@@ -13,11 +13,11 @@
 
 </div>
 
-An Elixir library for controlling tmux, currently under implementation.
-The unpublished core provides exact target references, shared deadlines,
-command encoding, bounded protocol parsing, a Linux one-shot transport and
-immutable graph capture, Enumerable selections and portable filters.
-A tmux client API and supported release are still in development.
+An Elixir library for controlling tmux. The core provides exact target
+references, shared deadlines, command encoding, bounded protocol parsing,
+Linux one-shot execution, immutable graph capture, Enumerable selections and
+portable filters.
+The domain client API remains under development.
 
 [Contributing](.github/CONTRIBUTING.md) ·
 [First task](docs/first-task.md) ·
@@ -32,7 +32,7 @@ A tmux client API and supported release are still in development.
 
 | Component | Current scope |
 | --- | --- |
-| Mix application | `:libtmux`, version `0.0.1-alpha.1`; unpublished |
+| Mix application | `:libtmux`, version `0.0.1-alpha.1` |
 | Development toolchain | Elixir `1.20.x` (at least `1.20.4`) on Erlang/OTP `29.x` |
 | Planned tmux floor | `3.3`; fixture checks precede client compatibility qualification |
 | Runtime dependencies | No third-party packages; own native I/O helper |
@@ -44,6 +44,20 @@ for mise and CI. Linux builds require a C11 compiler for the helper. See
 and upgrades. tmux is not required for the pure checks. Capture, command
 execution and the complete example require an external tmux executable.
 The supported client API and compatibility matrix remain under qualification.
+
+## Installation
+
+Add the alpha release to your Mix dependencies:
+
+```elixir
+{:libtmux, "== 0.0.1-alpha.1"}
+```
+
+Fetch dependencies:
+
+```console
+$ mix deps.get
+```
 
 ## Capture, select and execute
 
