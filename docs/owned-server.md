@@ -54,3 +54,7 @@ Production server creation belongs to the host. `Server.new/1` describes a
 server; `Control.start_link/1` attaches to an existing session. Neither owns
 or kills that borrowed server. The [ownership guide](ownership.md) describes
 library-owned clients and native helpers separately from server-owned jobs.
+
+The [standalone alpha demo](standalone-demo.md) installs its own package and
+creates a private server without this runner. It demonstrates the published
+command API; its cleanup has a narrower contract.

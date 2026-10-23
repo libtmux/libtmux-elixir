@@ -73,6 +73,7 @@ defmodule LibTmux.MixProject do
     extras = [
       "README.md",
       "docs/first-task.md",
+      "docs/standalone-demo.md",
       "docs/one-shot-actions.md",
       "docs/managed-control.md",
       "docs/owned-server.md",
@@ -118,7 +119,8 @@ defmodule LibTmux.MixProject do
       logo: "docs/assets/logo.svg",
       assets: %{"docs/assets" => "docs/assets"},
       groups_for_extras: [
-        Tasks: ~r/(first-task|one-shot-actions|managed-control|owned-server|advanced-execution)/,
+        Tasks:
+          ~r/(first-task|standalone-demo|one-shot-actions|managed-control|owned-server|advanced-execution)/,
         "Concepts and reference": ~r/(mental-model|observations|filtering|schema|api-examples)/,
         "Design and internals": ~r/(ownership|encoding|design|implementation)/,
         Contributing: ~r/(AGENTS|CONTRIBUTING|WRITING|branding|LICENSE)/

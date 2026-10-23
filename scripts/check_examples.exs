@@ -95,6 +95,25 @@ defmodule LibTmux.ExampleCheck do
     IO.puts("PASS: caller failure survives separate teardown failure evidence")
 
     check_mix_recipes(package, consumer, python, executable, options)
+
+    {output, status} =
+      System.cmd(
+        System.find_executable("mix"),
+        [
+          "test",
+          "test/quickstart_example_integration_test.exs",
+          "--include",
+          "integration",
+          "--warnings-as-errors",
+          "--seed",
+          "624498"
+        ],
+        env: [{"MIX_ENV", "test"}, {"LIBTMUX_QUICKSTART_PACKAGE", package}],
+        stderr_to_stdout: true
+      )
+
+    if status != 0, do: raise("packed quickstart failed: #{output}")
+    IO.puts("PASS: packed standalone quickstart; success, failure and process retirement")
   end
 
   defp check_mix_recipes(package, consumer, python, executable, options) do
