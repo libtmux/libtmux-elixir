@@ -56,11 +56,8 @@ defmodule LibTmux.Control.Request do
   def encode(%__MODULE__{kind: :action, value: {kind, value, options}, target: target}, instance) do
     with {:ok, command} <-
            LibTmux.Action.command(kind, target, value, options, instance, :control) do
-      {:ok, Command.render(command, max_bytes: 65_535) <> "\n"}
+      render_action(command)
     end
-  rescue
-    _error in [ArgumentError, FunctionClauseError] ->
-      {:error, %Error{kind: :invalid_command, phase: :validation, certainty: :no_write}}
   end
 
   def encode(%__MODULE__{} = request, instance) do
@@ -146,6 +143,20 @@ defmodule LibTmux.Control.Request do
 
   defp invalid_reply,
     do: {:error, %Error{kind: :invalid_reply, phase: :parse, certainty: :unknown}}
+
+  defp render_action(command) do
+    {:ok, Command.render(command, max_bytes: 65_535) <> "\n"}
+  rescue
+    error in ArgumentError ->
+      {:error,
+       %Error{
+         kind: :invalid_command,
+         phase: :validation,
+         certainty: :no_write,
+         path: [:command],
+         details: %{reason: Exception.message(error)}
+       }}
+  end
 
   defp validate_field(field) do
     case Codec.decode_field(field <> "\n", :bytes, encoding: :escaped_v1) do
