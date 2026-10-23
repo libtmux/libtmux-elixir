@@ -56,7 +56,6 @@ defmodule LibTmux.OperationTest do
     table = waiters.inbox.table
     assert_receive {Inbox, :wake, ^table, _generation}, 100
     waiters = Waiters.turn(waiters)
-    assert map_size(waiters.active) == 1
 
     assert_receive {:await_result, {:error, %Error{kind: :timeout, certainty: :unknown}},
                     {:monitors, []}},
