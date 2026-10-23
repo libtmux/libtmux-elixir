@@ -36,15 +36,30 @@ defmodule LibTmux.Action do
   @type connection :: Server.t() | Control.t()
   @typedoc "A 1..600000ms execution budget, default 5000ms; optional exact session context for physical targets."
   @type option :: {:timeout, 1..600_000} | {:session, Ref.t()}
-  @typedoc "Canonical command outcome and original transport evidence; value exists only after acknowledged completion."
-  @type result(value) :: %{
-          outcome: :completed | :failed | :skipped | :unknown,
-          certainty: Error.certainty(),
-          evidence: atom(),
-          transport: :one_shot | :control,
-          value: value | nil,
-          details: map()
-        }
+  @typedoc """
+  Canonical action outcome and original transport evidence.
+
+  A completed outcome carries the action's value; failed, skipped and unknown
+  outcomes carry `nil`. Match the outcome before using the value. Command
+  acknowledgement remains distinct from external program completion.
+  """
+  @type result(value) ::
+          %{
+            outcome: :completed,
+            certainty: Error.certainty(),
+            evidence: atom(),
+            transport: :one_shot | :control,
+            value: value,
+            details: map()
+          }
+          | %{
+              outcome: :failed | :skipped | :unknown,
+              certainty: Error.certainty(),
+              evidence: atom(),
+              transport: :one_shot | :control,
+              value: nil,
+              details: map()
+            }
   @typedoc "An API refusal or a managed execution error retaining its recovery context."
   @type error :: Error.t() | LibTmux.Control.ExecutionError.t()
 
