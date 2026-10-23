@@ -288,6 +288,19 @@ cleanup uses only its remaining budget. OTP still waits for actual Root DOWN
 after an initialization timeout; this primitive alone does not prove a strict
 caller-return deadline or complete descendant retirement.
 
+The adapter is maintained against
+[OTP 29.1.2 supervisor startup](https://github.com/erlang/otp/blob/d199a49a01a2079afb6f2c5c9ae047cd4555e68d/lib/stdlib/src/supervisor.erl#L547-L548)
+and [proc_lib timeout cleanup](https://github.com/erlang/otp/blob/d199a49a01a2079afb6f2c5c9ae047cd4555e68d/lib/stdlib/src/proc_lib.erl#L438-L453).
+The public Supervisor API has no initialization timeout option. The adapter
+rejects runtime OTP majors other than 29, or a library build made with an
+Elixir compiled for another OTP major, as `unsupported_runtime` with no-write
+certainty before Root startup. Build identity is captured at compilation so
+this check cannot demand-load version parsing during a cold startup.
+This is a major-version guard, not patch qualification: the support manifest
+and reference/tracking runtime checks enforce the declared patch minima and
+verify the running Elixir's compiled OTP identity. Passing the guard alone
+does not qualify every OTP 29 patch.
+
 Both startup wrappers close their private reply aliases through local BIFs
 and zero-time receives. Timeout cleanup does not demand-load the shared reply
 helper after Root exit. Isolated loader-gate checks qualify this dependency;

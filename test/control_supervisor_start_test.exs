@@ -3,6 +3,17 @@ defmodule LibTmux.ControlSupervisorStartTest do
   alias LibTmux.Deadline
   alias LibTmux.Control.SupervisorStart
 
+  test "the adapter rejects unsupported runtime or compiled OTP majors" do
+    assert :ok = SupervisorStart.compatibility(~c"29", "29")
+
+    for runtime <- [~c"28", ~c"29", ~c"30"],
+        compiled <- ["28", "29", "30"],
+        {runtime, compiled} != {~c"29", "29"} do
+      assert {:error, %{kind: :unsupported_runtime, certainty: :no_write, phase: :connect}} =
+               SupervisorStart.compatibility(runtime, compiled)
+    end
+  end
+
   defmodule GatedSupervisor do
     use Supervisor
 
