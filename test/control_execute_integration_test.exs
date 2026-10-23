@@ -80,6 +80,31 @@ defmodule LibTmux.ControlExecuteIntegrationTest do
 
       assert :ok = :sys.suspend(roles.router, 500)
 
+      [{1, previous}] = :ets.lookup(control.endpoint.waiter_inbox.table, 1)
+      released = make_ref()
+
+      assert :ok =
+               :sys.install(
+                 control.endpoint.manager,
+                 {released,
+                  fn
+                    false, {:noreply, state}, _ ->
+                      [{1, receipt}] = :ets.lookup(state.waiters.inbox.table, 1)
+
+                      if receipt.generation > previous.generation and
+                           receipt.state in [:free, :done] do
+                        send(observer, {released, :collector_released})
+                        true
+                      else
+                        false
+                      end
+
+                    sent, _, _ ->
+                      sent
+                  end, false},
+                 500
+               )
+
       assert {:error,
               %ExecutionError{context: :retained, operation: operation, error: %{kind: :timeout}}} =
                Control.execute(control, Request.set_user_option("@timed_out", "unwritten"),
@@ -87,6 +112,7 @@ defmodule LibTmux.ControlExecuteIntegrationTest do
                )
 
       assert :ok = :sys.resume(roles.router, 500)
+      assert_receive {^released, :collector_released}, 750
 
       assert {:ok, %{outcome: :skipped, certainty: :no_write}} =
                Operation.await(operation, timeout: 800)
