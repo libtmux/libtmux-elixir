@@ -44,6 +44,9 @@ defmodule LibTmux.Control do
   @typedoc "A positive millisecond budget shared by all stages of one lifecycle or submission call."
   @type call_option :: {:timeout, pos_integer()}
 
+  @typedoc "Startup options plus a separate cleanup allowance of 1..950ms, default 950ms; callback duration has no library timer."
+  @type scope_option :: start_option() | {:cleanup_timeout, 1..950}
+
   @typedoc "A pinned epoch's current phase and identity; retirement and unknown cleanup are distinct."
   @type connection_status :: %{
           epoch: reference() | nil,
@@ -82,6 +85,51 @@ defmodule LibTmux.Control do
   def start_link(options) do
     entered_at = System.monotonic_time(:millisecond)
     Start.start(options, entered_at)
+  end
+
+  @doc """
+  Runs a callback with one connection and owns its native and supervisor cleanup.
+
+  Takes the explicit server, existing session and host qualification options
+  from `start_link/1`. The callback runs in the calling process. Its duration
+  is separate from startup and `cleanup_timeout` (default 950ms). A dedicated
+  connection owner also requests cleanup when that caller dies.
+
+  Returns `{:ok, value}` after proven connection retirement and Root exit.
+  Cleaned-up exceptions, throws and exits are re-raised with their original
+  stacktrace. If cleanup fails, returns `{:error, ScopeFailure}` containing the
+  callback's original value or exception and separate cleanup evidence.
+  Startup failures return `{:error, Error}`; invalid options raise.
+
+  The control handle is scoped to the callback. Explicit reconnect is allowed
+  inside it; cleanup permanently fences new epochs and retires the current one.
+  Escaped handles cannot reconnect after the scope. Startup retains `start_link/1`'s OTP initialization
+  limitation; a timeout can report unknown cleanup while its owner is still
+  unwinding startup. It does not promise a hard native process-exit deadline.
+
+      Control.with_connection(options, fn control ->
+        Control.execute(control, LibTmux.Control.Request.field("pid"))
+      end)
+  """
+  @spec with_connection([scope_option()], (t() -> value)) ::
+          {:ok, value} | {:error, Error.t() | LibTmux.Control.ScopeFailure.t(value)}
+        when value: var
+  def with_connection(options, callback), do: LibTmux.Control.Scope.run(options, callback)
+
+  @doc false
+  def scope_close(%__MODULE__{} = control, %Deadline{} = deadline) do
+    :ok = Lifetime.shutdown(control.lifetime)
+
+    result =
+      with {:ok, endpoint} <- read(control.owner, control.view, control.lifetime),
+           true <- endpoint.manager == control.endpoint.manager do
+        Exchange.call(endpoint.inbox, endpoint.epoch, deadline, {:connection, :shutdown})
+      else
+        false -> failure(:stale_connection)
+        error -> error
+      end
+
+    lifecycle_result(result, :close)
   end
 
   @doc """

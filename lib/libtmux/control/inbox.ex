@@ -404,7 +404,7 @@ defmodule LibTmux.Control.Inbox do
 
   defp valid_request?(inbox, {:reconnect, nil}), do: :reconnect in inbox.kinds
 
-  defp valid_request?(inbox, {:connection, action}) when action in [:ready, :retired],
+  defp valid_request?(inbox, {:connection, action}) when action in [:ready, :retired, :shutdown],
     do: :connection in inbox.kinds
 
   defp valid_request?(inbox, {kind, %Lease{} = lease}) when kind in [:forget, :await, :collect] do

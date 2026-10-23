@@ -3,6 +3,19 @@ defmodule LibTmux.ControlBirthsTest do
   alias LibTmux.{Deadline, Error}
   alias LibTmux.Control.{Births, Lifetime}
 
+  test "shutdown between reservation and registration keeps a closable empty registry" do
+    lifetime = Lifetime.new()
+    {:ok, generation} = Lifetime.begin_epoch(lifetime)
+    :ok = Lifetime.shutdown(lifetime)
+    births = Births.new(lifetime, generation, make_ref(), Deadline.new(100))
+    assert {:error, %{kind: :startup_closed}} = Births.register(births, :epoch_supervisor)
+    assert {:ok, roles} = Births.close(births)
+    assert Enum.all?(roles, fn {_role, pid} -> is_nil(pid) end)
+    assert :ok = Lifetime.revoke(lifetime, generation)
+    assert :ok = Lifetime.retired(lifetime, generation)
+    assert {:error, %{kind: :connection_closed}} = Lifetime.begin_epoch(lifetime)
+  end
+
   test "closing captures every concurrent successful role registration in one frozen map" do
     {births, _lifetime, _generation} = births()
     parent = self()
