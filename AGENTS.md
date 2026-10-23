@@ -2,9 +2,10 @@
 
 This is the Elixir libtmux implementation. Read [mix.exs](mix.exs), the
 current tree and [implementation contracts](docs/implementation.md) before
-editing. Target/deadline, command/codec, parser and bounded Linux one-shot
-foundations and indexed graph capture exist. The domain client, persistent
-control and consumer packages are still under implementation.
+editing. The core implements immutable indexed capture/filtering, bounded Linux one-shot
+execution, retained and managed control operations, scoped connections and a
+small domain action surface. New helpers in this development revision are
+unreleased. Query/Tracker, planners and consumer packages remain planned.
 
 ## Which policy applies
 

@@ -106,7 +106,11 @@ defmodule LibTmux.Operation do
       when lease.table == records.pool.table and lease.epoch == births.epoch,
       do: %{template | lease: lease}
 
-  @doc "Reads retained wire state and canonical result without contacting tmux."
+  @doc """
+  Reads retained wire state and canonical result without contacting tmux.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec status(t()) :: {:ok, status()} | {:error, Error.t()}
   def status(%__MODULE__{} = operation) do
     case Records.fetch(operation.records, operation.lease) do
@@ -116,11 +120,19 @@ defmodule LibTmux.Operation do
     end
   end
 
-  @doc "Reads retained status or raises the same structured error."
+  @doc """
+  Reads retained status or raises the same structured error.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec status!(t()) :: status()
   def status!(operation), do: unwrap(status(operation))
 
-  @doc "Returns a canonical result, `:pending`, or a retained-context error."
+  @doc """
+  Returns a canonical result, `:pending`, or a retained-context error.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec result(t()) :: :pending | {:ok, result()} | {:error, Error.t()}
   def result(%__MODULE__{} = operation) do
     case status(operation) do
@@ -130,7 +142,11 @@ defmodule LibTmux.Operation do
     end
   end
 
-  @doc "Reads a result or `:pending`; raises API errors, preserving all canonical outcomes."
+  @doc """
+  Reads a result or `:pending`; raises API errors, preserving all canonical outcomes.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec result!(t()) :: :pending | result()
   def result!(operation), do: unwrap(result(operation))
 
@@ -141,6 +157,8 @@ defmodule LibTmux.Operation do
   including terminal operations; use `result/1` for immediate inspection.
   Completed waiter copies survive record reclamation until this caller reads
   them. Timeout, overload and caller death affect only this waiter.
+
+  See the [worked example](advanced-execution.html).
   """
   @spec await(t(), [option()]) :: {:ok, result()} | {:error, Error.t()}
   def await(%__MODULE__{} = operation, options \\ []) do
@@ -148,7 +166,11 @@ defmodule LibTmux.Operation do
     exchange(operation, operation.waiter_inbox, :await, deadline, :wait)
   end
 
-  @doc "Waits or raises API errors; canonical failed, skipped and unknown outcomes remain values."
+  @doc """
+  Waits or raises API errors; canonical failed, skipped and unknown outcomes remain values.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec await!(t(), [option()]) :: result()
   def await!(operation, options \\ []), do: unwrap(await(operation, options))
 
@@ -162,6 +184,8 @@ defmodule LibTmux.Operation do
   Wire-active records cannot be forgotten. An owner-accepted request remains
   owned after caller timeout. Successful reclamation invalidates this record
   handle while preserving already-accepted waiter copies.
+
+  See the [worked example](advanced-execution.html).
   """
   @spec forget(t(), [option()]) :: :ok | {:error, Error.t()}
   def forget(%__MODULE__{} = operation, options \\ []) do
@@ -169,7 +193,11 @@ defmodule LibTmux.Operation do
     exchange(operation, operation.inbox, :forget, deadline, :forget)
   end
 
-  @doc "Forgets the retained record or raises the same structured error."
+  @doc """
+  Forgets the retained record or raises the same structured error.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec forget!(t(), [option()]) :: :ok
   def forget!(operation, options \\ []), do: unwrap(forget(operation, options))
 
@@ -180,6 +208,8 @@ defmodule LibTmux.Operation do
   request, and `{:error, error}` otherwise. Closure can affect sibling work;
   success does not prove retirement or change the canonical result. A stale
   handle cannot revoke a replacement epoch.
+
+  See the [worked example](advanced-execution.html).
   """
   @spec stop(t()) :: :ok | {:error, Error.t()}
   def stop(%__MODULE__{} = operation) do
@@ -198,7 +228,11 @@ defmodule LibTmux.Operation do
     normalize(result, :stop)
   end
 
-  @doc "Requests epoch closure or raises the same structured error."
+  @doc """
+  Requests epoch closure or raises the same structured error.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec stop!(t()) :: :ok
   def stop!(operation), do: unwrap(stop(operation))
 

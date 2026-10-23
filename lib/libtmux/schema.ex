@@ -136,15 +136,27 @@ defmodule LibTmux.Schema do
     window: "window"
   }
 
-  @doc "Returns supported entity names in a stable order."
+  @doc """
+  Returns supported entity names in a stable order.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec entities() :: [entity()]
   def entities, do: @entities
 
-  @doc "Returns the ordinary observation struct module for an entity."
+  @doc """
+  Returns the ordinary observation struct module for an entity.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec module(entity()) :: entity_module()
   def module(entity), do: Map.fetch!(@modules, entity)
 
-  @doc "Resolves an entity atom or its observation module."
+  @doc """
+  Resolves an entity atom or its observation module.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec entity(entity_selector()) :: entity()
   def entity(entity) when entity in @entities, do: entity
 
@@ -153,7 +165,11 @@ defmodule LibTmux.Schema do
       Enum.find_value(@modules, fn {entity, value} -> if value == module, do: entity end) ||
         raise(ArgumentError, "unknown entity")
 
-  @doc "Returns the whitelisted field metadata for an entity."
+  @doc """
+  Returns the whitelisted field metadata for an entity.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec fields(entity_selector()) :: %{atom() => field()}
   def fields(entity) do
     Map.new(Map.fetch!(@fields, entity(entity)), fn {name, wire, format, type} ->
@@ -169,19 +185,35 @@ defmodule LibTmux.Schema do
     end)
   end
 
-  @doc "Returns field metadata, or nil for a field outside the schema."
+  @doc """
+  Returns field metadata, or nil for a field outside the schema.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec field(entity_selector(), atom()) :: field() | nil
   def field(entity, name), do: Map.get(fields(entity), name)
 
-  @doc "Returns each relation's cardinality and target entity."
+  @doc """
+  Returns each relation's cardinality and target entity.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec relations(entity_selector()) :: %{atom() => relation()}
   def relations(entity), do: Map.fetch!(@relations, entity(entity))
 
-  @doc "Returns a relation's explicit stable wire name."
+  @doc """
+  Returns a relation's explicit stable wire name.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec relation_wire(atom()) :: String.t()
   def relation_wire(name), do: Map.fetch!(@relation_names, name)
 
-  @doc "Returns the portable operators allowed by a scalar field's value category."
+  @doc """
+  Returns the portable operators allowed by a scalar field's value category.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec operators(field()) :: [operator()]
   def operators(%{type: type}) do
     [:equals, :not, :in, :not_in] ++

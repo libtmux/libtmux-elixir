@@ -1,7 +1,8 @@
 # Contributing
 
-This unpublished Elixir package is under implementation. Pure foundation
-tests, packed-core import checks and owned real-tmux checks are available.
+The core has an alpha release. This source includes unreleased domain and
+managed-execution helpers. Pure tests, packed public examples and owned
+real-tmux checks qualify implemented behavior. Consumer packages remain planned.
 [WRITING.md](WRITING.md) governs prose, comments, and commits.
 
 ## Setup
@@ -175,19 +176,23 @@ $ time mix run scripts/check_package.exs
 
 Real checks round-trip command and format syntax with hostile bytes. The
 field encoder protects backslashes and control bytes before tmux prints
-them; the decoder handles one free-form field per response. It does not
-assume separator bytes cannot occur in values. The pure control
+them; the conservative decoder handles one free-form field, and snapshot capture
+uses versioned rows of individually escaped fields. Neither assumes raw
+separator bytes cannot occur in values. The pure control
 parser enforces byte/event limits, but transport receive bounds and shared
 lane safety need separate qualification.
 
 The [ownership guide](../docs/ownership.md) describes the one-shot helper,
 resource ceilings and remaining distribution gates.
 
-These gates prove current foundations and fixture ownership. They do not
-establish a complete client API, installed adapter graphs or compatibility
-for unexercised operations. Do not add empty source or tests to make a
-command appear useful. Complete runnable examples and adapter consumer checks
-arrive with those components.
+These gates exercise implemented core behavior and fixture ownership. They
+do not establish installed workspace/MCP graphs or compatibility for
+unexercised operations. Do not add empty source or tests to make a command
+appear useful. Public task programs are shipped in `examples/`. Check their
+displayed copies with `python3 scripts/check_example_docs.py`, then run
+`MIX_ENV=test mix run scripts/check_package.exs --examples` outside inner/mid
+loops. The package check executes the extracted programs outside the checkout
+and verifies native teardown, including a failed caller.
 
 ## Check budgets
 
@@ -252,7 +257,7 @@ format in [WRITING.md](WRITING.md).
 
 Describe the problem, resulting behavior, and relevant validation. Report
 passing, failing, skipped, and unverified checks separately. Scope claims to
-what the checks actually exercise; scaffold validation cannot establish
+what the checks actually exercise; declaration validation cannot establish
 runtime compatibility, performance, or release readiness.
 
 ## Publication

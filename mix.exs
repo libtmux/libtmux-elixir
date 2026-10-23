@@ -58,7 +58,7 @@ defmodule LibTmux.MixProject do
       "docs/implementation.md" => [
         {"../priv/tmux/support.json", blob <> "priv/tmux/support.json"}
       ],
-      "docs/first-task.md" => [
+      "docs/advanced-execution.md" => [
         {"../examples/capture_and_read.exs", blob <> "examples/capture_and_read.exs"}
       ],
       "docs/ownership.md" => [{"../c_src/README.md", blob <> "c_src/README.md"}],
@@ -73,9 +73,14 @@ defmodule LibTmux.MixProject do
     extras = [
       "README.md",
       "docs/first-task.md",
+      "docs/one-shot-actions.md",
+      "docs/managed-control.md",
+      "docs/owned-server.md",
+      "docs/advanced-execution.md",
       "docs/mental-model.md",
       "docs/observations.md",
       "docs/filtering.md",
+      "docs/api-examples.md",
       "docs/schema.md",
       "docs/ownership.md",
       "docs/encoding.md",
@@ -112,6 +117,45 @@ defmodule LibTmux.MixProject do
       source_ref: source_ref,
       logo: "docs/assets/logo.svg",
       assets: %{"docs/assets" => "docs/assets"},
+      groups_for_extras: [
+        Tasks: ~r/(first-task|one-shot-actions|managed-control|owned-server|advanced-execution)/,
+        "Concepts and reference": ~r/(mental-model|observations|filtering|schema|api-examples)/,
+        "Design and internals": ~r/(ownership|encoding|design|implementation)/,
+        Contributing: ~r/(AGENTS|CONTRIBUTING|WRITING|branding|LICENSE)/
+      ],
+      groups_for_modules: [
+        "Observe and select": [
+          LibTmux.Server,
+          LibTmux.Snapshot,
+          LibTmux.Selection,
+          LibTmux.Filter,
+          LibTmux.Session,
+          LibTmux.Window,
+          LibTmux.WindowLink,
+          LibTmux.Pane,
+          LibTmux.Client
+        ],
+        Execute: [
+          LibTmux.Action,
+          LibTmux.Control,
+          LibTmux.Control.Request,
+          LibTmux.Operation,
+          LibTmux.Control.ExecutionError,
+          LibTmux.Control.ScopeFailure
+        ],
+        "Contracts and encoding": [
+          LibTmux.Ref,
+          LibTmux.Error,
+          LibTmux.Deadline,
+          LibTmux.Command,
+          LibTmux.Format,
+          LibTmux.Codec,
+          LibTmux.Protocol,
+          LibTmux.Schema,
+          LibTmux.Wire,
+          LibTmux.Transport.OneShot
+        ]
+      ],
       extras: extras
     ]
   end

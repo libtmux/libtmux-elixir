@@ -1,22 +1,26 @@
-"""Keep the first-task program identical to its executable example."""
+"""Keep every displayed program identical to its executable example."""
 from pathlib import Path
 import argparse
+import re
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--write", action="store_true")
 options = parser.parse_args()
-
-source = Path("examples/capture_and_read.exs")
-guide = Path("docs/first-task.md")
-begin = f"<!-- example: {source.as_posix()} -->\n\n```elixir\n"
-end = "```\n\n<!-- /example -->"
-before, embedded = guide.read_text().split(begin)
-current, after = embedded.split(end)
-expected = source.read_text()
-
-if options.write:
-    guide.write_text(before + begin + expected + end + after)
-elif current != expected:
-    raise SystemExit("First-task source drifted; run python3 scripts/check_example_docs.py --write")
-
-print("PASS: first-task program matches its executable source")
+pattern = re.compile(r"(<!-- example: (examples/[a-z_]+\.exs) -->\n\n```elixir\n)(.*?)(```\n\n<!-- /example -->)", re.S)
+checked = set()
+for guide in [Path("README.md"), *sorted(Path("docs").glob("*.md"))]:
+    def replace(match):
+        source = Path(match[2])
+        expected = source.read_text()
+        checked.add(source)
+        if match[3] != expected and not options.write:
+            raise SystemExit(f"{guide}: {source} drifted; run python3 scripts/check_example_docs.py --write")
+        return match[1] + expected + match[4]
+    original = guide.read_text()
+    updated = pattern.sub(replace, original)
+    if options.write and updated != original:
+        guide.write_text(updated)
+missing = set(Path("examples").glob("*.exs")) - checked
+if missing:
+    raise SystemExit(f"Examples without displayed source: {sorted(str(p) for p in missing)}")
+print(f"PASS: {len(checked)} displayed programs match executable sources")

@@ -80,6 +80,8 @@ defmodule LibTmux.Control do
   Ready connections buffer at most 64 KiB or 128 stdout chunks behind the
   reader. Overflow closes the whole epoch with `resource_limit`; it never
   replays commands. These receive limits do not cap borrowed-server memory.
+
+  See the [worked example](advanced-execution.html).
   """
   @spec start_link([start_option()]) :: {:ok, pid(), t()} | {:error, Error.t()}
   def start_link(options) do
@@ -145,6 +147,8 @@ defmodule LibTmux.Control do
   handle as their third info element. After an automatic restart, use
   `Supervisor.terminate_child/2` followed by `Supervisor.restart_child/2` for
   fresh info. This does not clear unknown cleanup or authorize replay.
+
+  See the [worked example](api-examples.html#supervised-control).
   """
   @spec child_spec([start_option()]) :: Supervisor.child_spec()
   def child_spec(options), do: Start.child_spec(options)
@@ -197,6 +201,8 @@ defmodule LibTmux.Control do
 
   Closing the connection can affect sibling operations. Command replies do
   not prove external program exit. Caller timeout does not authorize replay.
+
+  See the [worked example](advanced-execution.html).
   """
   @spec submit(t(), Request.t(), [call_option()]) :: {:ok, Operation.t()} | {:error, Error.t()}
   def submit(%__MODULE__{} = control, %Request{} = request, options \\ []) do
@@ -257,7 +263,11 @@ defmodule LibTmux.Control do
     end
   end
 
-  @doc "Executes and reclaims as in `execute/3`; raises API/context errors, preserving canonical failures as values."
+  @doc """
+  Executes and reclaims as in `execute/3`; raises API/context errors, preserving canonical failures as values.
+
+  See the [worked example](managed-control.html).
+  """
   @spec execute!(t(), Request.t(), [call_option()]) :: Operation.result()
   def execute!(control, request, options \\ []) do
     case execute(control, request, options) do
@@ -290,11 +300,19 @@ defmodule LibTmux.Control do
     end
   end
 
-  @doc "Admits a request or raises the same structured error."
+  @doc """
+  Admits a request or raises the same structured error.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec submit!(t(), Request.t(), [call_option()]) :: Operation.t()
   def submit!(control, request, options \\ []), do: unwrap(submit(control, request, options))
 
-  @doc "Reads the pinned epoch's current phase and identity without contacting tmux."
+  @doc """
+  Reads the pinned epoch's current phase and identity without contacting tmux.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec status(t()) :: {:ok, connection_status()} | {:error, Error.t()}
   def status(%__MODULE__{} = control) do
     result =
@@ -320,7 +338,11 @@ defmodule LibTmux.Control do
     end
   end
 
-  @doc "Reads pinned connection status or raises the same structured error."
+  @doc """
+  Reads pinned connection status or raises the same structured error.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec status!(t()) :: connection_status()
   def status!(control), do: unwrap(status(control))
 
@@ -330,6 +352,8 @@ defmodule LibTmux.Control do
   Repeated requests for the same closing or proven-retired generation return
   `:ok`. Success is a request or previously known retirement, not a cleanup
   acknowledgement. A replacement Manager or epoch is never followed.
+
+  See the [worked example](api-examples.html#supervised-control).
   """
   @spec request_close(t()) :: :ok | {:error, Error.t()}
   def request_close(%__MODULE__{} = control) do
@@ -353,7 +377,11 @@ defmodule LibTmux.Control do
     end
   end
 
-  @doc "Requests epoch closure or raises the same structured error."
+  @doc """
+  Requests epoch closure or raises the same structured error.
+
+  See the [worked example](api-examples.html#supervised-control).
+  """
   @spec request_close!(t()) :: :ok
   def request_close!(control), do: unwrap(request_close(control))
 
@@ -368,6 +396,8 @@ defmodule LibTmux.Control do
   The connection supervisor and retained records remain available for explicit
   reconnect and inspection. This does not stop the supervisor or roll back
   sibling effects.
+
+  See the [worked example](advanced-execution.html).
   """
   @spec close(t(), [call_option()]) :: :ok | {:error, Error.t()}
   def close(%__MODULE__{} = control, options \\ []) do
@@ -388,7 +418,11 @@ defmodule LibTmux.Control do
     lifecycle_result(result, :close)
   end
 
-  @doc "Waits for retirement or raises the same structured error."
+  @doc """
+  Waits for retirement or raises the same structured error.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec close!(t(), [call_option()]) :: :ok
   def close!(control, options \\ []), do: unwrap(close(control, options))
 
@@ -401,6 +435,8 @@ defmodule LibTmux.Control do
   before this caller resumes. It never follows a later view or replays work.
   Errors report unknown certainty about existing effects. Attachment counts
   include the control client; reconnect can attach one replacement client.
+
+  See the [worked example](api-examples.html#supervised-control).
   """
   @spec reconnect(t(), [call_option()]) :: {:ok, t()} | {:error, Error.t()}
   def reconnect(%__MODULE__{} = control, options \\ []) do
@@ -416,7 +452,11 @@ defmodule LibTmux.Control do
     lifecycle_result(result, :connect)
   end
 
-  @doc "Obtains the ready epoch or raises the same structured error."
+  @doc """
+  Obtains the ready epoch or raises the same structured error.
+
+  See the [worked example](api-examples.html#supervised-control).
+  """
   @spec reconnect!(t(), [call_option()]) :: t()
   def reconnect!(control, options \\ []), do: unwrap(reconnect(control, options))
 

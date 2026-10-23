@@ -1,10 +1,12 @@
-# One-shot process ownership
+# Execution ownership
 
 `LibTmux.Transport.OneShot.run/3` runs an absolute executable and argv on
 Linux without a shell. It returns bytes, process exit status and cleanup
 evidence separately. A nonzero process exit is still a completed transport
-result; the tmux command layer must interpret that status. The domain
-client and public persistent transport remain under implementation.
+result; the tmux command layer interprets that status. Public domain actions
+and persistent control use these ownership boundaries. Start with
+[one-shot actions](one-shot-actions.md) or [managed control](managed-control.md);
+this guide explains the lower-level contracts.
 
 The native helper supplies receive credits that an ordinary OTP Port
 lacks. It reads each stdout/stderr pipe only against one bounded credit;
@@ -144,10 +146,11 @@ parser error in the same chunk. Expired unsent work removes its exact queued
 token before capacity reuse. A retained reply observation and its logical
 result are separate copies in the eventual connection byte accounting.
 
-The initial lane admits encoded field reads and literal server user-option
-writes, with bounded ASCII option names and no value expansion. It rejects
-arbitrary command lines. Literal send-keys still needs domain qualification:
-pane-mode key bindings can enqueue additional commands even with `-l`.
+The lane admits encoded field reads, literal server user-option writes, split,
+rename and literal/named input. Option names are bounded ASCII and values do
+not expand. It rejects arbitrary command lines and screen capture output.
+Host qualification includes pane-mode key bindings, which can enqueue other
+commands in response to input.
 Reply numbers must increase when observed; gaps are normal because other
 clients and callbacks use the same server counter. This does not detect
 every possible counter wrap or authenticate an unqualified stream.
@@ -163,11 +166,11 @@ Wake hints also coalesce across slot reuse; accounting sweeps never clear a
 hint that a paused publisher still owns.
 
 Inbox outcomes copy every binary leaf, including map keys. Copying charges
-bytes and nodes before allocation, caps depth at64 and nodes at8192, and
+bytes and nodes before allocation, caps depth at 64 and nodes at 8192, and
 rejects functions, ports and unqualified references. Known context references
 come from explicitly identified, separately bounded resources. Metadata keeps
-the default64 KiB outcome allowance; an independently configured Inbox may
-reserve1–128 KiB so a64 KiB reply plus its envelope fits. The1 KiB minimum
+the default 64 KiB outcome allowance; an independently configured Inbox may
+reserve 1–128 KiB so a 64 KiB reply plus its envelope fits. The 1 KiB minimum
 covers fixed fallback errors. Copying shares the original deadline, checked
 again before result publication. These limits do
 not yet establish complete connection-wide heap/work accounting.

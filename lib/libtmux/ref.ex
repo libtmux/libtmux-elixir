@@ -19,7 +19,11 @@ defmodule LibTmux.Ref do
   @typedoc "An exact observed identity bound to a tmux server incarnation, separate from a connection epoch."
   @type t :: %__MODULE__{entity: entity(), id: id(), server_instance: String.t()}
 
-  @doc "Validates a native identity and binds it to a nonempty instance token."
+  @doc """
+  Validates a native identity and binds it to a nonempty instance token.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec new(entity(), id(), String.t()) :: {:ok, t()} | {:error, Error.t()}
   def new(entity, id, instance) do
     if valid_id?(entity, id) and valid_token?(instance) do
@@ -29,7 +33,11 @@ defmodule LibTmux.Ref do
     end
   end
 
-  @doc "Rejects malformed references and known server-instance mismatches."
+  @doc """
+  Rejects malformed references and known server-instance mismatches.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec validate(t(), String.t()) :: :ok | {:error, Error.t()}
   def validate(%__MODULE__{} = ref, instance) do
     case new(ref.entity, ref.id, ref.server_instance) do

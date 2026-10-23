@@ -16,7 +16,11 @@ defmodule LibTmux.Command do
   @typedoc "A positive byte ceiling for the selected argv or text rendering; encoded output is charged separately."
   @type option :: {:max_bytes, pos_integer()}
 
-  @doc "Constructs a trusted command, rejecting invalid arguments and input size."
+  @doc """
+  Constructs a trusted command, rejecting invalid arguments and input size.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec new(String.t(), [binary()], [option()]) :: t()
   def new(name, args, options \\ []) do
     limit = limit(options)
@@ -32,7 +36,11 @@ defmodule LibTmux.Command do
     %__MODULE__{name: name, args: args}
   end
 
-  @doc "Returns process arguments, preserving terminal semicolons in tmux's argv parser."
+  @doc """
+  Returns process arguments, preserving terminal semicolons in tmux's argv parser.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec argv(t(), [option()]) :: [binary()]
   def argv(%__MODULE__{name: name, args: args}, options \\ []) do
     _ = new(name, args, options)
@@ -41,7 +49,11 @@ defmodule LibTmux.Command do
     result
   end
 
-  @doc "Renders one newline-free tmux command line within its encoded byte budget."
+  @doc """
+  Renders one newline-free tmux command line within its encoded byte budget.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec render(t(), [option()]) :: binary()
   def render(%__MODULE__{name: name, args: args}, options \\ []) do
     _ = new(name, args, options)

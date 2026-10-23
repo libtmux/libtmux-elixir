@@ -27,7 +27,11 @@ defmodule LibTmux.Server do
           {:executable | :socket | :cwd, String.t()}
           | {:env, %{optional(binary()) => binary()}}
 
-  @doc "Constructs a descriptor for an existing server without connecting or creating it."
+  @doc """
+  Constructs a descriptor for an existing server without connecting or creating it.
+
+  See the [worked example](first-task.html).
+  """
   @spec new([option()]) :: t()
   def new(options) do
     options =
@@ -49,7 +53,11 @@ defmodule LibTmux.Server do
     %__MODULE__{executable: executable, socket: socket, cwd: options[:cwd], env: options[:env]}
   end
 
-  @doc "Runs one trusted command without attaching; returns bounded output and exit evidence."
+  @doc """
+  Runs one trusted command without attaching; returns bounded output and exit evidence.
+
+  See the [worked example](advanced-execution.html).
+  """
   @spec run(t(), Command.t(), [OneShot.option()]) :: {:ok, OneShot.result()} | {:error, Error.t()}
   def run(%__MODULE__{} = server, %Command{} = command, options \\ []) do
     arguments = ["-N", "-u", "-S", server.socket | Command.argv(command)]
@@ -73,11 +81,19 @@ defmodule LibTmux.Server do
     end
   end
 
-  @doc "Captures a new graph explicitly, with bounded work and read retries."
+  @doc """
+  Captures a new graph explicitly, with bounded work and read retries.
+
+  See the [worked example](first-task.html).
+  """
   @spec snapshot(t(), [Capture.option()]) :: {:ok, LibTmux.Snapshot.t()} | {:error, Error.t()}
   def snapshot(server, options \\ []), do: Capture.fetch(server, options)
 
-  @doc "Captures a graph or raises the same structured capture error."
+  @doc """
+  Captures a graph or raises the same structured capture error.
+
+  See the [worked example](first-task.html).
+  """
   @spec snapshot!(t(), [Capture.option()]) :: LibTmux.Snapshot.t()
   def snapshot!(server, options \\ []) do
     case snapshot(server, options) do

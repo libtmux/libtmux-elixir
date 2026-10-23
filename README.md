@@ -13,41 +13,36 @@
 
 </div>
 
-An Elixir library for controlling tmux. The core provides exact target
-references, shared deadlines, command encoding, bounded protocol parsing,
-Linux one-shot execution, immutable graph capture, Enumerable selections and
-portable filters.
-The domain client API remains under development.
+Capture and query tmux state, then act on exact session, window and pane
+references. Observations are immutable; enumeration never runs a command.
+Choose bounded one-shot execution or an explicitly qualified control connection.
 
-[Contributing](.github/CONTRIBUTING.md) ·
-[First task](docs/first-task.md) ·
-[Design](docs/design.md) · [Encoding](docs/encoding.md) ·
-[Mental model](docs/mental-model.md) ·
-[Observations](docs/observations.md) ·
-[Filtering](docs/filtering.md) ·
-[Ownership](docs/ownership.md) ·
-[Writing](.github/WRITING.md) · [Artwork](docs/branding.md)
+[Capture and filter](docs/first-task.md) ·
+[One-shot actions](docs/one-shot-actions.md) ·
+[Managed control](docs/managed-control.md) ·
+[Owned examples](docs/owned-server.md)
 
 ## Status and requirements
 
-| Component | Current scope |
-| --- | --- |
-| Mix application | `:libtmux`, version `0.0.1-alpha.1` |
-| Development toolchain | Elixir `1.20.x` (at least `1.20.4`) on Erlang/OTP `29.x` |
-| Planned tmux floor | `3.3`; fixture checks precede client compatibility qualification |
-| Runtime dependencies | No third-party packages; own native I/O helper |
-| Platforms | No runtime support matrix has been qualified |
+The published alpha is `0.0.1-alpha.1`. This development revision adds domain
+actions, managed execution and scoped connections; those helpers are not in
+that published artifact. Observation/filtering and retained control APIs
+already exist. Workspace, MCP, Tracker and dependency planners remain planned.
 
-[`.tool-versions`](.tool-versions) selects the development toolchain ranges
-for mise and CI. Linux builds require a C11 compiler for the helper. See
-[setup](.github/CONTRIBUTING.md#setup) for installation
-and upgrades. tmux is not required for the pure checks. Capture, command
-execution and the complete example require an external tmux executable.
-The supported client API and compatibility matrix remain under qualification.
+| Requirement | Scope |
+| --- | --- |
+| Elixir / OTP | Elixir 1.20.4 or later 1.20 patch, compiled for OTP 29; OTP 29.1.2 or later 29 patch |
+| Runtime platform | Linux, with a C11 compiler and headers to build the external helper |
+| tmux | Required compatibility cells: 3.3, 3.3a, 3.4 and 3.8; other versions need their own evidence |
+| Dependencies | Zero third-party core runtime packages; no NIF |
+
+The development selectors in [`.tool-versions`](.tool-versions) do not extend
+support to older OTP patches. Python is needed only for the optional owned
+example runner and integration tooling. See [setup](.github/CONTRIBUTING.md#setup).
 
 ## Installation
 
-Add the alpha release to your Mix dependencies:
+Add the published alpha to your Mix dependencies:
 
 ```elixir
 {:libtmux, "== 0.0.1-alpha.1"}
@@ -59,80 +54,53 @@ Fetch dependencies:
 $ mix deps.get
 ```
 
-## Capture, select and execute
+Start with the short [installed-consumer capture/filter program](docs/first-task.md).
+It accepts an absolute executable and the socket of the existing server you
+select. It does not create a server or attach a control client.
 
-From a source checkout, run the complete public API example from the packed
-core on a new isolated tmux server. This requires Linux, a C11 compiler,
-Python 3 and tmux 3.3 or newer:
+## Choose a task
+
+| Task | Guide |
+| --- | --- |
+| Capture and query locally | [First task](docs/first-task.md), [filtering](docs/filtering.md) |
+| Split, rename, send input, capture screen bytes | [One-shot actions](docs/one-shot-actions.md) |
+| Reuse a connection and reclaim completed work | [Managed control](docs/managed-control.md) |
+| Run a private demonstration with verified cleanup | [Owned server](docs/owned-server.md) |
+| Inspect retained operations and both transports | [Advanced execution](docs/advanced-execution.md) |
+
+Default capture budgets are 5000ms, 512 commands, 1024 contextual rows and
+8 MiB total encoded output. Limits fail explicitly. Managed execution reclaims
+records only after wire retirement; retained operations remain available when
+needed. Timeouts do not imply no effects or authorize replay. Bang execution
+methods raise API errors while preserving canonical failed outcomes as values.
+See the relevant task guide before handling failures.
+
+## Concepts and reference
+
+Read the [mental model](docs/mental-model.md) for server, snapshot, reference
+and operation lifetimes. [Observations](docs/observations.md) and the generated
+[schema](docs/schema.md) describe captured coverage and relationships. Public
+modules carry specs, types and linked examples in the API reference.
+
+[Encoding](docs/encoding.md) and [ownership](docs/ownership.md) explain runtime
+constraints. [Design](docs/design.md) and [implementation contracts](docs/implementation.md)
+distinguish implemented core behavior from planned consumer packages. The
+core never depends on workspace or MCP.
+
+## Contributing
+
+Follow [Contributing](.github/CONTRIBUTING.md), [Writing](.github/WRITING.md)
+and [AGENTS.md](AGENTS.md). Check a packed artifact and all public examples
+outside the checkout:
 
 ```console
 $ MIX_ENV=test mix run scripts/check_package.exs --examples
 ```
 
-The example captures one graph, selects its active pane, and reads that exact
-pane through one-shot and control commands. It checks the acknowledged
-result, retires its connection, and verifies owned server cleanup. The check
-uses a temporary socket and empty configuration. See the [complete program
-and failure behavior](docs/first-task.md).
-
-## Check the implementation
-
-From the checkout, with the development toolchain on `PATH`, check formatting:
-
-```console
-$ mix format --check-formatted
-```
-
-Run the pure unit suite:
-
-```console
-$ mix test
-```
-
-Compile with warnings treated as errors:
-
-```console
-$ mix compile --warnings-as-errors
-```
-
-With Hex installed, build a local package archive:
-
-```console
-$ mix hex.build
-```
-
-Check public core imports from a packed archive outside the checkout:
-
-```console
-$ mix run scripts/check_package.exs
-```
-
-The unit and packed-core checks validate the current foundations. Real
-integration checks cover owned startup/teardown and hostile command/format
-bytes through real tmux. They do not qualify the future client API or a
-complete compatibility matrix.
-See [Contributing](.github/CONTRIBUTING.md) for setup, timing budgets, and
-the checks required as implementation arrives.
-
-## Planned package boundaries
-
-The core provides immutable observations and explicit tmux operations,
-using Elixir and OTP without third-party runtime dependencies. Workspace
-loading and an MCP server have separate Mix projects under `packages/`.
-Their runtime implementations remain planned. MCP also consumes workspace
-behavior rather than maintaining a second loader or planner.
-
-The [design note](docs/design.md) records these boundaries and the contracts
-that implementation must prove. It is not an API reference.
-
-## Contributing and references
-
-Follow the [contribution guide](.github/CONTRIBUTING.md) and
-[writing guide](.github/WRITING.md). Agent instructions start in
-[AGENTS.md](AGENTS.md).
+That command requires the Linux development prerequisites and tmux. The
+contribution guide lists pure checks, the required runtime matrix, rendered
+docs and package verification. Local checks do not establish hosted delivery.
 
 Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
-[libtmux ports](https://github.com/libtmux), and
-[tmux](https://github.com/tmux/tmux).
-
-Licensed under the [MIT License](LICENSE).
+[libtmux ports](https://github.com/libtmux), and [tmux](https://github.com/tmux/tmux).
+[Artwork](docs/branding.md). Licensed under the [MIT License](LICENSE).

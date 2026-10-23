@@ -24,12 +24,18 @@ defmodule LibTmux.Control.Request do
   Existing empty fields succeed. A target that disappears before the read
   produces an acknowledged failed operation and leaves the connection usable.
   A reference does not reserve the object's lifetime.
+
+  See the [worked example](managed-control.html).
   """
   @spec field(String.t(), Ref.t() | nil) :: t()
   def field(variable, target \\ nil),
     do: %__MODULE__{kind: :field, value: variable, target: target}
 
-  @doc "Sets a server user option with an `@name` and a literal binary value."
+  @doc """
+  Sets a server user option with an `@name` and a literal binary value.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec set_user_option(String.t(), binary()) :: t()
   def set_user_option(name, value),
     do: %__MODULE__{kind: :set_user_option, value: {name, value}}
@@ -89,7 +95,11 @@ defmodule LibTmux.Control.Request do
       {:error, %Error{kind: :invalid_command, phase: :validation, certainty: :no_write}}
   end
 
-  @doc "Checks a qualified request's reply shape; a tmux error reply remains a command outcome."
+  @doc """
+  Checks a qualified request's reply shape; a tmux error reply remains a command outcome.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec verify_reply(t(), :ok | :error, [binary()]) :: :ok | {:error, Error.t()}
   def verify_reply(request, status, lines) do
     with {:ok, _status, _lines} <- normalize_reply(request, status, lines), do: :ok

@@ -51,8 +51,14 @@ control_id =
        lines: [line]
      }} = Operation.await(operation, timeout: 800)
 
+    {:ok, %{phase: :ready}} = Control.status(control)
+    {:ok, %{result: %{outcome: :completed}}} = Operation.status(operation)
+    {:ok, %{outcome: :completed}} = Operation.result(operation)
+
     {:ok, id} = Codec.decode_field(line <> "\n", :string, encoding: :escaped_v1)
     true = id == pane.id
+    :ok = Control.close(control, timeout: 800)
+    :ok = Operation.forget(operation, timeout: 800)
     id
   after
     try do

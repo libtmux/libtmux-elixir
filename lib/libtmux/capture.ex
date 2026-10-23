@@ -49,6 +49,8 @@ defmodule LibTmux.Capture do
 
   See `t:option/0` for the composed work, response and remaining-deadline
   constraints inherited from `LibTmux.Transport.OneShot.run/3`.
+
+  See the [worked example](first-task.html).
   """
   @spec fetch(Server.t(), [option()]) :: {:ok, Snapshot.t()} | {:error, Error.t()}
   def fetch(%Server{} = server, options \\ []) do

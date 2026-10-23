@@ -83,9 +83,9 @@ Explain the final change for someone who has not read the conversation.
 Include relevant verification, failures, and skipped checks in the review;
 temporary validation results do not belong in commit prose.
 
-## Future release notes
+## Release notes
 
-Once releases exist, each changelog bullet names one observable change and
+Each changelog bullet names one observable change and
 links the relevant API or issue. Put migration advice beside the change.
 Release notes state the upgrade benefit, compatibility change, and required
 action. Support claims refer to that release's completed checks. Avoid

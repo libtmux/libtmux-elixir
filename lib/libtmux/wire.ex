@@ -17,7 +17,11 @@ defmodule LibTmux.Wire do
   @typedoc "A JSON object whose keys remain strings; validation never creates atoms from external names."
   @type object :: %{optional(String.t()) => value()}
 
-  @doc "Decodes one complete bounded JSON value, rejecting duplicate keys and trailing data."
+  @doc """
+  Decodes one complete bounded JSON value, rejecting duplicate keys and trailing data.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec decode(binary(), [Filter.limit_option()]) :: {:ok, value()} | {:error, Error.t()}
   def decode(binary, options \\ []) when is_binary(binary) do
     limits = Filter.limits(options)
@@ -80,7 +84,11 @@ defmodule LibTmux.Wire do
     end
   end
 
-  @doc "Validates already-decoded JSON data and its complete encoded byte size."
+  @doc """
+  Validates already-decoded JSON data and its complete encoded byte size.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec validate(term(), [Filter.limit_option()]) :: {:ok, value()} | {:error, Error.t()}
   def validate(value, options \\ []) do
     limits = Filter.limits(options)
