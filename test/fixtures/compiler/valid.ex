@@ -8,6 +8,11 @@ defmodule LibTmux.CompilerExamples.Valid do
     |> Enum.map(fn %Pane{id: id} -> id end)
   end
 
+  def pane_reference_id(%Pane{} = pane) do
+    {:ok, ref} = LibTmux.Ref.from_observation(pane)
+    ref.id
+  end
+
   def submit(%Control{} = control) do
     case Control.submit(control, LibTmux.Control.Request.field("pid")) do
       {:ok, operation} -> Operation.result(operation)
