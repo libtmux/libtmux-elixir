@@ -221,6 +221,9 @@ defmodule LibTmux.Control do
   The original caller owns recovery: its death permits reclamation after wire
   retirement, even if it passed the handle to another process. A live caller's
   timeout leaves the record subject to normal retention and explicit forget.
+  `Operation.status/1` and `Operation.result/1` inspect it without a waiter.
+  A new await needs its own slot; the expired collector releases its slot
+  asynchronously when the owner processes closure.
   Use `submit/3` when a retained handle is required after successful waiting.
 
       Control.execute(control, LibTmux.Control.Request.field("pid"))
@@ -232,6 +235,11 @@ defmodule LibTmux.Control do
     options = Keyword.validate!(options, timeout: 5000)
     deadline = Deadline.new(options[:timeout], now: entered_at)
 
+    execute_deadline(control, request, deadline)
+  end
+
+  @doc false
+  def execute_deadline(control, request, %Deadline{} = deadline) do
     with {:ok, operation} <- admit(control, request, deadline, :managed) do
       case Operation.collect(operation, deadline) do
         {:ok, result} ->

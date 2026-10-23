@@ -3,8 +3,11 @@ defmodule LibTmux.Control.Request do
   Data for the qualified control lane's supported commands.
 
   Field reads encode one named variable losslessly. Server user options accept
-  literal binary values. Constructing a request performs no I/O; submit it with
-  `LibTmux.Control.submit/3`. Arbitrary commands, formats and raw control lines
+  literal binary values. Domain actions use the same lane for split, rename
+  and literal/named input. Constructing a request performs no I/O; use
+  `LibTmux.Control.execute/3` or retain a handle with `LibTmux.Control.submit/3`.
+  The host must qualify hooks, aliases and mode-dependent input bindings along
+  with other stream writers. Arbitrary commands, formats and raw control lines
   require separate qualification and are not accepted by this lane.
   """
   alias LibTmux.{Codec, Command, Error, Format, Ref}
@@ -32,6 +35,10 @@ defmodule LibTmux.Control.Request do
     do: %__MODULE__{kind: :set_user_option, value: {name, value}}
 
   @doc false
+  def action(kind, target, value, options),
+    do: %__MODULE__{kind: :action, value: {kind, value, options}, target: target}
+
+  @doc false
   def prepare(%__MODULE__{} = request, instance) do
     with {:ok, line} <- encode(request, instance),
          {:ok, request} <- LibTmux.Control.OwnedTerm.copy(request, 20_000),
@@ -40,6 +47,16 @@ defmodule LibTmux.Control.Request do
 
   # Rebuilt at both publication boundaries; a struct is not a lane certificate.
   @doc false
+  def encode(%__MODULE__{kind: :action, value: {kind, value, options}, target: target}, instance) do
+    with {:ok, command} <-
+           LibTmux.Action.command(kind, target, value, options, instance, :control) do
+      {:ok, Command.render(command, max_bytes: 65_535) <> "\n"}
+    end
+  rescue
+    _error in [ArgumentError, FunctionClauseError] ->
+      {:error, %Error{kind: :invalid_command, phase: :validation, certainty: :no_write}}
+  end
+
   def encode(%__MODULE__{} = request, instance) do
     with :ok <- target(request, instance) do
       command =
@@ -82,6 +99,17 @@ defmodule LibTmux.Control.Request do
   @spec normalize_reply(t(), :ok | :error, [binary()]) ::
           {:ok, :ok | :error, [binary()]} | {:error, Error.t()}
   def normalize_reply(_request, :error, lines), do: {:ok, :error, lines}
+
+  def normalize_reply(%{kind: :action, value: {:split, _, _}}, :ok, [id]) do
+    case Ref.new(:pane, id, "reply") do
+      {:ok, _ref} -> {:ok, :ok, [id]}
+      _ -> invalid_reply()
+    end
+  end
+
+  def normalize_reply(%{kind: :action, value: {kind, _, _}}, :ok, [])
+      when kind in [:rename_session, :rename_window, :send_text, :send_keys],
+      do: {:ok, :ok, []}
 
   def normalize_reply(%{kind: :field, target: %Ref{} = target}, :ok, [<<"t1:", rest::binary>>]) do
     case :binary.split(rest, ":") do
