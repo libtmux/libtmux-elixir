@@ -1,3 +1,5 @@
+Code.require_file("check_public_types.exs", __DIR__)
+
 modules = Application.spec(:libtmux, :modules) || raise "compile the libtmux application first"
 
 modules =
@@ -60,6 +62,9 @@ missing =
     end
   end)
 
+private_types =
+  LibTmux.PublicTypeCheck.findings(LibTmux.PublicTypeCheck.beams(Enum.map(modules, &elem(&1, 0))))
+
 report = %{
   elixir: System.version(),
   otp: List.to_string(:erlang.system_info(:otp_release)),
@@ -68,6 +73,7 @@ report = %{
   public_functions: Enum.sum(Enum.map(rows, &length(&1.functions))),
   public_types: Enum.sum(Enum.map(rows, &length(&1.types))),
   missing: missing,
+  private_types: private_types,
   scope:
     "Compiled public declarations; coverage does not prove contract accuracy or compiler inference."
 }
@@ -82,3 +88,4 @@ end
 
 IO.puts(JSON.encode!(Map.drop(report, [:modules, :scope])))
 if missing != [], do: raise("public contract declarations are incomplete")
+if private_types != [], do: raise("public declarations name private types")

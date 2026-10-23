@@ -87,7 +87,9 @@ as errors:
 $ time mix compile --warnings-as-errors
 ```
 
-Check public function specs and type documentation against the compiled API:
+Check public function specs and type documentation against the compiled API.
+The check also fails when a public type, spec or callback names a private
+type, because the generated reference cannot link it:
 
 ```console
 $ time mix run scripts/check_public_contracts.exs

@@ -48,12 +48,13 @@ defmodule LibTmux.Snapshot do
         }
   @typedoc "Declared entity sets and field availability; completeness is separate from an empty captured set."
   @type coverage :: %{entities: %{Schema.entity() => entity_coverage()}}
-  @typep indexes :: %{
-           session_links: %{optional(String.t()) => [Ref.id()]},
-           window_links: %{optional(String.t()) => [Ref.id()]},
-           window_panes: %{optional(Schema.observed(String.t())) => [String.t()]},
-           session_clients: %{optional(Schema.observed(String.t())) => [String.t()]}
-         }
+  @typedoc "Maps each session ID to the IDs of its window links and clients, and each window ID to the IDs of its window links and panes. Traverse with `related/4`; the layout is not part of the contract."
+  @opaque indexes :: %{
+            session_links: %{optional(String.t()) => [Ref.id()]},
+            window_links: %{optional(String.t()) => [Ref.id()]},
+            window_panes: %{optional(Schema.observed(String.t())) => [String.t()]},
+            session_clients: %{optional(Schema.observed(String.t())) => [String.t()]}
+          }
   @typedoc "Observed rows grouped by canonical entity; construction validates and deduplicates their identities."
   @type rows :: %{optional(Schema.entity()) => [map() | Schema.observation()]}
   @typedoc "Construction metadata: one server instance, ordered millisecond timestamps and explicit coverage declarations."

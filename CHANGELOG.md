@@ -6,6 +6,15 @@
 
 - Add `examples/quickstart.exs`, a script that starts a private tmux
   server, captures it and prints its window and pane counts. (#7)
+- Document `LibTmux.Snapshot.indexes/0` as an opaque type. The
+  `LibTmux.Snapshot.t/0` reference now links it instead of printing the name
+  as plain text. (#8)
+
+### Development
+
+- Fail `scripts/check_public_contracts.exs` and `mix test` when a public type,
+  spec or callback names a private type, which the generated reference cannot
+  link. (#8)
 
 ## libtmux 0.0.1-alpha.1 (2026-10-21)
 
