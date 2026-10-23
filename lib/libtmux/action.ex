@@ -117,7 +117,9 @@ defmodule LibTmux.Action do
   defp defaults(:capture),
     do: [session: nil, start_line: 0, end_line: :last, join_lines: false, max_bytes: 65_536]
 
-  defp defaults(kind) when kind in [:rename_session, :rename_window, :send_text, :send_keys],
+  defp defaults(:rename_session), do: []
+
+  defp defaults(kind) when kind in [:rename_window, :send_text, :send_keys],
     do: [session: nil]
 
   defp target(kind, %Ref{entity: entity} = target, instance) do

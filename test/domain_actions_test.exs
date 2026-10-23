@@ -43,6 +43,27 @@ defmodule LibTmux.DomainActionsTest do
         ] do
       assert {:error, %{kind: :invalid_command, certainty: :no_write}} = result
     end
+
+    control = %Control{owner: self(), view: make_ref(), lifetime: nil, endpoint: %{}}
+
+    for scope <- [nil, session] do
+      request = Request.action(:rename_session, session, "work", session: scope)
+
+      assert {:error, %{kind: :invalid_command, phase: :validation, certainty: :no_write}} =
+               Request.encode(request, session.server_instance)
+
+      for connection <- [server, control] do
+        assert {:error, %{kind: :invalid_command, phase: :validation, certainty: :no_write}} =
+                 Session.rename(connection, session, "work", session: scope)
+
+        error =
+          assert_raise LibTmux.Error, fn ->
+            Session.rename!(connection, session, "work", session: scope)
+          end
+
+        assert %{kind: :invalid_command, phase: :validation, certainty: :no_write} = error
+      end
+    end
   end
 
   test "qualified action reply validation rejects malformed IDs and unsolicited output" do

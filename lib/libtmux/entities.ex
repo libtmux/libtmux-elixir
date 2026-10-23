@@ -24,7 +24,8 @@ defmodule LibTmux.Session do
   Names contain 1..1024 UTF-8 bytes without Unicode control characters (Cc).
   Format syntax remains literal;
   tmux still normalizes names (including dollar/backslash escaping, and dots
-  and colons on older releases). `timeout` defaults to 5000ms.
+  and colons on older releases). The only option is `timeout`, which defaults
+  to 5000ms.
   Old observations stay unchanged. See `LibTmux.Action` for outcome semantics.
 
       Session.rename(server, session_ref, "work")
