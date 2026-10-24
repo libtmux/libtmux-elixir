@@ -86,9 +86,6 @@ running a shell or command in it. One nonempty entry is a shell command, and
 two or more are direct argv. The example uses two arguments to avoid shell
 parsing.
 
-On tmux 3.8, snapshot capture with an empty pane currently returns a
-`:codec_error` at `[:pane, :pid]` because its process ID is absent.
-
 A physical window can belong to several sessions. Optional `session:` binds
 the action to membership in that exact session; it does not reserve a
 particular `WindowLink` index. Disappeared targets fail. Old snapshots remain

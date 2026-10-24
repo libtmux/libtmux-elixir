@@ -135,7 +135,12 @@ defmodule LibTmux.Pane do
     exit_status: :unloaded
   ]
 
-  @typedoc "A physical pane; exit status can be known absent, while other missing fields retain coverage sentinels."
+  @typedoc """
+  A physical pane; PID and exit status can be known absent, with separate coverage sentinels.
+
+  `pid` is `nil` when tmux reports no PID. A reported PID or its absence does
+  not establish process liveness or cleanup.
+  """
   @type t :: %__MODULE__{
           id: String.t(),
           server_instance: String.t(),
@@ -145,7 +150,7 @@ defmodule LibTmux.Pane do
           dead: LibTmux.Schema.observed(boolean()),
           width: LibTmux.Schema.observed(non_neg_integer()),
           height: LibTmux.Schema.observed(non_neg_integer()),
-          pid: LibTmux.Schema.observed(non_neg_integer()),
+          pid: LibTmux.Schema.observed(non_neg_integer() | nil),
           current_command: LibTmux.Schema.observed(String.t()),
           current_path: LibTmux.Schema.observed(String.t()),
           title: LibTmux.Schema.observed(String.t()),
@@ -179,9 +184,6 @@ defmodule LibTmux.Pane do
   a shell or command in it. One nonempty entry is a shell command; two or more
   are direct argv.
   At most 64 entries and the existing command byte bounds apply.
-
-  On tmux 3.8, snapshot capture with an empty pane currently returns a
-  `:codec_error` at `[:pane, :pid]` because its process ID is absent.
 
   `session: session_ref` selects exact membership/context, not a WindowLink
   index. `timeout` defaults to 5000ms. No snapshot is changed; capture again

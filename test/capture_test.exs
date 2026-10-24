@@ -8,6 +8,102 @@ defmodule LibTmux.CaptureTest do
   @moduletag reason:
                "Captures linked topology and qualifies bounded reconciliation on an owned tmux server"
 
+  for pane_kind <- [:empty, :dead] do
+    @tag pane_kind: pane_kind
+    @tag :pid_capture
+    test "capture preserves reported PID for #{pane_kind} panes", %{pane_kind: pane_kind} do
+      fixture = start_supervised!({OwnedTmux, []})
+      info = OwnedTmux.info(fixture)
+      server = server(info)
+      command = if pane_kind == :empty, do: [""], else: ["/bin/cat", "--"]
+
+      assert {text, 0} =
+               OwnedTmux.command(fixture, [
+                 "split-window",
+                 "-d",
+                 "-P",
+                 "-F",
+                 ~S"#{pane_id}" | command
+               ])
+
+      pane_id = String.trim(text)
+
+      try do
+        assert {version, 0} =
+                 OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{version}"])
+
+        assert {pid_text, 0} =
+                 OwnedTmux.command(fixture, [
+                   "display-message",
+                   "-p",
+                   "-t",
+                   pane_id,
+                   ~S"#{pane_pid}"
+                 ])
+
+        if pane_kind == :dead do
+          assert {_, 0} =
+                   OwnedTmux.command(fixture, [
+                     "set-option",
+                     "-p",
+                     "-t",
+                     pane_id,
+                     "remain-on-exit",
+                     "on"
+                   ])
+
+          assert {_, 0} =
+                   OwnedTmux.command(fixture, [
+                     "set-hook",
+                     "-p",
+                     "-t",
+                     pane_id,
+                     "pane-died",
+                     "wait-for -S capture-pid-dead"
+                   ])
+
+          watch = OwnedTmux.watch_processes([pid_text |> String.trim() |> String.to_integer()])
+          assert {_, 0} = OwnedTmux.command(fixture, ["send-keys", "-t", pane_id, "C-d"])
+          assert {_, 0} = OwnedTmux.command(fixture, ["wait-for", "capture-pid-dead"])
+          assert :ok = OwnedTmux.await_exit(watch)
+        end
+
+        expected_pid =
+          if String.trim(version) == "3.8",
+            do: nil,
+            else: pid_text |> String.trim() |> String.to_integer()
+
+        assert {:ok, snapshot} = Server.snapshot(server)
+        assert snapshot.panes[pane_id].pid === expected_pid
+
+        if pane_kind == :dead do
+          assert snapshot.panes[pane_id].dead
+          assert snapshot.panes[pane_id].exit_status == 0
+        end
+
+        assert [pane_id] ==
+                 snapshot
+                 |> Snapshot.panes()
+                 |> Selection.where(pid: expected_pid)
+                 |> Enum.map(& &1.id)
+
+        positive =
+          if is_integer(expected_pid) and expected_pid > 0, do: ["%0", pane_id], else: ["%0"]
+
+        assert positive ==
+                 snapshot
+                 |> Snapshot.panes()
+                 |> Selection.where(pid: [gt: 0])
+                 |> Enum.map(& &1.id)
+      after
+        assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", pane_id])
+        watch = OwnedTmux.watch_exit(info)
+        assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+        assert :ok = OwnedTmux.await_exit(watch)
+      end
+    end
+  end
+
   test "capture batches text fields while counting every tmux command" do
     fixture = start_supervised!({OwnedTmux, []})
     server = fixture |> OwnedTmux.info() |> server()

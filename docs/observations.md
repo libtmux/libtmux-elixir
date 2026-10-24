@@ -37,6 +37,11 @@ derived from that count. Explicit control clients remain counted even with
 `no-output` and `ignore-size`. A control client's height is known `nil` when
 tmux reports no started tty; it is not an unavailable field.
 
+`Pane.pid` is known `nil` when tmux reports no PID, including empty and
+retained dead panes on tmux 3.8. Reported integers stay unchanged: older tmux
+versions can report zero for an empty pane or a historical PID for a dead
+pane. Neither a PID nor its absence proves process liveness or cleanup.
+
 ## Coverage and construction
 
 `Snapshot.new/2` validates fixture or adapter observations without I/O.

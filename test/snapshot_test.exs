@@ -1,7 +1,22 @@
 defmodule LibTmux.SnapshotTest do
   use ExUnit.Case, async: true
 
-  alias LibTmux.{Error, Schema, Snapshot}
+  alias LibTmux.{Error, Schema, Selection, Snapshot}
+
+  test "reported pane PID absence remains distinct from zero and malformed values" do
+    rows = %{pane: [%{id: "%0", pid: nil}, %{id: "%1", pid: 0}, %{id: "%2", pid: 42}]}
+    options = metadata(fields: %{pane: [:id, :pid]})
+    assert {:ok, snapshot} = Snapshot.new(rows, options)
+    panes = Snapshot.panes(snapshot)
+    assert Enum.map(Selection.where(panes, pid: nil), & &1.id) == ["%0"]
+    assert Enum.map(Selection.where(panes, pid: 0), & &1.id) == ["%1"]
+    assert Enum.map(Selection.where(panes, pid: [gt: 0]), & &1.id) == ["%2"]
+
+    for pid <- ["", "42", -1] do
+      assert {:error, %Error{kind: :invalid_field, path: [:pane, "%0", :pid]}} =
+               Snapshot.new(%{pane: [%{id: "%0", pid: pid}]}, options)
+    end
+  end
 
   test "linked rows retain memberships while physical objects have numeric identity order" do
     rows = graph()
