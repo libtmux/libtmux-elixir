@@ -7,7 +7,7 @@ cases = [
   {"invalid_parser.ex", :warning, "incompatible types"},
   {"invalid_reference.ex", :warning, "unknown key .width"},
   {"invalid_operation.ex", :warning, "unknown key .exit_status"},
-  {"dependent_codec.ex", :observe, nil},
+  {"dependent_codec.ex", :warning, "incompatible types"},
   {"dependent_action.ex", :observe, nil}
 ]
 

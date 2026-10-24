@@ -30,21 +30,19 @@ defmodule LibTmux.Codec do
           {:ok, integer()} | {:error, Error.t()}
   @spec decode_field(binary(), :boolean, [field_option()]) ::
           {:ok, boolean()} | {:error, Error.t()}
-  def decode_field(response, type, options \\ []) when is_binary(response) do
-    cond do
-      byte_size(response) > max_bytes(options) ->
-        error(:resource_limit, :field_bytes)
+  def decode_field(response, type, options \\ [])
 
-      byte_size(response) == 0 or :binary.last(response) != 10 ->
-        error(:codec_error, :missing_framing_newline)
-
-      true ->
-        value = binary_part(response, 0, byte_size(response) - 1)
-
-        with {:ok, value} <- decode_encoding(value, Keyword.get(options, :encoding, :raw)) do
-          decode_value(value, type, options)
-        end
+  # Literal category clauses improve consumer type inference.
+  for type <- [:bytes, :string, :integer, :boolean] do
+    def decode_field(response, unquote(type), options) when is_binary(response) do
+      with {:ok, value} <- decode_framed(response, options) do
+        decode_value(value, unquote(type), options)
+      end
     end
+  end
+
+  def decode_field(response, type, options) when is_binary(response) do
+    with {:ok, value} <- decode_framed(response, options), do: decode_value(value, type, options)
   end
 
   @doc """
@@ -59,6 +57,20 @@ defmodule LibTmux.Codec do
       error(:resource_limit, :output_bytes)
     else
       output(value, <<>>)
+    end
+  end
+
+  defp decode_framed(response, options) do
+    cond do
+      byte_size(response) > max_bytes(options) ->
+        error(:resource_limit, :field_bytes)
+
+      byte_size(response) == 0 or :binary.last(response) != 10 ->
+        error(:codec_error, :missing_framing_newline)
+
+      true ->
+        value = binary_part(response, 0, byte_size(response) - 1)
+        decode_encoding(value, Keyword.get(options, :encoding, :raw))
     end
   end
 
