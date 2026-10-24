@@ -7,6 +7,7 @@ Tracker, planner, workspace and MCP work; it is not a claim that those planned
 components exist.
 The [implementation contracts](implementation.md) map those responsibilities
 to package boundaries and qualification gates.
+For a runnable introduction, [capture and filter an existing server](first-task.md).
 
 ## Values and explicit observation
 
