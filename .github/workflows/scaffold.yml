@@ -55,6 +55,8 @@ jobs:
         run: time python3 test/hexdocs_readiness_test.py
       - name: Compile core
         run: time mix compile --warnings-as-errors
+      - name: Check generated schema reference
+        run: time mix run scripts/generate_schema.exs --check
       - name: Run pure units
         run: time mix test
       - name: Check public specs and typedocs
