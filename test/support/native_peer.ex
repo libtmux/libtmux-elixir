@@ -6,6 +6,10 @@ defmodule LibTmux.Test.NativePeer do
 
   def with_process(executable, argv, run) do
     payload = Protocol.process(executable, argv, cwd: "/", env: %{})
+    with_payload(payload, run)
+  end
+
+  def with_payload(payload, run) do
     previous = Process.flag(:trap_exit, true)
 
     try do

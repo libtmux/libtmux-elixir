@@ -31,8 +31,9 @@ with at most 8,192 data bytes. The fixed output queue has eight slots.
 | `T` | Acknowledge terminal `E` or `F` kind 1–3; send no further input |
 
 Strings use a u16 byte length and reject NUL. The whole initialization
-payload has a 32 KiB ceiling. Target environment values pass directly to
-child `execve`; empty and arbitrary non-NUL values remain bytes. They do
+payload has a 32 KiB ceiling. Argv permits 2,048 entries including the
+executable; environment remains limited to 256 entries. Target values pass
+directly to child `execve`; empty and arbitrary non-NUL values remain bytes. They do
 not configure the helper's startup.
 
 | Output | Meaning |

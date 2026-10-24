@@ -5,30 +5,59 @@ defmodule LibTmux.Transport.Native.Protocol do
   alias LibTmux.Transport.Native
 
   def process(executable, arguments, options) do
+    case prepare_process(executable, arguments, options) do
+      {:ok, payload} -> payload
+      {:error, error} -> raise ArgumentError, error.details.reason
+    end
+  end
+
+  def prepare_process(executable, arguments, options) do
     options = Keyword.validate!(options, [:cwd, :env])
     cwd = Keyword.fetch!(options, :cwd)
     environment = Keyword.fetch!(options, :env)
 
-    unless is_binary(executable) and Path.type(executable) == :absolute and
-             is_binary(cwd) and Path.type(cwd) == :absolute and
-             is_list(arguments) and length(arguments) < 256 and
-             Enum.all?([executable, cwd | arguments], &string?/1),
-           do:
-             raise(
-               ArgumentError,
-               "transport requires an absolute executable/cwd and at most 255 NUL-free argv values"
-             )
+    cond do
+      not (string?(executable) and Path.type(executable) == :absolute) ->
+        invalid(
+          :executable,
+          "expected an absolute NUL-free executable path of at most 32000 bytes"
+        )
 
-    unless is_map(environment), do: raise(ArgumentError, "env requires named binary values")
+      not (string?(cwd) and Path.type(cwd) == :absolute) ->
+        invalid(:cwd, "expected an absolute NUL-free cwd of at most 32000 bytes")
+
+      not (is_list(arguments) and length(arguments) < 2048) ->
+        invalid(:argv, "expected at most 2047 arguments, excluding the executable")
+
+      not Enum.all?(arguments, &string?/1) ->
+        invalid(:argv, "expected NUL-free arguments of at most 32000 bytes each")
+
+      not is_map(environment) ->
+        invalid(:env, "expected named binary environment values")
+
+      true ->
+        prepare_environment(executable, arguments, cwd, environment)
+    end
+  end
+
+  defp prepare_environment(executable, arguments, cwd, environment) do
     environment = Map.drop(environment, ["TMUX", "TMUX_PANE"])
 
-    unless map_size(environment) <= 256 and
-             Enum.all?(environment, fn {key, value} ->
-               string?(key) and byte_size(key) in 1..128 and :binary.match(key, "=") == :nomatch and
-                 string?(value)
-             end),
-           do: raise(ArgumentError, "env requires at most 256 NUL-free named binary values")
+    if map_size(environment) <= 256 and
+         Enum.all?(environment, fn {key, value} ->
+           string?(key) and byte_size(key) in 1..128 and :binary.match(key, "=") == :nomatch and
+             string?(value)
+         end) do
+      encode_process(executable, arguments, cwd, environment)
+    else
+      invalid(
+        :env,
+        "expected at most 256 NUL-free values up to 32000 bytes with 1..128-byte names"
+      )
+    end
+  end
 
+  defp encode_process(executable, arguments, cwd, environment) do
     argv = [executable | arguments]
 
     environment =
@@ -43,10 +72,20 @@ defmodule LibTmux.Transport.Native.Protocol do
     ]
 
     if IO.iodata_length(payload) + 7 > 32_768,
-      do: raise(ArgumentError, "encoded argv/cwd/environment exceeds 32 KiB")
-
-    IO.iodata_to_binary(payload)
+      do: invalid(:frame, "encoded executable/argv/cwd/environment exceeds 32 KiB"),
+      else: {:ok, IO.iodata_to_binary(payload)}
   end
+
+  defp invalid(field, reason),
+    do:
+      {:error,
+       %Error{
+         kind: :invalid_command,
+         phase: :validation,
+         certainty: :no_write,
+         path: [:process, field],
+         details: %{reason: reason}
+       }}
 
   # Timeout zero is reserved for a persistent child; its owner enforces operation deadlines.
   def open_frame(payload, options) when is_binary(payload) do

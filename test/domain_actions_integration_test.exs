@@ -345,6 +345,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
     end
 
     @tag lane: lane
+    @tag :input_bytes
     test "literal bytes and named keys reach a raw pane through #{lane}", %{lane: lane} do
       fixture = start_supervised!({OwnedTmux, []})
       info = OwnedTmux.info(fixture)
@@ -383,6 +384,20 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           bytes = ~S"Enter C-c #{pid}; $HOME" <> <<92, 0, 255, 9, 10, 13>> <> "λ"
           assert :ok = Pane.send_text!(connection, target, bytes)
           assert {:ok, ^bytes} = :socket.recv(peer, byte_size(bytes), 750)
+
+          for size <- [246, 247, 995] do
+            bytes = binary_part(:binary.copy(<<0, 255, 97, 10>>, 255), 0, size)
+
+            assert {:ok, %{outcome: :completed, value: :ok}} =
+                     Pane.send_text(connection, target, bytes)
+
+            assert {:ok, ^bytes} = :socket.recv(peer, size, 750)
+          end
+
+          for size <- [996, 1020, 1021] do
+            assert {:error, %{kind: :invalid_command, path: [:text], certainty: :no_write}} =
+                     Pane.send_text(connection, target, :binary.copy("x", size))
+          end
 
           assert :ok =
                    Pane.send_keys!(connection, target, [

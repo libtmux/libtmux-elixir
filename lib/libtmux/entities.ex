@@ -312,9 +312,11 @@ defmodule LibTmux.Pane do
     do: connection |> split(ref, options) |> LibTmux.Action.unwrap()
 
   @doc """
-  Sends 0..1020 literal bytes to an exact pane, without interpreting key names.
+  Sends 0..995 literal bytes to an exact pane, without interpreting key names.
 
   Hex-key encoding preserves NUL and invalid UTF-8. Empty input sends nothing.
+  Both transports use the same limit, fitting tmux 3.8's command argument
+  ceiling. Larger inputs fail validation before I/O; calls are never split.
   The terminal's line discipline, active mode and application still determine
   how input is handled; acknowledgement does not prove program consumption.
   Options and outcomes follow `LibTmux.Action`. For named keys use `send_keys/4`.

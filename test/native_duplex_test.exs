@@ -2,6 +2,7 @@ defmodule LibTmux.NativeDuplexTest do
   use ExUnit.Case, async: true
   alias LibTmux.Deadline
   alias LibTmux.Test.NativePeer
+  alias LibTmux.Transport.Native
   alias LibTmux.Transport.Native.Protocol
 
   @moduletag :integration
@@ -27,6 +28,33 @@ defmodule LibTmux.NativeDuplexTest do
       true = Port.command(port, Protocol.close_frame(), [:nosuspend])
       assert {:retired, {:terminal, 0, 0}} = NativePeer.await_exit(port, Deadline.new(800))
     end)
+  end
+
+  test "native admission independently bounds argv and environment entries" do
+    for {argc, envc, accepted} <- [{2048, 256, true}, {2049, 0, false}, {1, 257, false}] do
+      payload =
+        IO.iodata_to_binary([
+          Native.encode_string("/"),
+          <<argc::16>>,
+          Native.encode_string("/bin/true"),
+          List.duplicate(<<0::16>>, argc - 1),
+          <<envc::16>>,
+          Enum.map(1..envc//1, &Native.encode_string("KEY#{&1}="))
+        ])
+
+      NativePeer.with_payload(payload, fn port ->
+        if accepted do
+          assert {:started, pid} = NativePeer.next(port, Deadline.new(800))
+          assert pid > 0
+          true = Port.command(port, Protocol.read_frame(:stdout, 8192), [:nosuspend])
+          true = Port.command(port, Protocol.read_frame(:stderr, 8192), [:nosuspend])
+          assert {:retired, {:terminal, 0, 0}} = NativePeer.await_exit(port, Deadline.new(800))
+        else
+          assert {:failed, 1, _errno} = NativePeer.next(port, Deadline.new(800))
+          assert {:retired, {:failed, 1, _}} = NativePeer.await_exit(port, Deadline.new(800))
+        end
+      end)
+    end
   end
 
   defp collect_write(_port, _id, bytes, _deadline, %{ack: true, output: bytes} = result),

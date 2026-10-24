@@ -22,7 +22,10 @@ defmodule LibTmux.Action do
   Action errors with kind `:invalid_command` include a validation `path` such
   as `[:options, :size]` and a bounded `details.reason` describing accepted
   inputs. The reason appears in the exception message; rejected values are
-  not retained in diagnostic details.
+  not retained in diagnostic details. One-shot actions validate both complete
+  native process specifications before the identity read. Native byte/count
+  refusals use paths such as `[:process, :argv]` or `[:process, :frame]`.
+  Preparation does not check filesystem existence or guarantee execution.
 
   A nonzero one-shot client exit reports `:failed` with `:observed` certainty:
   its exit status is observed, not an authenticated tmux command reply or
@@ -92,7 +95,9 @@ defmodule LibTmux.Action do
                do: {:ok, result(result, :control, action_value(kind, result))}
 
         %Server{} ->
-          with :ok <- identify(connection, target, deadline) do
+          with {:ok, _payload} <- Server.prepare_command(connection, command),
+               {:ok, _payload} <- Server.prepare_command(connection, identity_command()),
+               :ok <- identify(connection, target, deadline) do
             execute(connection, kind, command, options, deadline)
           end
       end
@@ -244,8 +249,9 @@ defmodule LibTmux.Action do
   end
 
   defp build(:send_text, target, bytes, options) do
-    unless is_binary(bytes) and byte_size(bytes) <= 1020,
-      do: invalid!([:text], "expected at most 1020 bytes")
+    # tmux 3.8 permits 1000 command argv entries: five fixed plus the input bytes.
+    unless is_binary(bytes) and byte_size(bytes) <= 995,
+      do: invalid!([:text], "expected at most 995 bytes")
 
     # Hex keys preserve individual bytes, including NUL and invalid UTF-8.
     encoded = for <<byte <- bytes>>, do: Integer.to_string(byte, 16)
@@ -399,9 +405,11 @@ defmodule LibTmux.Action do
 
   defp key?(_key), do: false
 
+  defp identity_command, do: Command.new("display-message", ["-p", ~S"#{pid}"])
+
   defp identify(server, target, deadline) do
     with {:ok, output} <-
-           Server.run(server, Command.new("display-message", ["-p", ~S"#{pid}"]),
+           Server.run(server, identity_command(),
              deadline: deadline,
              max_stdout_bytes: 64
            ),

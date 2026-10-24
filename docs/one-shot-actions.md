@@ -76,11 +76,21 @@ byte count without claiming that `hello` has already appeared.
 | --- | --- |
 | Rename | `Session.rename/4` or `Window.rename/4`; 1..1024 UTF-8 bytes without Unicode control characters. tmux's name normalization remains version-dependent. |
 | Split | `Pane.split/3`; vertical, half size and detached by default. Horizontal places panes side by side. Percent sizes use `-l N%`, including on tmux 3.4. `value` contains the pane `id` and `ref: nil`. |
-| Literal input | `Pane.send_text/4`; 0..1020 bytes, including NUL and invalid UTF-8. It never parses key names. |
+| Literal input | `Pane.send_text/4`; 0..995 bytes, including NUL and invalid UTF-8. It never parses key names. |
 | Named input | `Pane.send_keys/4`; 1..128 supported names. Unsupported spellings fail before dispatch. See the API for modifiers. |
 | Screen capture | `Pane.capture/3`; visible lines by default, 64 KiB stdout, negative history offsets allowed. An overflow is an error. This reads rendered screen state, not original program stdout. |
 
 All actions default to one 5000ms budget.
+
+The literal-input limit is now 995 bytes on both transports. Earlier alphas
+advertised 1,020, but one-shot native admission rejected more than 246 bytes.
+tmux 3.8's one-shot client limits this encoding to 995 input bytes (1,000
+command arguments). One-shot inputs from 247 through 995 now work. Control
+callers previously sending 996..1020 bytes now receive an `:invalid_command`
+error at `[:text]`, as do all larger inputs on either transport, before I/O.
+The library never splits a call into several mutations.
+Applications sending larger inputs must choose their batching and handle
+partial delivery explicitly.
 
 A physical window can belong to several sessions. Optional `session:` binds
 the action to membership in that exact session; it does not reserve a
