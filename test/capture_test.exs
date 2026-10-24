@@ -78,7 +78,27 @@ defmodule LibTmux.CaptureTest do
 
         if pane_kind == :dead do
           assert snapshot.panes[pane_id].dead
-          assert snapshot.panes[pane_id].exit_status == 0
+
+          assert {reported, 0} =
+                   OwnedTmux.command(fixture, [
+                     "display-message",
+                     "-p",
+                     "-t",
+                     pane_id,
+                     ~S"#{pane_dead_status}|#{pane_dead_signal}"
+                   ])
+
+          [status, signal] = reported |> String.trim() |> String.split("|", trim: false)
+
+          expected_status =
+            if status == "" do
+              assert signal != ""
+              nil
+            else
+              String.to_integer(status)
+            end
+
+          assert snapshot.panes[pane_id].exit_status === expected_status
         end
 
         assert [pane_id] ==
