@@ -9,6 +9,7 @@ import socket
 import struct
 import subprocess
 import sys
+import time
 
 elixir, ebin, package, tmux, address, session = sys.argv[1:]
 directory = Path(address).parent
@@ -60,45 +61,82 @@ def observe_program(listener, pane):
 
 
 code = r'''
+started = System.monotonic_time(:microsecond)
+stamp = fn phase -> IO.puts(:stderr, JSON.encode!(%{phase: phase, micros: System.monotonic_time(:microsecond) - started})) end
+stamp.("entry")
 alias LibTmux.{Action, Control, Pane, Ref, Server}
 [tmux, socket, session, lane, program, expected] = System.argv()
 {:ok, _} = Application.ensure_all_started(:libtmux)
+stamp.("application")
 server = Server.new(executable: tmux, socket: socket, env: %{})
 {:ok, snapshot} = Server.snapshot(server)
+stamp.("snapshot")
 {:ok, ref} = Ref.from_observation(snapshot.panes["%0"])
-call = fn connection -> Pane.split!(connection, ref, command: {:argv, [program]}) |> Action.value!() end
+call = fn connection ->
+  stamp.("action_start")
+  value = Pane.split!(connection, ref, command: {:argv, [program]}) |> Action.value!()
+  stamp.("action_completed")
+  value
+end
 id = case lane do
   "one_shot" -> call.(server)
   "control" ->
     {:ok, id} = Control.with_connection([server: server, session: {:existing, session}, lane: :host_qualified], call)
     id
 end
+stamp.("execution_returned")
 for module <- Application.spec(:libtmux, :modules) do
   true = Code.ensure_loaded?(module)
   path = module |> :code.which() |> List.to_string() |> Path.dirname() |> Path.expand()
   true = path == Path.expand(expected)
 end
+stamp.("modules_checked")
 IO.puts(JSON.encode!(%{pane: id, helper: LibTmux.Transport.Native.executable()}))
 '''
 
 command("set-environment", "-t", session, "LIBTMUX_ARGV_SOCKET", str(peer_path))
 command("set-option", "-w", "-t", "@0", "remain-on-exit", "on")
 command("set-hook", "-w", "-t", "@0", "pane-died", "wait-for -S argv-died")
+timings = {}
 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
     listener.bind(str(peer_path))
     listener.listen()
     listener.settimeout(0.75)
     for lane in ("one_shot", "control"):
-        result = subprocess.run([elixir, "-pa", ebin, "-e", code, "--", tmux, address,
-                                 session, lane, str(program), ebin],
-                                cwd=directory, capture_output=True, timeout=0.95, check=True)
-        assert not result.stderr, result.stderr
-        created = json.loads(result.stdout)
+        started = time.monotonic()
+        with subprocess.Popen([elixir, "-pa", ebin, "-e", code, "--", tmux, address,
+                               session, lane, str(program), ebin], cwd=directory,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE) as creator:
+            spawned = time.monotonic()
+            try:
+                stdout, stderr = creator.communicate(timeout=0.95)
+            except subprocess.TimeoutExpired as error:
+                status = creator.poll()
+                creator.kill()
+                creator.wait()
+                print(json.dumps({"creator_timeout": {"lane": lane, "status_before_kill": status,
+                      "spawn_seconds": spawned - started, "elapsed_seconds": time.monotonic() - started,
+                      "stdout": (error.stdout or b"")[-1024:].decode(errors="replace"),
+                      "stderr": (error.stderr or b"")[-4096:].decode(errors="replace")}}),
+                      file=sys.stderr, flush=True)
+                raise RuntimeError(f"{lane} creator exceeded its 0.95s communicate guard") from None
+            except BaseException:
+                creator.kill()
+                raise
+            assert creator.returncode == 0, stderr
+        phases = [json.loads(line) for line in stderr.splitlines()]
+        assert [frame["phase"] for frame in phases] == [
+            "entry", "application", "snapshot", "action_start", "action_completed",
+            "execution_returned", "modules_checked"]
+        assert all(set(frame) == {"phase", "micros"} for frame in phases)
+        timings[lane] = {"spawn_seconds": spawned - started,
+                         "elapsed_seconds": time.monotonic() - started, "phases": phases}
+        created = json.loads(stdout)
         helper = Path(created["helper"]).resolve(strict=True)
         assert helper.is_relative_to(Path(package).resolve())
         pane = created["pane"]
         try:
-            # subprocess.run has observed the creating BEAM's exit.
+            # communicate has observed the creating BEAM's exit and pipe EOF.
             observe_program(listener, pane)
             assert b"--exec-one" in field(pane, "pane_start_command")
             command("respawn-pane", "-t", pane)
@@ -127,4 +165,4 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as listener:
         command("kill-pane", "-t", pane)
 
 print(json.dumps({"singleton_argv": "ok", "creating_beam_exited": True,
-                  "respawn": "ok", "removed_copy_respawn_exit": 1}))
+                  "respawn": "ok", "removed_copy_respawn_exit": 1, "creator_timings": timings}))
