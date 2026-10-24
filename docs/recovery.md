@@ -92,6 +92,13 @@ intact. A pre-admission error means this request was not written. An
 `ExecutionError` means admission occurred; lost context does not establish
 what happened to its effects.
 
+Domain actions such as `LibTmux.Window.rename/4` already classify unsuccessful
+outcomes as `{:error, %LibTmux.Action.CompletionError{}}`. Inspect that error's
+`result` to retain its certainty and transport evidence. Their admitted
+`ExecutionError` values need the same operation inspection shown here.
+The program above uses `Control.execute/3`, whose canonical outcomes remain
+inside `{:ok, result}`. See the [return comparison](mental-model.md#return-conventions).
+
 For retained context, one `Operation.status/1` read captures both wire state
 and the current result. The read can already report lost context: `:retained`
 describes an earlier inspection. A known command result can still precede

@@ -75,7 +75,7 @@ defmodule LibTmux.Session do
     do: LibTmux.Snapshot.related_observation(snapshot, :session, session, :active_window)
 
   @doc """
-  Renames an exact session through the selected transport; returns an action result.
+  Renames an exact session; returns `{:ok, result}` on command completion.
 
   Names contain 1..1024 UTF-8 bytes without Unicode control characters (Cc).
   Format syntax remains literal;
@@ -152,6 +152,9 @@ defmodule LibTmux.Window do
 
   @doc """
   Renames an exact physical window across all its memberships.
+
+  Returns `{:ok, result}` on command completion; unsuccessful outcomes return
+  `{:error, %LibTmux.Action.CompletionError{}}` with their original evidence.
 
   Names contain 1..1024 UTF-8 bytes without Unicode control characters (Cc),
   with literal format syntax.
@@ -271,7 +274,8 @@ defmodule LibTmux.Pane do
   that server incarnation, contains no fresh fields and does not reserve its
   lifetime. Closing the connection does not invalidate the reference while
   the pane and server remain. One-shot execution does not establish this
-  binding and returns `ref: nil`. Unsuccessful split results have `value: nil`.
+  binding and returns `ref: nil`. Unsuccessful outcomes return
+  `{:error, %LibTmux.Action.CompletionError{}}` with the original result.
 
   Defaults: vertical split, half size, detached, after the target, and tmux's
   session default shell/command and directory. `axis: :horizontal` places panes
@@ -296,7 +300,7 @@ defmodule LibTmux.Pane do
 
       alias LibTmux.Pane
 
-      {:ok, %{outcome: :completed, value: %{ref: created}}} =
+      {:ok, %{value: %{ref: created}}} =
         Pane.split(control, pane_ref, axis: :horizontal, size: {:percent, 30})
       Pane.send_text(control, created, "hello")
   """
@@ -371,7 +375,9 @@ defmodule LibTmux.Pane do
   @doc """
   Captures bounded screen bytes through explicit one-shot execution.
 
-  Returns bytes as `value` after acknowledged completion and native retirement.
+  Returns `{:ok, result}` with bytes as `value` after acknowledged completion
+  and native retirement. Failed commands return
+  `{:error, %LibTmux.Action.CompletionError{}}` with their original evidence.
   Defaults: visible lines 0 through `:last`, no line joining, 65536 stdout
   bytes, 65536 stderr bytes and 5000ms. `:last` is accepted only for `end_line`.
   Negative line numbers include history;
@@ -387,7 +393,8 @@ defmodule LibTmux.Pane do
       Pane.capture(server, pane_ref, start_line: -100, max_bytes: 131_072)
   """
   @spec capture(LibTmux.Action.connection(), LibTmux.Ref.t(), [capture_option()]) ::
-          {:ok, LibTmux.Action.result(binary())} | {:error, LibTmux.Error.t()}
+          {:ok, LibTmux.Action.result(binary())}
+          | {:error, LibTmux.Error.t() | LibTmux.Action.CompletionError.t()}
   def capture(connection, ref, options \\ []),
     do: LibTmux.Action.run(:capture, connection, ref, nil, options)
 

@@ -23,7 +23,17 @@ defmodule LibTmux.ControlTest do
       assert {:ok, [{ticket, {:collect, ^lease}}]} = Inbox.take(endpoint.waiter_inbox)
       canonical = %{outcome: outcome, certainty: certainty, evidence: evidence, lines: lines}
       assert :ok = Inbox.finish(endpoint.waiter_inbox, ticket, {:ok, canonical})
-      assert_receive {:split, {:ok, result}}
+      assert_receive {:split, response}
+
+      result =
+        if outcome == :completed do
+          assert {:ok, result} = response
+          result
+        else
+          assert {:error, %Action.CompletionError{result: result}} = response
+          result
+        end
+
       assert result.details == canonical
       refute Map.has_key?(result, :ref)
 
@@ -36,7 +46,7 @@ defmodule LibTmux.ControlTest do
         assert Action.unwrap({:ok, result}) == result.value
       else
         assert result.value == nil
-        error = assert_raise Action.CompletionError, fn -> Action.unwrap({:ok, result}) end
+        error = assert_raise Action.CompletionError, fn -> Action.unwrap(response) end
         assert error.result === result
       end
 
@@ -44,17 +54,18 @@ defmodule LibTmux.ControlTest do
     end
   end
 
-  test "managed execution distinguishes pre-admission refusal from lost admitted context" do
+  test "domain actions preserve pre-admission refusal and lost admitted context" do
     {control, endpoint, _view} = connection()
+    {:ok, pane} = Ref.new(:pane, "%0", "instance")
 
     assert {:error, %Error{kind: :invalid_command, certainty: :no_write}} =
-             Control.execute(control, Request.field("invalid{"))
+             Pane.split(control, pane, axis: :invalid)
 
     observer = self()
 
     {caller, monitor} =
       spawn_monitor(fn ->
-        send(observer, {:execution, Control.execute(control, Request.field("pid"), timeout: 500)})
+        send(observer, {:execution, Pane.split(control, pane, timeout: 500)})
       end)
 
     assert_receive {:submit, _, lease, _}

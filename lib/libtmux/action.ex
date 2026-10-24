@@ -7,8 +7,10 @@ defmodule LibTmux.Action do
   replays a mutation or refreshes an observation. One-shot actions check the
   server incarnation before execution; that check leaves a check/use race.
 
-  Ordinary actions return completed, failed, skipped and unknown outcomes.
-  `value` is populated only for a completed command; `details` retains the
+  Ordinary actions return `{:ok, result}` only for completed commands.
+  Failed, skipped and unknown outcomes return
+  `{:error, %LibTmux.Action.CompletionError{result: original_result}}`.
+  `value` holds the completed command's value; `details` retains the
   transport's original bounded evidence. Domain bang functions return the
   completed value or raise `LibTmux.Action.CompletionError` with the original
   unsuccessful result. Acknowledgement does not prove that a program
@@ -46,10 +48,9 @@ defmodule LibTmux.Action do
   @typedoc "A 1..600000ms execution budget, default 5000ms; optional exact session context for physical targets."
   @type option :: {:timeout, 1..600_000} | {:session, Ref.t()}
   @typedoc """
-  Canonical action outcome and original transport evidence.
+  A completed action's value and original transport evidence.
 
-  A completed outcome carries the action's value; failed, skipped and unknown
-  outcomes carry `nil`. Match the outcome before using the value. Command
+  Only completed results appear in an action's `{:ok, result}` tuple. Command
   acknowledgement remains distinct from external program completion.
 
   A completed split carries `t:LibTmux.Pane.split_value/0`. See
@@ -64,16 +65,18 @@ defmodule LibTmux.Action do
             value: value,
             details: map()
           }
-          | %{
-              outcome: :failed | :skipped | :unknown,
-              certainty: Error.certainty(),
-              evidence: atom(),
-              transport: :one_shot | :control,
-              value: nil,
-              details: map()
-            }
-  @typedoc "An API refusal or a managed execution error retaining its recovery context."
-  @type error :: Error.t() | LibTmux.Control.ExecutionError.t()
+  @typedoc "A failed, skipped or unknown action outcome retained inside CompletionError."
+  @type unsuccessful_result :: %{
+          outcome: :failed | :skipped | :unknown,
+          certainty: Error.certainty(),
+          evidence: atom(),
+          transport: :one_shot | :control,
+          value: nil,
+          details: map()
+        }
+  @typedoc "An API refusal, unsuccessful outcome or managed execution error retaining recovery context."
+  @type error ::
+          Error.t() | LibTmux.Action.CompletionError.t() | LibTmux.Control.ExecutionError.t()
 
   @keys ~w(Enter Space Tab BTab BSpace Escape Up Down Left Right Home End PageUp PageDown Insert Delete)
   @modified_keys ~w(Up Down Left Right Home End PageUp PageDown Insert Delete)
@@ -102,6 +105,7 @@ defmodule LibTmux.Action do
           end
       end
       |> created_value(kind, target)
+      |> require_completion()
     end
   end
 
@@ -109,8 +113,15 @@ defmodule LibTmux.Action do
 
   @doc false
   def unwrap({:ok, %{outcome: :completed, value: value}}), do: value
-  def unwrap({:ok, result}), do: raise(LibTmux.Action.CompletionError, result: result)
   def unwrap({:error, error}), do: raise(error)
+
+  defp require_completion({:ok, %{outcome: :completed}} = result), do: result
+
+  defp require_completion({:ok, %{outcome: outcome} = result})
+       when outcome in [:failed, :skipped, :unknown],
+       do: {:error, %LibTmux.Action.CompletionError{result: result}}
+
+  defp require_completion({:error, _error} = error), do: error
 
   defp prepare_options(options, entered_at) do
     options = options!(options)

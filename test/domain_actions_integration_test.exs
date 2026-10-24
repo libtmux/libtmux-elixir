@@ -311,7 +311,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", created])
           assert :ok = OwnedTmux.await_exit(watch)
 
-          assert {:ok, %{outcome: :failed}} =
+          assert {:error, %LibTmux.Action.CompletionError{result: %{outcome: :failed}}} =
                    Pane.send_text(connection, dead, "must not retarget")
 
           assert {:error, %{kind: :invalid_command, certainty: :no_write}} =
@@ -321,6 +321,9 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           if lane == :control, do: assert({:ok, %{phase: :ready}} = Control.status(connection))
 
           if lane == :one_shot do
+            assert {:error, %LibTmux.Action.CompletionError{result: %{outcome: :failed}}} =
+                     Pane.capture(connection, dead)
+
             assert {_, 0} =
                      OwnedTmux.command(fixture, [
                        "set-hook",

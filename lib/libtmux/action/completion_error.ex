@@ -2,8 +2,8 @@ defmodule LibTmux.Action.CompletionError do
   @moduledoc """
   An action result did not meet an explicit completion requirement.
 
-  Raised by domain bang actions such as `LibTmux.Pane.split!/3`. `result`
-  preserves the original
+  Returned in an error tuple by domain actions such as `LibTmux.Pane.split/3`
+  and raised by their bang variants. `result` preserves the original
   failed, skipped or unknown outcome, including certainty and transport
   evidence. An unknown outcome remains unknown; this exception does not
   cancel work or authorize replay. Its message omits transport output.
@@ -12,7 +12,7 @@ defmodule LibTmux.Action.CompletionError do
   defexception [:result]
 
   @typedoc "The original action result that did not establish command completion."
-  @type t :: %__MODULE__{result: LibTmux.Action.result(term())}
+  @type t :: %__MODULE__{result: LibTmux.Action.unsuccessful_result()}
 
   @impl true
   def message(%{result: %{outcome: outcome, certainty: certainty, transport: transport}})

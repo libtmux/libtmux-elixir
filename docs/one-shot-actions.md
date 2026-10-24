@@ -64,10 +64,13 @@ IO.puts(JSON.encode!(%{created_pane: created_id, captured_bytes: byte_size(scree
 
 <!-- /example -->
 
-Domain bang functions return completed values. Failed, skipped and unknown
-outcomes raise `LibTmux.Action.CompletionError` with the original result in
-its `result` field; API errors are raised unchanged. Use ordinary actions
-when the caller needs to inspect every outcome without raising.
+Ordinary domain actions return `{:ok, result}` only when the command completes.
+Failed, skipped and unknown outcomes return
+`{:error, %LibTmux.Action.CompletionError{result: original_result}}` with the
+full original evidence. Domain bang functions return completed values or
+raise these errors. API and admitted execution errors remain unchanged.
+See [return conventions](mental-model.md#return-conventions) for the
+distinction from lower-level execution and scoped callbacks.
 A command acknowledgement does not prove input consumption, screen
 rendering or program exit. Consequently, the example reports the capture's
 byte count without claiming that `hello` has already appeared.
@@ -81,6 +84,12 @@ byte count without claiming that `hello` has already appeared.
 | Screen capture | `Pane.capture/3`; visible lines by default, 64 KiB stdout, negative history offsets allowed. An overflow is an error. This reads rendered screen state, not original program stdout. |
 
 All actions default to one 5000ms budget.
+
+Migration: earlier alphas put unsuccessful domain outcomes inside `{:ok, result}`.
+Match `{:error, %LibTmux.Action.CompletionError{result: result}}` to inspect them
+now. Ordinary `with {:ok, result} <- action` composition requires command
+completion and still retains successful metadata. Domain bangs and lower-level
+`Control` and `Operation` return conventions have not changed.
 
 The literal-input limit is now 995 bytes on both transports. Earlier alphas
 advertised 1,020, but one-shot native admission rejected more than 246 bytes.
