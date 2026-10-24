@@ -89,6 +89,40 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           assert field(fixture, "$1:.#{created}", "window_id") == "@0"
           assert field(fixture, created, "pane_width") == "25"
 
+          assert {_, 0} =
+                   OwnedTmux.command(fixture, [
+                     "set-option",
+                     "-t",
+                     session.id,
+                     "default-command",
+                     "exec /bin/cat"
+                   ])
+
+          assert %{outcome: :completed, value: empty} =
+                   Pane.split!(connection, pane, command: [""], session: session)
+
+          try do
+            expected_pid = if field(fixture, "$0", "version") == "3.8", do: "", else: "0"
+            assert field(fixture, empty, "pane_pid") == expected_pid
+            assert field(fixture, empty, "pane_tty") == ""
+
+            for options <- [[], [command: []]] do
+              assert %{outcome: :completed, value: default} =
+                       Pane.split!(connection, pane, options ++ [session: session])
+
+              pid = field(fixture, default, "pane_pid") |> String.to_integer()
+              assert pid > 0
+              assert {:ok, _identity} = ProcessIdentity.read(pid)
+              assert field(fixture, default, "pane_start_command") =~ "exec /bin/cat"
+            end
+          after
+            # Empty panes have no usable PID; remove them before process-exit watchers.
+            assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", empty])
+          end
+
+          assert {ids, 0} = OwnedTmux.command(fixture, ["list-panes", "-a", "-F", ~S"#{pane_id}"])
+          refute empty in String.split(ids)
+
           assert {:error, %{kind: :stale_target, certainty: :no_write}} =
                    Pane.split(connection, %{pane | server_instance: "old"})
 

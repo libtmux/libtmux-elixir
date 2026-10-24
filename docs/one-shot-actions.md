@@ -81,8 +81,13 @@ byte count without claiming that `hello` has already appeared.
 | Screen capture | `Pane.capture/3`; visible lines by default, 64 KiB stdout, negative history offsets allowed. An overflow is an error. This reads rendered screen state, not original program stdout. |
 
 All actions default to one 5000ms budget. Split `command` follows tmux:
-no arguments uses the session default, one is a shell command, and two or
-more are direct argv. The example uses two arguments to avoid shell parsing.
+omitted or `[]` uses the session default; `[""]` creates an empty pane without
+running a shell or command in it. One nonempty entry is a shell command, and
+two or more are direct argv. The example uses two arguments to avoid shell
+parsing.
+
+On tmux 3.8, snapshot capture with an empty pane currently returns a
+`:codec_error` at `[:pane, :pid]` because its process ID is absent.
 
 A physical window can belong to several sessions. Optional `session:` binds
 the action to membership in that exact session; it does not reserve a

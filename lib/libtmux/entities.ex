@@ -174,9 +174,14 @@ defmodule LibTmux.Pane do
   Defaults: vertical split, half size, detached, after the target, and tmux's
   session default shell/command and directory. `axis: :horizontal` places panes
   side by side; `size: {:percent, n}` uses `-l n%` on every supported release.
-  Optional `cwd` is literal format text. `command` follows tmux: zero entries
-  uses the session default, one is a shell command, two or more are direct argv.
+  Optional `cwd` is literal format text. `command` follows tmux: omitted or
+  `[]` uses the session default; `[""]` creates an empty pane without running
+  a shell or command in it. One nonempty entry is a shell command; two or more
+  are direct argv.
   At most 64 entries and the existing command byte bounds apply.
+
+  On tmux 3.8, snapshot capture with an empty pane currently returns a
+  `:codec_error` at `[:pane, :pid]` because its process ID is absent.
 
   `session: session_ref` selects exact membership/context, not a WindowLink
   index. `timeout` defaults to 5000ms. No snapshot is changed; capture again
