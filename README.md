@@ -20,9 +20,9 @@
 
 </div>
 
-Capture and query tmux state, then act on exact session, window and pane
-references. Observations are immutable; enumeration never runs a command.
-Choose bounded one-shot execution or an explicitly qualified control connection.
+Read tmux sessions, windows and panes from Elixir. Filter a snapshot, rename
+a window, split a pane, send input, or capture its screen. Queries use the
+captured snapshot; actions contact tmux explicitly.
 
 [Capture and query](#capture-and-query) ·
 [Rename a window](#rename-a-window) ·
@@ -31,20 +31,14 @@ Choose bounded one-shot execution or an explicitly qualified control connection.
 
 ## Status and requirements
 
-The `0.0.1-alpha.2` core includes capture/filtering, domain actions, managed
-execution and scoped connections. Workspace, MCP, Tracker and dependency
-planners remain planned.
+**Alpha:** the API may change between releases.
 
-| Requirement | Scope |
+| Requirement | Version or dependency |
 | --- | --- |
 | Elixir / OTP | Elixir 1.20.4 or later 1.20 patch, compiled for OTP 29; OTP 29.1.2 or later 29 patch |
 | Runtime platform | Linux, with a C11 compiler and headers to build the external helper |
-| tmux | Required compatibility cells: 3.3, 3.3a, 3.4 and 3.8; other versions need their own evidence |
+| tmux | 3.3 minimum; tested with 3.3, 3.3a, 3.4 and 3.8 |
 | Dependencies | Zero third-party core runtime packages; no NIF |
-
-The development selectors in [`.tool-versions`](.tool-versions) do not extend
-support to older OTP patches. Python is needed only for the optional owned
-example runner and integration tooling. See [setup](.github/CONTRIBUTING.md#setup).
 
 ## Installation
 
@@ -71,11 +65,9 @@ $ python3 examples/owned_server.py \
     mix run examples/readme.exs
 ```
 
-The runner supplies an absolute executable, socket and session ID. It creates
-an empty-config server with a `cat` pane, clears inherited tmux environment
-variables, and verifies cleanup when the program exits. The setup and teardown
-stay in the [runner](docs/owned-server.md); the library calls are shown below.
-Python 3.9+ is required for this Linux runner, not for the library.
+The [runner](docs/owned-server.md) creates a private server and cleans it up
+afterward. It supplies the executable, socket and session ID used below,
+leaving your existing tmux sessions alone. The runner needs Python 3.9+.
 
 Already have a server? Use the [capture-only program](docs/first-task.md),
 which takes its socket explicitly and leaves the server running.
@@ -184,50 +176,28 @@ That option does not configure or qualify an arbitrary server. Read the
 [managed-control guide](docs/managed-control.md) before using another host.
 For one-shot screen reads, use [`Pane.capture!/3`][capture].
 
-The complete program verifies the renamed window and new pane in a fresh
-snapshot, then prints their IDs and cleanup status. CI runs these same snippets
-from the packed library against the supported tmux versions. It also checks
-that the displayed code matches the source. Every snippet declares the aliases
-it uses; aliases are lexical shorthand, not inferred imports.
+The complete program prints the active pane `%0`, the new pane `%1`, and the
+window name `editor`. These examples run in CI. Each snippet shows its aliases;
+they shorten module names and are not inferred.
 
 ## Errors and recovery
 
-Domain bang functions return completed values or raise with failure evidence.
-Lower-level Control and Operation bangs preserve canonical outcomes as values.
-Timeouts do not imply no effects or authorize replay. The
-[recovery example](docs/recovery.md) handles execution and cleanup failures;
-[retained operations](docs/advanced-execution.md) support independent inspection.
-
-Default capture budgets are 5000ms, 512 commands, 1024 contextual rows and
-8 MiB total encoded output. Limits fail explicitly. Managed execution reclaims
-records after wire retirement. See [one-shot actions](docs/one-shot-actions.md)
-and [managed control](docs/managed-control.md) for transport and result contracts.
+The domain actions shown above raise when they cannot complete. If a command
+times out, it may still have taken effect. The [recovery guide](docs/recovery.md)
+shows how to inspect the result before deciding what to do next.
 
 ## Concepts and reference
 
-Read the [mental model](docs/mental-model.md) for server, snapshot, reference
-and operation lifetimes. [Observations](docs/observations.md) and the generated
-[schema](docs/schema.md) describe captured coverage and relationships. Public
-modules carry specs, types and linked examples in the API reference.
-
-[Encoding](docs/encoding.md) and [ownership](docs/ownership.md) explain runtime
-constraints. [Design](docs/design.md) and [implementation contracts](docs/implementation.md)
-distinguish implemented core behavior from planned consumer packages. The
-core never depends on workspace or MCP.
+- [Filtering](docs/filtering.md): predicates, relationships and finding one match.
+- [One-shot actions](docs/one-shot-actions.md): rename, split, input and screen capture.
+- [Managed control](docs/managed-control.md): reuse a connection for multiple commands.
+- [Mental model](docs/mental-model.md): snapshots, references and command results.
+- [API reference](https://libtmux.org/en/elixir/latest/reference/): functions and types.
 
 ## Contributing
 
-Follow [Contributing](.github/CONTRIBUTING.md), [Writing](.github/WRITING.md)
-and [AGENTS.md](AGENTS.md). Check a packed artifact and all public examples
-outside the checkout:
-
-```console
-$ MIX_ENV=test mix run scripts/check_package.exs --examples
-```
-
-That command requires the Linux development prerequisites and tmux. The
-contribution guide lists pure checks, the required runtime matrix, rendered
-docs and package verification. Local checks do not establish hosted delivery.
+See [Contributing](.github/CONTRIBUTING.md) for development setup and checks,
+and [Writing](.github/WRITING.md) for documentation conventions.
 
 Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
 [libtmux ports](https://github.com/libtmux), and [tmux](https://github.com/tmux/tmux).
