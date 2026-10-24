@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Documentation
+
+- Follow README examples for capture, filtering, window renaming and pane
+  input, with explicit aliases and links to the published API reference.
+  Keep fixture setup and cleanup outside the task snippets. (#14)
+
+### Development
+
+- Check README, filtering and API-reference examples in CI, including real
+  tmux execution, packaged consumers and owned-process cleanup. Detect drift
+  between displayed snippets and their executable sources. (#14)
+
 ## libtmux 0.0.1-alpha.2 (2026-10-24)
 
 ### Added
