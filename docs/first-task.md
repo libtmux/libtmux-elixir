@@ -53,7 +53,7 @@ explicitly when fresh state is needed.
 
 The pattern match makes a capture error visible; production callers can
 handle `{:error, %LibTmux.Error{}}`. The default capture budgets are 5000ms,
-512 commands, 1024 contextual rows, 64 KiB per response and 8 MiB total.
+512 commands, 1024 contextual topology rows, 64 KiB per response and 8 MiB total.
 A limit failure returns an error rather than a partial graph.
 
 For an isolated demonstration, use the [owned-server recipe](owned-server.md).

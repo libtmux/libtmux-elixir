@@ -127,8 +127,9 @@ defmodule LibTmux.CaptureTest do
   test "capture batches text fields while counting every tmux command" do
     fixture = start_supervised!({OwnedTmux, []})
     server = fixture |> OwnedTmux.info() |> server()
+    assert {_, 0} = OwnedTmux.command(fixture, ["new-window", "-d", "/bin/cat", "--"])
     assert {:ok, snapshot} = Server.snapshot(server, max_commands: 13)
-    assert map_size(snapshot.panes) == 1
+    assert map_size(snapshot.panes) == 2
 
     assert {:error, %Error{kind: :resource_limit, details: %{reason: :commands}}} =
              Server.snapshot(server, max_commands: 12)
@@ -159,10 +160,29 @@ defmodule LibTmux.CaptureTest do
     assert length(pids) == 200
 
     try do
-      assert {:ok, snapshot} = Server.snapshot(server(info))
+      descriptor = server(info)
+      assert {:ok, snapshot} = Server.snapshot(descriptor, max_commands: 13)
       assert map_size(snapshot.sessions) == 1
       assert map_size(snapshot.windows) == 10
       assert map_size(snapshot.panes) == 200
+
+      # The combined title response exceeds 64 KiB; each physical row still fits.
+      title = String.duplicate("large", 2400)
+
+      for pane <- 0..5 do
+        assert {_, 0} =
+                 OwnedTmux.command(fixture, ["select-pane", "-t", "%#{pane}", "-T", title])
+      end
+
+      assert {:ok, large} = Server.snapshot(descriptor)
+      assert map_size(large.panes) == 200
+      assert Enum.all?(0..5, &(large.panes["%#{&1}"].title == title))
+
+      assert {:error, %Error{kind: :resource_limit, details: %{reason: :commands}}} =
+               Server.snapshot(descriptor, max_commands: 13)
+
+      assert {:error, %Error{kind: :resource_limit}} =
+               Server.snapshot(descriptor, max_bytes: 90_000)
     after
       watch = OwnedTmux.watch_processes([info.server_pid, info.helper_pid | pids])
 
