@@ -269,5 +269,12 @@ from the GitHub environment named `hex`, then verifies the public release
 and an installation outside the checkout. Merges and local archive builds
 do not publish. Creating a release tag requires separate authorization.
 
+After upload, verification allows up to 60 seconds for HexDocs readiness,
+with each request limited to five seconds or the remaining wait budget.
+Transient responses, including the propagation 404, are retried; permanent
+errors fail promptly. Exhaustion fails verification without republishing.
+The installed-consumer check follows a successful documentation read. Core
+CI exercises this policy against an owned local HTTP fixture.
+
 Workspace and MCP have no publication jobs. Their eventual releases must
 use real dependency versions and pass their own installed-consumer checks.
