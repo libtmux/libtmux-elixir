@@ -88,6 +88,10 @@ which checks their survival before its separate teardown.
 
 ## Inspect failures without replaying
 
+For a connection owned by an application, the
+[supervision recipe](supervised-control.md) shows handle access and explicit
+replacement after a restart.
+
 The [recovery example](recovery.md) handles admission errors, unsuccessful
 outcomes, lost operation context and cleanup failure in one application.
 

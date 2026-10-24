@@ -78,6 +78,7 @@ defmodule LibTmux.MixProject do
       "docs/standalone-demo.md",
       "docs/one-shot-actions.md",
       "docs/managed-control.md",
+      "docs/supervised-control.md",
       "docs/recovery.md",
       "docs/owned-server.md",
       "docs/advanced-execution.md",
@@ -123,7 +124,7 @@ defmodule LibTmux.MixProject do
       assets: %{"docs/assets" => "docs/assets"},
       groups_for_extras: [
         Tasks:
-          ~r/(first-task|standalone-demo|one-shot-actions|managed-control|recovery|owned-server|advanced-execution)/,
+          ~r/(first-task|standalone-demo|one-shot-actions|managed-control|supervised-control|recovery|owned-server|advanced-execution)/,
         "Concepts and reference": ~r/(mental-model|observations|filtering|schema|api-examples)/,
         "Design and internals": ~r/(ownership|encoding|design|implementation)/,
         Contributing: ~r/(AGENTS|CONTRIBUTING|WRITING|branding|LICENSE)/

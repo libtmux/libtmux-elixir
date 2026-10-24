@@ -168,7 +168,7 @@ defmodule LibTmux.Control do
   `Supervisor.terminate_child/2` followed by `Supervisor.restart_child/2` for
   fresh info. This does not clear unknown cleanup or authorize replay.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec child_spec([start_option()]) :: Supervisor.child_spec()
   def child_spec(options), do: Start.child_spec(options)
@@ -390,7 +390,7 @@ defmodule LibTmux.Control do
   `:ok`. Success is a request or previously known retirement, not a cleanup
   acknowledgement. A replacement Manager or epoch is never followed.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec request_close(t()) :: :ok | {:error, Error.t()}
   def request_close(%__MODULE__{} = control) do
@@ -417,7 +417,7 @@ defmodule LibTmux.Control do
   @doc """
   Requests epoch closure or raises the same structured error.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec request_close!(t()) :: :ok
   def request_close!(control), do: unwrap(request_close(control))
@@ -473,7 +473,7 @@ defmodule LibTmux.Control do
   Errors report unknown certainty about existing effects. Attachment counts
   include the control client; reconnect can attach one replacement client.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec reconnect(t(), [call_option()]) :: {:ok, t()} | {:error, Error.t()}
   def reconnect(%__MODULE__{} = control, options \\ []) do
@@ -492,7 +492,7 @@ defmodule LibTmux.Control do
   @doc """
   Obtains the ready epoch or raises the same structured error.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec reconnect!(t(), [call_option()]) :: t()
   def reconnect!(control, options \\ []), do: unwrap(reconnect(control, options))
