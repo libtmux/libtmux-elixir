@@ -100,10 +100,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                  [program | List.duplicate("x", 63)]},
                 {{:shell, ~S(exec "$LIBTMUX_ARGV_PROGRAM" 'shell arg' "$LIBTMUX_ARGV_VALUE")},
                  [program, "shell arg", value]},
-                {:default, [program]},
-                {[], [program]},
-                {[~S(exec "$LIBTMUX_ARGV_PROGRAM")], [program]},
-                {[program, "legacy"], [program, "legacy"]}
+                {:default, [program]}
               ]
 
           for {command, expected} <- cases do
@@ -137,16 +134,14 @@ defmodule LibTmux.DomainActionsIntegrationTest do
             end
           end
 
-          for command <- [:empty, [""]] do
-            assert %{outcome: :completed, value: created} =
-                     Pane.split!(connection, pane, command: command)
+          assert %{outcome: :completed, value: created} =
+                   Pane.split!(connection, pane, command: :empty)
 
-            try do
-              assert field(fixture, created, "pane_tty") == ""
-              assert field(fixture, created, "pane_pid") in ["", "0"]
-            after
-              assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", created])
-            end
+          try do
+            assert field(fixture, created, "pane_tty") == ""
+            assert field(fixture, created, "pane_pid") in ["", "0"]
+          after
+            assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", created])
           end
 
           denied = Path.join(directory, "not-executable")
@@ -232,7 +227,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                      session: session,
                      axis: :horizontal,
                      size: {:percent, 25},
-                     command: ["/bin/cat", "--"]
+                     command: {:argv, ["/bin/cat", "--"]}
                    )
 
           assert created != pane.id
@@ -258,14 +253,14 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                    ])
 
           assert %{outcome: :completed, value: empty} =
-                   Pane.split!(connection, pane, command: [""], session: session)
+                   Pane.split!(connection, pane, command: :empty, session: session)
 
           try do
             expected_pid = if field(fixture, "$0", "version") == "3.8", do: "", else: "0"
             assert field(fixture, empty, "pane_pid") == expected_pid
             assert field(fixture, empty, "pane_tty") == ""
 
-            for options <- [[], [command: []]] do
+            for options <- [[], [command: :default]] do
               assert %{outcome: :completed, value: default} =
                        Pane.split!(connection, pane, options ++ [session: session])
 
@@ -370,7 +365,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
       try do
         with_lane(lane, server, fn connection ->
           assert {:ok, %{outcome: :completed, value: id, ref: created_ref}} =
-                   Pane.split(connection, pane, command: [python, "-c", program, path])
+                   Pane.split(connection, pane, command: {:argv, [python, "-c", program, path]})
 
           {:ok, peer} = :socket.accept(listener, 750)
           assert {:ok, "R"} = :socket.recv(peer, 1, 750)

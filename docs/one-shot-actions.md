@@ -116,7 +116,4 @@ that respawn behavior is needed; removing or relocating it can break respawn.
 The program runs under tmux ownership, beyond the library caller's lifetime.
 An acknowledged split can still be followed by program startup failure.
 
-Legacy lists retain their meaning: `[]` uses defaults, `[""]` creates an empty
-pane, one nonempty string is shell text, and two or more entries use argv.
-Migrate each according to that intent; adding or removing an argument in a
-tagged argv list never changes it into shell text.
+Adding or removing an argument in an argv list never changes it into shell text.

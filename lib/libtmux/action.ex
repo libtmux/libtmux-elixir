@@ -203,7 +203,7 @@ defmodule LibTmux.Action do
       before: false,
       detached: true,
       cwd: nil,
-      command: []
+      command: :default
     ]
 
   defp defaults(:capture),
@@ -356,14 +356,11 @@ defmodule LibTmux.Action do
     end
   end
 
-  defp split_command!(argv) when is_list(argv),
-    do: command_arguments!(argv, [:options, :command])
-
   defp split_command!(_command),
     do:
       invalid!(
         [:options, :command],
-        "expected :default, :empty, {:shell, bytes}, {:argv, arguments} or a legacy argument list"
+        "expected :default, :empty, {:shell, bytes} or {:argv, arguments}"
       )
 
   defp command_arguments!(argv, path) do

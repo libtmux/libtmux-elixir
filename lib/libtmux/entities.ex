@@ -247,8 +247,7 @@ defmodule LibTmux.Pane do
              :default
              | :empty
              | {:shell, binary()}
-             | {:argv, nonempty_list(binary())}
-             | [binary()]}
+             | {:argv, nonempty_list(binary())}}
   @typedoc "Bounded one-shot screen capture; line numbers are relative to the visible screen, with negative history offsets."
   @type capture_option ::
           LibTmux.Action.option()
@@ -282,10 +281,6 @@ defmodule LibTmux.Pane do
   `pane_start_command`; commandless respawn requires that installation to
   remain available. See [command forms](one-shot-actions.html#command-forms).
   Split acknowledgement does not prove program startup or completion.
-
-  Existing lists keep tmux semantics: omitted or `[]` uses the session default;
-  `[""]` creates an empty pane; one nonempty entry is shell text; two or more
-  use argv. Prefer tagged forms when constructing commands dynamically.
 
   `session: session_ref` selects exact membership/context, not a WindowLink
   index. `timeout` defaults to 5000ms. No snapshot is changed; capture again

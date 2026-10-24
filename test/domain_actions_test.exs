@@ -18,7 +18,10 @@ defmodule LibTmux.DomainActionsTest do
         {Pane.split(connection, pane, timeout: 0), [:options, :timeout]},
         {Pane.split(connection, pane, before: :yes), [:options, :before]},
         {Pane.split(connection, pane, cwd: 42), [:options, :cwd]},
-        {Pane.split(connection, pane, command: ["ok", <<0>>]), [:options, :command, 1]},
+        {Pane.split(connection, pane, command: []), [:options, :command]},
+        {Pane.split(connection, pane, command: [""]), [:options, :command]},
+        {Pane.split(connection, pane, command: ["exec /bin/cat"]), [:options, :command]},
+        {Pane.split(connection, pane, command: ["/bin/cat", "--"]), [:options, :command]},
         {Pane.split(connection, pane, command: ["ok" | :bad_tail]), [:options, :command]},
         {Pane.split(connection, pane, command: {:argv, []}), [:options, :command, :argv]},
         {Pane.split(connection, pane, command: {:argv, [""]}), [:options, :command, :argv, 0]},
@@ -78,7 +81,15 @@ defmodule LibTmux.DomainActionsTest do
 
     assert reason =~ "1..99"
 
-    oversized = Request.action(:split, pane, nil, command: [String.duplicate("x", 16_384)])
+    for command <- [[], [""], ["exec /bin/cat"], ["/bin/cat", "--"]] do
+      request = Request.action(:split, pane, nil, command: command)
+
+      assert {:error, %{kind: :invalid_command, path: [:options, :command], certainty: :no_write}} =
+               Request.encode(request, "instance")
+    end
+
+    oversized =
+      Request.action(:split, pane, nil, command: {:shell, String.duplicate("x", 16_384)})
 
     assert {:error,
             %{kind: :invalid_command, path: [:command], details: %{reason: reason}} = error} =
@@ -101,7 +112,7 @@ defmodule LibTmux.DomainActionsTest do
               certainty: :no_write,
               path: [:command],
               details: %{reason: reason}
-            }} = Pane.split(server, pane, command: [argument])
+            }} = Pane.split(server, pane, command: {:shell, argument})
 
     assert reason =~ "max_bytes"
   end
