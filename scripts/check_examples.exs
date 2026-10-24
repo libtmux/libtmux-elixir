@@ -63,6 +63,34 @@ defmodule LibTmux.ExampleCheck do
       IO.puts("PASS: packed #{name}; owned server and pane processes exited")
     end
 
+    {:ok, %{stdout: stdout, stderr: "", exit_status: 0, cleanup: :retired}} =
+      OneShot.run(
+        python,
+        [
+          runner,
+          "--run",
+          executable,
+          python,
+          Path.expand("../test/support/split_argv_lifetime.py", __DIR__),
+          elixir,
+          ebin,
+          package
+        ],
+        options
+      )
+
+    [result, cleanup] = stdout |> String.split("\n", trim: true) |> Enum.map(&JSON.decode!/1)
+
+    %{
+      "singleton_argv" => "ok",
+      "creating_beam_exited" => true,
+      "respawn" => "ok",
+      "removed_copy_respawn_exit" => 1
+    } = result
+
+    check_cleanup(cleanup)
+    IO.puts("PASS: packed singleton argv survives caller exit; retained-path respawn qualified")
+
     {:ok, %{stdout: stdout, stderr: "", exit_status: 7, cleanup: :retired}} =
       OneShot.run(
         python,

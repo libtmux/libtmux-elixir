@@ -46,7 +46,7 @@ created_id =
     axis: :horizontal,
     size: {:percent, 30},
     session: session_ref,
-    command: ["/bin/cat", "--"]
+    command: {:argv, ["/bin/cat"]}
   )
   |> Action.value!()
 
@@ -80,11 +80,7 @@ byte count without claiming that `hello` has already appeared.
 | Named input | `Pane.send_keys/4`; 1..128 supported names. Unsupported spellings fail before dispatch. See the API for modifiers. |
 | Screen capture | `Pane.capture/3`; visible lines by default, 64 KiB stdout, negative history offsets allowed. An overflow is an error. This reads rendered screen state, not original program stdout. |
 
-All actions default to one 5000ms budget. Split `command` follows tmux:
-omitted or `[]` uses the session default; `[""]` creates an empty pane without
-running a shell or command in it. One nonempty entry is a shell command, and
-two or more are direct argv. The example uses two arguments to avoid shell
-parsing.
+All actions default to one 5000ms budget.
 
 A physical window can belong to several sessions. Optional `session:` binds
 the action to membership in that exact session; it does not reserve a
@@ -95,3 +91,32 @@ unchanged, and a returned ID does not silently refresh the graph.
 exit is a canonical failed outcome with observed exit status; it does not
 prove that no side effect occurred. See `LibTmux.Action` and
 [the advanced example](advanced-execution.md) for lower-level results.
+
+## Command forms
+
+Use explicit intent when a split command is assembled dynamically:
+
+| `command` | Meaning |
+| --- | --- |
+| `:default` or omitted | Use the session default command/shell. |
+| `:empty` | Create a pane without a shell or program. |
+| `{:shell, "program \| another_program"}` | Interpret nonempty text through the session's configured shell. |
+| `{:argv, ["/path/to/program"]}` | Execute with exactly one argv entry. |
+| `{:argv, ["program", "argument with spaces"]}` | Preserve each argv entry; use tmux's PATH lookup. |
+
+Argv follows `execvp`, including its shell fallback for executable text files.
+Empty argv, an empty program, empty explicit shell text and NUL bytes are
+rejected before dispatch. Existing command byte ceilings include any adapter
+overhead. Other arguments may be empty or contain arbitrary non-NUL bytes.
+
+For singleton argv, the packaged native helper replaces itself with the
+program without forking. tmux records that helper path in `pane_start_command`
+and retains it for commandless respawn. Keep the installation available while
+that respawn behavior is needed; removing or relocating it can break respawn.
+The program runs under tmux ownership, beyond the library caller's lifetime.
+An acknowledged split can still be followed by program startup failure.
+
+Legacy lists retain their meaning: `[]` uses defaults, `[""]` creates an empty
+pane, one nonempty string is shell text, and two or more entries use argv.
+Migrate each according to that intent; adding or removing an argument in a
+tagged argv list never changes it into shell text.

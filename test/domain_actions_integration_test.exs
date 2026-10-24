@@ -21,6 +21,156 @@ defmodule LibTmux.DomainActionsIntegrationTest do
 
   for lane <- [:one_shot, :control] do
     @tag lane: lane
+    @tag :command_intent
+    test "explicit command intent preserves argv and process behavior through #{lane}", %{
+      lane: lane
+    } do
+      fixture = start_supervised!({OwnedTmux, []})
+      info = OwnedTmux.info(fixture)
+      directory = Path.dirname(info.socket)
+      program = Path.join(directory, "argv-probe")
+      peer_path = Path.join(directory, "argv-peer")
+      cwd = Path.join(directory, "working directory")
+      File.mkdir!(cwd)
+
+      assert {_, 0} =
+               System.cmd(
+                 System.find_executable(System.get_env("CC", "cc")),
+                 [
+                   "-std=c11",
+                   "-O2",
+                   "-Wall",
+                   "-Wextra",
+                   "-Werror",
+                   "-o",
+                   program,
+                   Path.join(__DIR__, "support/split_argv.c")
+                 ],
+                 stderr_to_stdout: true
+               )
+
+      names = ["argv-probe", "space ; $value ' ", "-argv=probe"]
+      for name <- tl(names), do: File.ln_s!(program, Path.join(directory, name))
+      value = ~S"$literal ; #{pid}" <> <<255, 10>>
+      fallback = Path.join(directory, "executable-text")
+      File.write!(fallback, ~S(exec "$LIBTMUX_ARGV_PROGRAM" fallback "$@") <> "\n")
+      File.chmod!(fallback, 0o755)
+
+      for {key, value} <- [
+            {"PATH", directory},
+            {"LIBTMUX_ARGV_SOCKET", peer_path},
+            {"LIBTMUX_ARGV_VALUE", value},
+            {"LIBTMUX_ARGV_PROGRAM", program}
+          ],
+          do:
+            assert(
+              {_, 0} = OwnedTmux.command(fixture, ["set-environment", "-t", "$0", key, value])
+            )
+
+      for {name, value} <- [
+            {"default-shell", "/bin/sh"},
+            {"default-command", ~S(exec "$LIBTMUX_ARGV_PROGRAM")},
+            {"remain-on-exit", "on"}
+          ],
+          do: assert({_, 0} = OwnedTmux.command(fixture, ["set-option", "-t", "$0", name, value]))
+
+      assert {_, 0} =
+               OwnedTmux.command(
+                 fixture,
+                 ["set-hook", "-w", "-t", "@0", "pane-died", "wait-for -S argv-died"]
+               )
+
+      {:ok, listener} = :socket.open(:local, :stream, :default)
+      :ok = :socket.bind(listener, %{family: :local, path: peer_path})
+      :ok = :socket.listen(listener)
+      server = %{server(info) | env: %{"PATH" => directory}}
+      {:ok, instance} = ProcessIdentity.read(info.server_pid)
+      pane = ref(:pane, "%0", instance)
+      hostile = ["", "a b", ~S(" ' ; $HOME #{pid}), <<255, 10, 13, 92>>, "λ", "end;"]
+
+      try do
+        with_lane(lane, server, fn connection ->
+          cases =
+            Enum.map(names, &{{:argv, [&1]}, [&1]}) ++
+              [
+                {{:argv, [fallback]}, [program, "fallback"]},
+                {{:argv, [fallback, "tail"]}, [program, "fallback", "tail"]},
+                {{:argv, [program | hostile]}, [program | hostile]},
+                {{:argv, [program | List.duplicate("x", 63)]},
+                 [program | List.duplicate("x", 63)]},
+                {{:shell, ~S(exec "$LIBTMUX_ARGV_PROGRAM" 'shell arg' "$LIBTMUX_ARGV_VALUE")},
+                 [program, "shell arg", value]},
+                {:default, [program]},
+                {[], [program]},
+                {[~S(exec "$LIBTMUX_ARGV_PROGRAM")], [program]},
+                {[program, "legacy"], [program, "legacy"]}
+              ]
+
+          for {command, expected} <- cases do
+            assert %{outcome: :completed, value: created} =
+                     Pane.split!(connection, pane, command: command, cwd: cwd)
+
+            try do
+              {:ok, peer} = :socket.accept(listener, 750)
+              {:ok, <<size::32>>} = :socket.recv(peer, 4, 750)
+              assert size <= 131_072
+
+              {:ok, <<argc::32, pid::32, parent::32, group::32, strings::binary>>} =
+                :socket.recv(peer, size, 750)
+
+              assert argc == length(expected)
+
+              assert :binary.split(strings, <<0>>, [:global]) ==
+                       expected ++ [cwd, value, directory, "/bin/sh", ""]
+
+              assert parent == info.server_pid
+              assert group == pid
+              assert Integer.to_string(pid) == field(fixture, created, "pane_pid")
+              watch = OwnedTmux.watch_processes([pid])
+              assert :ok = :socket.send(peer, <<23>>)
+              assert :ok = :socket.close(peer)
+              assert {_, 0} = OwnedTmux.command(fixture, ["wait-for", "argv-died"])
+              assert :ok = OwnedTmux.await_exit(watch)
+              assert field(fixture, created, "pane_dead_status") == "23"
+            after
+              assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", created])
+            end
+          end
+
+          for command <- [:empty, [""]] do
+            assert %{outcome: :completed, value: created} =
+                     Pane.split!(connection, pane, command: command)
+
+            try do
+              assert field(fixture, created, "pane_tty") == ""
+              assert field(fixture, created, "pane_pid") in ["", "0"]
+            after
+              assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", created])
+            end
+          end
+
+          denied = Path.join(directory, "not-executable")
+          File.write!(denied, "exit 0\n")
+
+          for name <- ["missing-program", denied] do
+            assert %{outcome: :completed, value: created} =
+                     Pane.split!(connection, pane, command: {:argv, [name]})
+
+            try do
+              assert {_, 0} = OwnedTmux.command(fixture, ["wait-for", "argv-died"])
+              assert field(fixture, created, "pane_dead_status") == "1"
+            after
+              assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", created])
+            end
+          end
+        end)
+      after
+        :socket.close(listener)
+        close_fixture(fixture, info)
+      end
+    end
+
+    @tag lane: lane
     test "rename and split preserve physical targets and session context through #{lane}", %{
       lane: lane
     } do

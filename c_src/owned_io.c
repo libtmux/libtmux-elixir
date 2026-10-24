@@ -363,7 +363,15 @@ static void exec_result(struct state *s) {
     else if (errno != EINTR && errno != EAGAIN) { close_fd(&s->exec_fd); fail(s, 2, errno); }
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    /* tmux treats one command argument as shell text; preserve singleton argv. */
+    if (argc != 1) {
+        if (argc == 3 && strcmp(argv[1], "--exec-one") == 0 && argv[2][0] &&
+            strnlen(argv[2], 65536) < 65536)
+            execvp(argv[2], argv + 2);
+        _exit(1);
+    }
+
     struct state s = {0};
     s.child_in = s.exec_fd = s.streams[0] = s.streams[1] = -1;
     s.input_need = 2; s.deadline = now_ms() + 750;

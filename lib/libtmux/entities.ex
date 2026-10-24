@@ -164,7 +164,12 @@ defmodule LibTmux.Pane do
           | {:size, {:cells, 1..32_767} | {:percent, 1..99}}
           | {:before | :detached, boolean()}
           | {:cwd, binary()}
-          | {:command, [binary()]}
+          | {:command,
+             :default
+             | :empty
+             | {:shell, binary()}
+             | {:argv, nonempty_list(binary())}
+             | [binary()]}
   @typedoc "Bounded one-shot screen capture; line numbers are relative to the visible screen, with negative history offsets."
   @type capture_option ::
           LibTmux.Action.option()
@@ -179,11 +184,22 @@ defmodule LibTmux.Pane do
   Defaults: vertical split, half size, detached, after the target, and tmux's
   session default shell/command and directory. `axis: :horizontal` places panes
   side by side; `size: {:percent, n}` uses `-l n%` on every supported release.
-  Optional `cwd` is literal format text. `command` follows tmux: omitted or
-  `[]` uses the session default; `[""]` creates an empty pane without running
-  a shell or command in it. One nonempty entry is a shell command; two or more
-  are direct argv.
-  At most 64 entries and the existing command byte bounds apply.
+  Optional `cwd` is literal format text. Choose `command: :default`, `:empty`,
+  `{:shell, nonempty_bytes}` or `{:argv, [program | arguments]}`. Shell text
+  uses the session's configured shell; argv uses `execvp` semantics, including
+  PATH lookup and executable-text fallback. Empty argv/program and empty
+  explicit shell text are rejected. At most 64 argv entries and the existing
+  command byte bounds apply; bytes must be NUL-free.
+
+  Singleton argv uses the packaged helper to preserve exactly one argument.
+  It replaces itself with the pane program. tmux retains the helper path in
+  `pane_start_command`; commandless respawn requires that installation to
+  remain available. See [command forms](one-shot-actions.html#command-forms).
+  Split acknowledgement does not prove program startup or completion.
+
+  Existing lists keep tmux semantics: omitted or `[]` uses the session default;
+  `[""]` creates an empty pane; one nonempty entry is shell text; two or more
+  use argv. Prefer tagged forms when constructing commands dynamically.
 
   `session: session_ref` selects exact membership/context, not a WindowLink
   index. `timeout` defaults to 5000ms. No snapshot is changed; capture again

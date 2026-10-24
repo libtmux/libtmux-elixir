@@ -26,7 +26,7 @@ created_id =
     axis: :horizontal,
     size: {:percent, 30},
     session: session_ref,
-    command: ["/bin/cat", "--"]
+    command: {:argv, ["/bin/cat"]}
   )
   |> Action.value!()
 

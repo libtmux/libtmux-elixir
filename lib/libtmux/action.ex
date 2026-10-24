@@ -33,6 +33,7 @@ defmodule LibTmux.Action do
   """
   alias LibTmux.{Codec, Command, Control, Deadline, Error, Format, ProcessIdentity, Ref, Server}
   alias LibTmux.Control.Request
+  alias LibTmux.Transport.Native
 
   @typedoc "Explicitly selected one-shot descriptor or pinned qualified connection."
   @type connection :: Server.t() | Control.t()
@@ -268,14 +269,7 @@ defmodule LibTmux.Action do
         do: [],
         else: ["-c", Format.literal(bytes!(options[:cwd], [:options, :cwd]))]
 
-    argv = options[:command]
-
-    unless bounded_list?(argv, 64),
-      do: invalid!([:options, :command], "expected a list of at most 64 command arguments")
-
-    Enum.each(Enum.with_index(argv), fn {argument, index} ->
-      bytes!(argument, [:options, :command, index])
-    end)
+    argv = split_command!(options[:command])
 
     args =
       ["-t", target_string(target, options[:session]), "-P", "-F", ~S"#{pane_id}", axis] ++
@@ -326,6 +320,54 @@ defmodule LibTmux.Action do
       ] ++ flag(options[:join_lines], "-J", :join_lines)
 
     new_command!("capture-pane", args)
+  end
+
+  defp split_command!(:default), do: []
+  defp split_command!(:empty), do: [""]
+
+  defp split_command!({:shell, text}) do
+    bytes!(text, [:options, :command, :shell])
+
+    if text == "",
+      do:
+        invalid!(
+          [:options, :command, :shell],
+          "expected a nonempty shell command; use :empty for an empty pane"
+        )
+
+    [text]
+  end
+
+  defp split_command!({:argv, argv}) do
+    path = [:options, :command, :argv]
+
+    case command_arguments!(argv, path) do
+      [] -> invalid!(path, "expected 1..64 argv entries including a nonempty executable")
+      ["" | _] -> invalid!(path ++ [0], "expected a nonempty executable")
+      [program] -> [Native.executable(), "--exec-one", program]
+      arguments -> arguments
+    end
+  end
+
+  defp split_command!(argv) when is_list(argv),
+    do: command_arguments!(argv, [:options, :command])
+
+  defp split_command!(_command),
+    do:
+      invalid!(
+        [:options, :command],
+        "expected :default, :empty, {:shell, bytes}, {:argv, arguments} or a legacy argument list"
+      )
+
+  defp command_arguments!(argv, path) do
+    unless bounded_list?(argv, 64),
+      do: invalid!(path, "expected a list of at most 64 command arguments")
+
+    Enum.each(Enum.with_index(argv), fn {argument, index} ->
+      bytes!(argument, path ++ [index])
+    end)
+
+    argv
   end
 
   defp line(:last), do: "-"
