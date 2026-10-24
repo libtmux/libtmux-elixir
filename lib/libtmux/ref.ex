@@ -7,7 +7,7 @@ defmodule LibTmux.Ref do
   it does not reserve an object or close a one-shot check/use race.
   """
 
-  alias LibTmux.Error
+  alias LibTmux.{Client, Error, Pane, Schema, Session, Window, WindowLink}
 
   @enforce_keys [:entity, :id, :server_instance]
   defstruct [:entity, :id, :server_instance]
@@ -32,6 +32,41 @@ defmodule LibTmux.Ref do
       {:error, %Error{kind: :invalid_target, certainty: :no_write, path: [:target]}}
     end
   end
+
+  @doc """
+  Builds a reference from an observation's own identity and server instance.
+
+  Validates the identity with `new/3` without I/O or a fresh observation.
+  Malformed identities and other inputs return an `:invalid_target` error.
+  Other captured fields may remain unloaded or unavailable. A reference does
+  not prove that its target still exists. Window links retain their tuple
+  binding and lifetime limitation; domain actions reject window-link refs.
+
+  ## Examples
+
+      iex> pane = %LibTmux.Pane{id: "%7", server_instance: "instance-a"}
+      iex> {:ok, ref} = LibTmux.Ref.from_observation(pane)
+      iex> {ref.entity, ref.id, ref.server_instance}
+      {:pane, "%7", "instance-a"}
+  """
+  @spec from_observation(Schema.observation()) :: {:ok, t()} | {:error, Error.t()}
+  def from_observation(%Session{id: id, server_instance: instance}),
+    do: new(:session, id, instance)
+
+  def from_observation(%Window{id: id, server_instance: instance}),
+    do: new(:window, id, instance)
+
+  def from_observation(%WindowLink{id: id, server_instance: instance}),
+    do: new(:window_link, id, instance)
+
+  def from_observation(%Pane{id: id, server_instance: instance}),
+    do: new(:pane, id, instance)
+
+  def from_observation(%Client{id: id, server_instance: instance}),
+    do: new(:client, id, instance)
+
+  def from_observation(_observation),
+    do: {:error, %Error{kind: :invalid_target, certainty: :no_write, path: [:target]}}
 
   @doc """
   Rejects malformed references and known server-instance mismatches.

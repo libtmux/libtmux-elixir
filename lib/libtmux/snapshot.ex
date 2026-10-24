@@ -300,6 +300,17 @@ defmodule LibTmux.Snapshot do
   end
 
   @doc false
+  def related_observation(%__MODULE__{} = snapshot, entity, observation, relation) do
+    with {:ok, %Ref{entity: ^entity} = ref} <- Ref.from_observation(observation),
+         :ok <- Ref.validate(ref, snapshot.server_instance) do
+      related(snapshot, entity, ref.id, relation)
+    else
+      {:ok, _wrong_kind} -> raise_error(:invalid_target, [:target])
+      {:error, error} -> raise %{error | phase: :evaluation}
+    end
+  end
+
+  @doc false
   def prepare_relation!(snapshot, entity, relation) do
     entity = Schema.entity(entity)
     require_relation!(snapshot, entity, relation)

@@ -7,12 +7,22 @@ defmodule LibTmux.Action do
   replays a mutation or refreshes an observation. One-shot actions check the
   server incarnation before execution; that check leaves a check/use race.
 
-  Completed, failed, skipped and unknown outcomes remain values, including
-  from bang functions. `value` is populated only for a completed command.
-  `details` retains the transport's original bounded evidence. Acknowledgement
-  does not prove that a program processed input or finished running.
+  Ordinary actions return completed, failed, skipped and unknown outcomes.
+  `value` is populated only for a completed command; `details` retains the
+  transport's original bounded evidence. Domain bang functions return the
+  completed value or raise `LibTmux.Action.CompletionError` with the original
+  unsuccessful result. Acknowledgement does not prove that a program
+  processed input or finished running.
+
   API errors use `LibTmux.Error`; admitted control errors preserve the recovery
-  handle in `LibTmux.Control.ExecutionError`.
+  handle in `LibTmux.Control.ExecutionError`. Domain bang functions raise
+  these errors unchanged. Lower-level `LibTmux.Control` and `LibTmux.Operation`
+  bang functions retain canonical outcomes as values.
+
+  Action errors with kind `:invalid_command` include a validation `path` such
+  as `[:options, :size]` and a bounded `details.reason` describing accepted
+  inputs. The reason appears in the exception message; rejected values are
+  not retained in diagnostic details.
 
   A nonzero one-shot client exit reports `:failed` with `:observed` certainty:
   its exit status is observed, not an authenticated tmux command reply or
@@ -26,20 +36,39 @@ defmodule LibTmux.Action do
   """
   alias LibTmux.{Codec, Command, Control, Deadline, Error, Format, ProcessIdentity, Ref, Server}
   alias LibTmux.Control.Request
+  alias LibTmux.Transport.Native
 
   @typedoc "Explicitly selected one-shot descriptor or pinned qualified connection."
   @type connection :: Server.t() | Control.t()
   @typedoc "A 1..600000ms execution budget, default 5000ms; optional exact session context for physical targets."
   @type option :: {:timeout, 1..600_000} | {:session, Ref.t()}
-  @typedoc "Canonical command outcome and original transport evidence; value exists only after acknowledged completion."
-  @type result(value) :: %{
-          outcome: :completed | :failed | :skipped | :unknown,
-          certainty: Error.certainty(),
-          evidence: atom(),
-          transport: :one_shot | :control,
-          value: value | nil,
-          details: map()
-        }
+  @typedoc """
+  Canonical action outcome and original transport evidence.
+
+  A completed outcome carries the action's value; failed, skipped and unknown
+  outcomes carry `nil`. Match the outcome before using the value. Command
+  acknowledgement remains distinct from external program completion.
+
+  A completed split carries `t:LibTmux.Pane.split_value/0`. See
+  `LibTmux.Pane.split/3` for its identity and lifetime limits.
+  """
+  @type result(value) ::
+          %{
+            outcome: :completed,
+            certainty: Error.certainty(),
+            evidence: atom(),
+            transport: :one_shot | :control,
+            value: value,
+            details: map()
+          }
+          | %{
+              outcome: :failed | :skipped | :unknown,
+              certainty: Error.certainty(),
+              evidence: atom(),
+              transport: :one_shot | :control,
+              value: nil,
+              details: map()
+            }
   @typedoc "An API refusal or a managed execution error retaining its recovery context."
   @type error :: Error.t() | LibTmux.Control.ExecutionError.t()
 
@@ -67,40 +96,60 @@ defmodule LibTmux.Action do
             execute(connection, kind, command, options, deadline)
           end
       end
+      |> created_value(kind, target)
     end
   end
 
   def run(_kind, _connection, _target, _value, _options), do: failure(:invalid_target)
 
   @doc false
-  def unwrap({:ok, result}), do: result
+  def unwrap({:ok, %{outcome: :completed, value: value}}), do: value
+  def unwrap({:ok, result}), do: raise(LibTmux.Action.CompletionError, result: result)
   def unwrap({:error, error}), do: raise(error)
 
   defp prepare_options(options, entered_at) do
-    if length(options) != map_size(Map.new(options)),
-      do: raise(ArgumentError, "duplicate options")
-
+    options = options!(options)
     {timeout, options} = Keyword.pop(options, :timeout, 5000)
 
     unless is_integer(timeout) and timeout in 1..600_000,
-      do: raise(ArgumentError, "timeout must be 1..600000ms")
+      do: invalid!([:options, :timeout], "expected an integer timeout in 1..600000ms")
 
     {:ok, Deadline.new(timeout, now: entered_at), options}
   rescue
-    ArgumentError -> failure(:invalid_command)
+    error in Error -> {:error, error}
   end
 
   @doc false
   def command(kind, %Ref{} = target, value, options, instance, lane) do
-    options = Keyword.validate!(options, defaults(kind))
+    options = options!(options, defaults(kind))
 
     with :ok <- target(kind, target, instance),
          :ok <- session(options[:session], instance),
          :ok <- lane(kind, value, lane) do
-      {:ok, build(kind, target, value, options)}
+      command = build(kind, target, value, options)
+      if lane == :one_shot, do: validate_argv!(command)
+      {:ok, command}
     end
   rescue
-    _error in [ArgumentError, FunctionClauseError] -> failure(:invalid_command)
+    error in Error -> {:error, error}
+  end
+
+  def command(_kind, _target, _value, _options, _instance, _lane),
+    do: failure(:invalid_target)
+
+  defp options!(options, defaults \\ nil) do
+    unless Keyword.keyword?(options), do: invalid!([:options], "expected a keyword list")
+
+    Enum.reduce(options, MapSet.new(), fn {key, _value}, seen ->
+      if MapSet.member?(seen, key), do: invalid!([:options, key], "expected each option once")
+
+      if defaults != nil and not Keyword.has_key?(defaults, key),
+        do: invalid!([:options, key], "unknown option for this action")
+
+      MapSet.put(seen, key)
+    end)
+
+    if defaults, do: Keyword.validate!(options, defaults), else: options
   end
 
   defp defaults(:split),
@@ -111,14 +160,18 @@ defmodule LibTmux.Action do
       before: false,
       detached: true,
       cwd: nil,
-      command: []
+      command: :default
     ]
 
   defp defaults(:capture),
     do: [session: nil, start_line: 0, end_line: :last, join_lines: false, max_bytes: 65_536]
 
-  defp defaults(kind) when kind in [:rename_session, :rename_window, :send_text, :send_keys],
+  defp defaults(:rename_session), do: []
+
+  defp defaults(kind) when kind in [:rename_window, :send_text, :send_keys],
     do: [session: nil]
+
+  defp defaults(_kind), do: invalid!([:action], "expected a supported domain action")
 
   defp target(kind, %Ref{entity: entity} = target, instance) do
     expected =
@@ -147,15 +200,11 @@ defmodule LibTmux.Action do
   defp build(kind, target, name, options) when kind in [:rename_session, :rename_window] do
     unless is_binary(name) and byte_size(name) in 1..1024 and String.valid?(name) and
              not Regex.match?(~r/\p{Cc}/u, name),
-           do:
-             raise(
-               ArgumentError,
-               "rename requires 1..1024 UTF-8 bytes without control characters"
-             )
+           do: invalid!([:name], "expected 1..1024 UTF-8 bytes without control characters")
 
     command = if kind == :rename_session, do: "rename-session", else: "rename-window"
 
-    Command.new(command, [
+    new_command!(command, [
       "-t",
       target_string(target, options[:session]),
       "--",
@@ -168,7 +217,7 @@ defmodule LibTmux.Action do
       case options[:axis] do
         :horizontal -> "-h"
         :vertical -> "-v"
-        _ -> raise ArgumentError, "split axis must be horizontal or vertical"
+        _ -> invalid!([:options, :axis], "expected :horizontal or :vertical")
       end
 
     size =
@@ -176,45 +225,52 @@ defmodule LibTmux.Action do
         nil -> []
         {:percent, n} when is_integer(n) and n in 1..99 -> ["-l", "#{n}%"]
         {:cells, n} when is_integer(n) and n in 1..32_767 -> ["-l", Integer.to_string(n)]
-        _ -> raise ArgumentError, "split size requires positive cells or 1..99 percent"
+        _ -> invalid!([:options, :size], "expected nil, {:cells, 1..32767} or {:percent, 1..99}")
       end
 
-    cwd = if is_nil(options[:cwd]), do: [], else: ["-c", Format.literal(options[:cwd])]
-    argv = options[:command]
+    cwd =
+      if is_nil(options[:cwd]),
+        do: [],
+        else: ["-c", Format.literal(bytes!(options[:cwd], [:options, :cwd]))]
 
-    unless is_list(argv) and length(argv) <= 64,
-      do: raise(ArgumentError, "split requires at most 64 command arguments")
+    argv = split_command!(options[:command])
 
     args =
       ["-t", target_string(target, options[:session]), "-P", "-F", ~S"#{pane_id}", axis] ++
-        flag(options[:detached], "-d") ++
-        flag(options[:before], "-b") ++ size ++ cwd ++ ["--" | argv]
+        flag(options[:detached], "-d", :detached) ++
+        flag(options[:before], "-b", :before) ++ size ++ cwd ++ ["--" | argv]
 
-    Command.new("split-window", args)
+    new_command!("split-window", args)
   end
 
-  defp build(:send_text, target, bytes, options)
-       when is_binary(bytes) and byte_size(bytes) <= 1020 do
+  defp build(:send_text, target, bytes, options) do
+    unless is_binary(bytes) and byte_size(bytes) <= 1020,
+      do: invalid!([:text], "expected at most 1020 bytes")
+
     # Hex keys preserve individual bytes, including NUL and invalid UTF-8.
     encoded = for <<byte <- bytes>>, do: Integer.to_string(byte, 16)
     args = ["-H", "-t", target_string(target, options[:session]), "--" | encoded]
     # Empty key lists would resend tmux's triggering key rather than send nothing.
-    Command.new("send-keys", if(encoded == [], do: args ++ [""], else: args))
+    new_command!("send-keys", if(encoded == [], do: args ++ [""], else: args))
   end
 
-  defp build(:send_keys, target, keys, options) when is_list(keys) do
-    unless length(keys) in 1..128 and Enum.all?(keys, &key?/1),
-      do: raise(ArgumentError, "send_keys requires 1..128 supported key names")
+  defp build(:send_keys, target, keys, options) do
+    unless keys != [] and bounded_list?(keys, 128),
+      do: invalid!([:keys], "expected a list of 1..128 supported key names")
 
-    Command.new("send-keys", ["-t", target_string(target, options[:session]), "--" | keys])
+    Enum.each(Enum.with_index(keys), fn {key, index} ->
+      unless key?(key), do: invalid!([:keys, index], "expected a supported tmux key name")
+    end)
+
+    new_command!("send-keys", ["-t", target_string(target, options[:session]), "--" | keys])
   end
 
   defp build(:capture, target, _value, options) do
     unless is_integer(options[:max_bytes]) and options[:max_bytes] in 0..1_048_576,
-      do: raise(ArgumentError, "capture max_bytes must be 0..1048576")
+      do: invalid!([:options, :max_bytes], "expected an integer in 0..1048576")
 
     unless is_integer(options[:start_line]) and options[:start_line] in -32_768..32_767,
-      do: raise(ArgumentError, "capture start_line must be -32768..32767")
+      do: invalid!([:options, :start_line], "expected an integer in -32768..32767")
 
     args =
       [
@@ -225,15 +281,101 @@ defmodule LibTmux.Action do
         line(options[:start_line]),
         "-E",
         line(options[:end_line])
-      ] ++ flag(options[:join_lines], "-J")
+      ] ++ flag(options[:join_lines], "-J", :join_lines)
 
-    Command.new("capture-pane", args)
+    new_command!("capture-pane", args)
+  end
+
+  defp split_command!(:default), do: []
+  defp split_command!(:empty), do: [""]
+
+  defp split_command!({:shell, text}) do
+    bytes!(text, [:options, :command, :shell])
+
+    if text == "",
+      do:
+        invalid!(
+          [:options, :command, :shell],
+          "expected a nonempty shell command; use :empty for an empty pane"
+        )
+
+    [text]
+  end
+
+  defp split_command!({:argv, argv}) do
+    path = [:options, :command, :argv]
+
+    case command_arguments!(argv, path) do
+      [] -> invalid!(path, "expected 1..64 argv entries including a nonempty executable")
+      ["" | _] -> invalid!(path ++ [0], "expected a nonempty executable")
+      [program] -> [Native.executable(), "--exec-one", program]
+      arguments -> arguments
+    end
+  end
+
+  defp split_command!(_command),
+    do:
+      invalid!(
+        [:options, :command],
+        "expected :default, :empty, {:shell, bytes} or {:argv, arguments}"
+      )
+
+  defp command_arguments!(argv, path) do
+    unless bounded_list?(argv, 64),
+      do: invalid!(path, "expected a list of at most 64 command arguments")
+
+    Enum.each(Enum.with_index(argv), fn {argument, index} ->
+      bytes!(argument, path ++ [index])
+    end)
+
+    argv
   end
 
   defp line(:last), do: "-"
   defp line(n) when is_integer(n) and n in -32_768..32_767, do: Integer.to_string(n)
-  defp flag(true, flag), do: [flag]
-  defp flag(false, _flag), do: []
+
+  defp line(_value),
+    do: invalid!([:options, :end_line], "expected :last or an integer in -32768..32767")
+
+  defp flag(true, flag, _key), do: [flag]
+  defp flag(false, _flag, _key), do: []
+  defp flag(_value, _flag, key), do: invalid!([:options, key], "expected true or false")
+
+  defp bounded_list?([], _remaining), do: true
+
+  defp bounded_list?([_head | tail], remaining) when remaining > 0,
+    do: bounded_list?(tail, remaining - 1)
+
+  defp bounded_list?(_value, _remaining), do: false
+
+  defp bytes!(value, path) do
+    unless is_binary(value) and :binary.match(value, <<0>>) == :nomatch,
+      do: invalid!(path, "expected NUL-free bytes")
+
+    value
+  end
+
+  defp new_command!(name, args) do
+    Command.new(name, args)
+  rescue
+    error in ArgumentError -> invalid!([:command], Exception.message(error))
+  end
+
+  defp validate_argv!(command) do
+    Command.argv(command)
+    :ok
+  rescue
+    error in ArgumentError -> invalid!([:command], Exception.message(error))
+  end
+
+  defp invalid!(path, reason) do
+    raise Error,
+      kind: :invalid_command,
+      phase: :validation,
+      certainty: :no_write,
+      path: path,
+      details: %{reason: reason}
+  end
 
   defp key?(key) when is_binary(key) and byte_size(key) <= 32 do
     case Regex.run(~r/\A((?:(?:C|M|S)-){0,3})(.+)\z/, key) do
@@ -332,6 +474,20 @@ defmodule LibTmux.Action do
   defp action_value(:split, %{outcome: :completed, lines: [id]}), do: id
   defp action_value(_kind, %{outcome: :completed}), do: :ok
   defp action_value(_kind, _result), do: nil
+
+  defp created_value(
+         {:ok, %{outcome: :completed, transport: :control, value: id} = result},
+         :split,
+         %Ref{server_instance: instance}
+       ) do
+    {:ok, ref} = Ref.new(:pane, id, instance)
+    {:ok, %{result | value: %{id: id, ref: ref}}}
+  end
+
+  defp created_value({:ok, %{outcome: :completed, value: id} = result}, :split, _target),
+    do: {:ok, %{result | value: %{id: id, ref: nil}}}
+
+  defp created_value(result, _kind, _target), do: result
 
   defp result(result, lane, value),
     do: %{

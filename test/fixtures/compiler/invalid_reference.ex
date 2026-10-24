@@ -1,6 +1,7 @@
 defmodule LibTmux.CompilerExamples.InvalidReference do
   def width do
-    {:ok, ref} = LibTmux.Ref.new(:pane, "%0", "compiler-fixture")
+    pane = %LibTmux.Pane{id: "%0", server_instance: "compiler-fixture"}
+    {:ok, ref} = LibTmux.Ref.from_observation(pane)
     ref.width
   end
 end

@@ -4,6 +4,8 @@ defmodule LibTmux.SelectionFilterTest do
   alias LibTmux.{Error, Filter, Selection, Snapshot}
   alias LibTmux.Test.QueryGraph
 
+  doctest Selection
+
   test "materialized selections preserve Enum reduction, suspension and ordinary membership" do
     panes = QueryGraph.snapshot() |> Snapshot.panes()
     assert Enum.map(panes, & &1.id) == ["%0", "%1", "%2"]

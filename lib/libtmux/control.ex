@@ -1,16 +1,30 @@
 defmodule LibTmux.Control do
   @moduledoc """
-  A connection handle pinned to one qualified control epoch.
+  A qualified control connection for scoped and managed execution.
 
-  `submit/3` returns a retained `LibTmux.Operation` after bounded admission.
-  It never retries, refreshes, attaches, creates sessions or changes transport.
-  `request_close/1` closes write authority for the entire pinned epoch through
-  reserved capacity; it does not prove retirement or roll back effects.
+  Start with `with_connection/2` to own startup and cleanup around a callback.
+  Use `execute/3` to obtain a command outcome after wire retirement and record
+  reclamation. Canonical `:failed`, `:skipped` and `:unknown` outcomes remain
+  values, including from bang functions; acknowledgement does not prove
+  external program completion. See the [managed control guide](managed-control.html).
 
-  `start_link/1` explicitly attaches to an existing session. Its host must qualify
-  the server's effective hooks, aliases and stream writers for the whole lane;
-  a pinned handle is not authentication against unqualified command output or
-  arbitrary writes to internal tables. Reads and local selections never attach.
+  A successful scope returns `{:ok, callback_value}` after proven cleanup.
+  `LibTmux.Control.ScopeFailure` preserves the callback outcome when cleanup
+  fails. `LibTmux.Control.ExecutionError` carries the operation handle and
+  recovery context for errors after admission.
+
+  Starting a connection explicitly attaches to an existing session. The host
+  must qualify effective hooks, aliases and stream writers for its lifetime;
+  `lane: :host_qualified` declares that work without performing it. Each handle
+  stays pinned to one epoch. Pinning does not authenticate unqualified output
+  or defend against arbitrary writes to internal tables. Local selections
+  never attach, and commands never replay, refresh or change transport.
+
+  For independently retained results, use `submit/3` and `LibTmux.Operation`.
+  Awaiting a retained result does not reclaim its record. See the
+  [advanced execution guide](advanced-execution.html) for explicit ownership.
+  `request_close/1` closes write authority for the entire epoch through reserved
+  capacity; it neither proves retirement nor rolls back effects.
   """
 
   alias LibTmux.{Deadline, Error, Operation}

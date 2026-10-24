@@ -3,6 +3,120 @@ defmodule LibTmux.DomainActionsTest do
   alias LibTmux.{Control, Pane, Ref, Server, Session, Window}
   alias LibTmux.Control.Request
 
+  test "action refusals locate invalid inputs and retain bounded reasons" do
+    server = Server.new(executable: "/not-a-tmux", socket: "/not-a-socket")
+    control = %Control{owner: self(), view: make_ref(), lifetime: nil, endpoint: %{}}
+    {:ok, pane} = Ref.new(:pane, "%0", "instance")
+    {:ok, window} = Ref.new(:window, "@0", "instance")
+
+    for connection <- [server, control] do
+      cases = [
+        {Pane.split(connection, pane, size: {:percent, 0}), [:options, :size]},
+        {Pane.split(connection, pane, axis: :diagonal), [:options, :axis]},
+        {Pane.split(connection, pane, mystery: true), [:options, :mystery]},
+        {Pane.split(connection, pane, axis: :horizontal, axis: :vertical), [:options, :axis]},
+        {Pane.split(connection, pane, timeout: 0), [:options, :timeout]},
+        {Pane.split(connection, pane, before: :yes), [:options, :before]},
+        {Pane.split(connection, pane, cwd: 42), [:options, :cwd]},
+        {Pane.split(connection, pane, command: []), [:options, :command]},
+        {Pane.split(connection, pane, command: [""]), [:options, :command]},
+        {Pane.split(connection, pane, command: ["exec /bin/cat"]), [:options, :command]},
+        {Pane.split(connection, pane, command: ["/bin/cat", "--"]), [:options, :command]},
+        {Pane.split(connection, pane, command: ["ok" | :bad_tail]), [:options, :command]},
+        {Pane.split(connection, pane, command: {:argv, []}), [:options, :command, :argv]},
+        {Pane.split(connection, pane, command: {:argv, [""]}), [:options, :command, :argv, 0]},
+        {Pane.split(connection, pane, command: {:argv, ["ok", <<0>>]}),
+         [:options, :command, :argv, 1]},
+        {Pane.split(connection, pane, command: {:argv, ["ok" | :bad_tail]}),
+         [:options, :command, :argv]},
+        {Pane.split(connection, pane, command: {:argv, List.duplicate("ok", 65)}),
+         [:options, :command, :argv]},
+        {Pane.split(connection, pane, command: {:shell, ""}), [:options, :command, :shell]},
+        {Pane.split(connection, pane, command: {:shell, <<0>>}), [:options, :command, :shell]},
+        {Pane.split(connection, pane, command: :unknown), [:options, :command]},
+        {Pane.split(connection, pane, %{}), [:options]},
+        {Window.rename(connection, window, String.duplicate("private", 1024)), [:name]},
+        {Pane.send_text(connection, pane, :not_bytes), [:text]},
+        {Pane.send_keys(connection, pane, ["Enter", "not-a-key"]), [:keys, 1]},
+        {Pane.send_keys(connection, pane, ["Enter" | :bad_tail]), [:keys]}
+      ]
+
+      for {result, path} <- cases do
+        assert {:error, error} = result
+        assert error.kind == :invalid_command
+        assert error.phase == :validation
+        assert error.certainty == :no_write
+        assert error.path == path
+        assert %{reason: reason} = error.details
+        assert is_binary(reason) and byte_size(reason) in 1..256
+        assert :erlang.external_size(error) < 512
+        assert Exception.message(error) =~ reason
+      end
+    end
+
+    for {options, field} <- [
+          {[max_bytes: -1], :max_bytes},
+          {[start_line: :last], :start_line},
+          {[end_line: :first], :end_line},
+          {[join_lines: :yes], :join_lines}
+        ] do
+      assert {:error, %{path: [:options, ^field], details: %{reason: reason}}} =
+               Pane.capture(server, pane, options)
+
+      assert is_binary(reason)
+    end
+
+    error = assert_raise LibTmux.Error, fn -> Pane.split!(server, pane, size: {:percent, 0}) end
+    assert error.path == [:options, :size]
+    assert Exception.message(error) =~ "1..99"
+  end
+
+  test "qualified encoding preserves action validation diagnostics" do
+    {:ok, pane} = Ref.new(:pane, "%0", "instance")
+    request = Request.action(:split, pane, nil, size: {:percent, 0})
+
+    assert {:error,
+            %{kind: :invalid_command, path: [:options, :size], details: %{reason: reason}}} =
+             Request.encode(request, "instance")
+
+    assert reason =~ "1..99"
+
+    for command <- [[], [""], ["exec /bin/cat"], ["/bin/cat", "--"]] do
+      request = Request.action(:split, pane, nil, command: command)
+
+      assert {:error, %{kind: :invalid_command, path: [:options, :command], certainty: :no_write}} =
+               Request.encode(request, "instance")
+    end
+
+    oversized =
+      Request.action(:split, pane, nil, command: {:shell, String.duplicate("x", 16_384)})
+
+    assert {:error,
+            %{kind: :invalid_command, path: [:command], details: %{reason: reason}} = error} =
+             Request.encode(oversized, "instance")
+
+    assert reason =~ "max_bytes"
+    assert :erlang.external_size(error) < 512
+  end
+
+  test "one-shot argv growth is rejected before server identity I/O" do
+    server = Server.new(executable: "/not-a-tmux", socket: "/not-a-socket")
+    {:ok, pane} = Ref.new(:pane, "%0", "instance")
+    # The raw command fits 65,536 bytes; escaping the final semicolon adds one.
+    argument = String.duplicate("x", 65_489) <> ";"
+
+    assert {:error,
+            %{
+              kind: :invalid_command,
+              phase: :validation,
+              certainty: :no_write,
+              path: [:command],
+              details: %{reason: reason}
+            }} = Pane.split(server, pane, command: {:shell, argument})
+
+    assert reason =~ "max_bytes"
+  end
+
   test "modifier spellings with native literal fallback are rejected before admission" do
     {:ok, pane} = Ref.new(:pane, "%0", "instance")
 
@@ -42,6 +156,36 @@ defmodule LibTmux.DomainActionsTest do
           Pane.capture(server, pane, start_line: :last)
         ] do
       assert {:error, %{kind: :invalid_command, certainty: :no_write}} = result
+    end
+
+    control = %Control{owner: self(), view: make_ref(), lifetime: nil, endpoint: %{}}
+
+    for scope <- [nil, session] do
+      request = Request.action(:rename_session, session, "work", session: scope)
+
+      assert {:error, %{kind: :invalid_command, phase: :validation, certainty: :no_write} = error} =
+               Request.encode(request, session.server_instance)
+
+      assert error.path == [:options, :session]
+      assert error.details == %{reason: "unknown option for this action"}
+
+      for connection <- [server, control] do
+        assert {:error,
+                %{kind: :invalid_command, phase: :validation, certainty: :no_write} = error} =
+                 Session.rename(connection, session, "work", session: scope)
+
+        assert error.path == [:options, :session]
+        assert error.details == %{reason: "unknown option for this action"}
+
+        error =
+          assert_raise LibTmux.Error, fn ->
+            Session.rename!(connection, session, "work", session: scope)
+          end
+
+        assert %{kind: :invalid_command, phase: :validation, certainty: :no_write} = error
+        assert error.path == [:options, :session]
+        assert error.details == %{reason: "unknown option for this action"}
+      end
     end
   end
 

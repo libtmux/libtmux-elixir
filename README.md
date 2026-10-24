@@ -71,9 +71,10 @@ select. It does not create a server or attach a control client.
 Default capture budgets are 5000ms, 512 commands, 1024 contextual rows and
 8 MiB total encoded output. Limits fail explicitly. Managed execution reclaims
 records only after wire retirement; retained operations remain available when
-needed. Timeouts do not imply no effects or authorize replay. Bang execution
-methods raise API errors while preserving canonical failed outcomes as values.
-See the relevant task guide before handling failures.
+needed. Timeouts do not imply no effects or authorize replay. Domain bang
+functions return completed values or raise with failure evidence. Lower-level
+Control and Operation bangs preserve canonical outcomes as values. See the
+relevant task guide before handling failures.
 
 ## Concepts and reference
 

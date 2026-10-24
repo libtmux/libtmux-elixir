@@ -147,6 +147,7 @@ operations. `request_close/1` and `Operation.stop/1` only request epoch closure;
 
 The [advanced program](advanced-execution.md) shows local connection/operation
 status, canonical result inspection, close-before-forget and actual supervisor
-exit. Bang variants raise the same API error and retain the same success value.
-For commands, canonical failed/skipped/unknown outcomes remain success-path
-values and must still be inspected.
+exit. Control and Operation bang variants raise the same API error and retain
+canonical failed/skipped/unknown outcomes as values to inspect. Domain bang
+actions require command completion and return the completed value; see
+`LibTmux.Action`.

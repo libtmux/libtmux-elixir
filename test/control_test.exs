@@ -1,7 +1,48 @@
 defmodule LibTmux.ControlTest do
   use ExUnit.Case, async: true
-  alias LibTmux.{Control, Deadline, Error, Operation, Ref}
+  alias LibTmux.{Action, Control, Deadline, Error, Operation, Pane, Ref}
   alias LibTmux.Control.{Admission, Births, Inbox, Lifetime, Records, Request, Waiters}
+
+  test "split results bind only completed creation replies and preserve their evidence" do
+    for {outcome, certainty, evidence, lines} <- [
+          {:completed, :acknowledged, :command_reply, ["%7"]},
+          {:failed, :acknowledged, :command_reply, ["can't find pane"]},
+          {:skipped, :no_write, :timeout, []},
+          {:unknown, :unknown, :epoch_closed, []}
+        ] do
+      {control, endpoint, _view} = connection()
+      {:ok, pane} = Ref.new(:pane, "%0", "instance")
+      observer = self()
+
+      {caller, monitor} =
+        spawn_monitor(fn -> send(observer, {:split, Pane.split(control, pane, timeout: 500)}) end)
+
+      assert_receive {:submit, _, lease, _}
+      table = endpoint.waiter_inbox.table
+      assert_receive {Inbox, :wake, ^table, _}
+      assert {:ok, [{ticket, {:collect, ^lease}}]} = Inbox.take(endpoint.waiter_inbox)
+      canonical = %{outcome: outcome, certainty: certainty, evidence: evidence, lines: lines}
+      assert :ok = Inbox.finish(endpoint.waiter_inbox, ticket, {:ok, canonical})
+      assert_receive {:split, {:ok, result}}
+      assert result.details == canonical
+      refute Map.has_key?(result, :ref)
+
+      if outcome == :completed do
+        assert result.value == %{
+                 id: "%7",
+                 ref: %Ref{entity: :pane, id: "%7", server_instance: "instance"}
+               }
+
+        assert Action.unwrap({:ok, result}) == result.value
+      else
+        assert result.value == nil
+        error = assert_raise Action.CompletionError, fn -> Action.unwrap({:ok, result}) end
+        assert error.result === result
+      end
+
+      assert_receive {:DOWN, ^monitor, :process, ^caller, :normal}
+    end
+  end
 
   test "managed execution distinguishes pre-admission refusal from lost admitted context" do
     {control, endpoint, _view} = connection()
@@ -30,9 +71,14 @@ defmodule LibTmux.ControlTest do
                        context: :lost,
                        operation: operation,
                        error: %Error{kind: :connection_lost, certainty: :unknown}
-                     }}}
+                     } = error}}
 
     assert operation.lease == lease
+
+    assert assert_raise(LibTmux.Control.ExecutionError, fn ->
+             Action.unwrap({:error, error})
+           end) === error
+
     assert_receive {:DOWN, ^monitor, :process, ^caller, :normal}
   end
 

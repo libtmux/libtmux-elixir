@@ -93,7 +93,7 @@ defmodule LibTmux.Schema do
       {:dead, "dead", "pane_dead", :boolean},
       {:width, "width", "pane_width", :integer},
       {:height, "height", "pane_height", :integer},
-      {:pid, "pid", "pane_pid", :integer},
+      {:pid, "pid", "pane_pid", :nullable_integer},
       {:current_command, "currentCommand", "pane_current_command", :string},
       {:current_path, "currentPath", "pane_current_path", :string},
       {:title, "title", "pane_title", :string},

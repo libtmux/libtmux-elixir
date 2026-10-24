@@ -9,12 +9,30 @@
   connection setup and cleanup around a callback. (#9)
 - Split panes, rename sessions and windows, send text or named keys, and
   capture pane contents through domain functions. (#9)
+- Build references from captured observations with
+  `LibTmux.Ref.from_observation/1`. Qualified-control splits return the
+  created pane ID and a bound reference for follow-up actions. (#11)
+- Traverse captured session windows and panes with named helpers in
+  `LibTmux.Session` and `LibTmux.Window`, without contacting tmux. (#11)
 
 ### Changed
 
 - Capture larger servers with fewer tmux commands and query relationships
   without repeatedly validating the captured graph. Direct relationship
   lookups report ambiguity only for the requested objects. (#9)
+- Choose split command intent explicitly: session defaults, an empty pane,
+  shell text or an argument vector. Argument vectors keep their meaning
+  when arguments are added or removed. (#11)
+- Get completed values directly from domain bang actions. Unsuccessful
+  outcomes raise `LibTmux.Action.CompletionError` with the original evidence;
+  ordinary actions retain outcomes for inspection. (#11)
+- Report invalid action inputs with their paths and accepted forms, without
+  retaining rejected values in diagnostic details. (#11)
+
+### Fixed
+
+- Preserve `nil` when tmux reports an absent pane PID. (#11)
+- Reject malformed external filter arrays within the configured limits. (#11)
 
 ### Documentation
 
@@ -25,6 +43,8 @@
 - Document `t:LibTmux.Snapshot.indexes/0` as an opaque type. The
   `t:LibTmux.Snapshot.t/0` reference now links it instead of printing the name
   as plain text. (#8)
+- Handle uncertain execution and cleanup failures with a complete recovery
+  example; use focused reference examples for cardinality and relationships. (#11)
 
 ### Development
 

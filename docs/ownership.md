@@ -304,6 +304,24 @@ and reference/tracking runtime checks enforce the declared patch minima and
 verify the running Elixir's compiled OTP identity. Passing the guard alone
 does not qualify every OTP 29 patch.
 
+When updating OTP support, review the pinned Supervisor initialization shape,
+parent handling and `proc_lib` timeout/ACK cleanup. Run the direct adapter,
+connection-Supervisor, cold-loader and native startup/ownership checks on the
+reference and resolved tracking toolchains before changing the guard. Record
+their actual versions; identical resolutions qualify one toolchain pair.
+
+Public `Supervisor.start_link` has no initialization timeout. A temporary
+`proc_lib` bridge changes the Root's recorded parent; transferring a link does
+not adopt a new parent. An external watchdog that kills a still-linked Root
+can kill a non-trapping caller. Replacing the adapter requires a qualified
+handoff design as well as a timer. The current isolated dependency remains
+private OTP coupling despite these compatibility checks.
+
+The initialization timer belongs to the caller. If that caller dies while
+the Supervisor callback is blocked, the Root can outlive its original
+deadline: the Supervisor traps the parent's exit until initialization returns.
+The adapter does not promise cleanup after untrappable startup-caller death.
+
 Both startup wrappers close their private reply aliases through local BIFs
 and zero-time receives. Timeout cleanup does not demand-load the shared reply
 helper after Root exit. Isolated loader-gate checks qualify this dependency;

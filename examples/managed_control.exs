@@ -13,28 +13,29 @@ server =
 
 {:ok, snapshot} = Server.snapshot(server)
 session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
-window = Snapshot.related(snapshot, :session, session.id, :active_window)
+window = Session.active_window(snapshot, session)
 pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
-{:ok, session_ref} = Ref.new(:session, session.id, snapshot.server_instance)
-{:ok, window_ref} = Ref.new(:window, window.id, snapshot.server_instance)
-{:ok, pane_ref} = Ref.new(:pane, pane.id, snapshot.server_instance)
+{:ok, session_ref} = Ref.from_observation(session)
+{:ok, window_ref} = Ref.from_observation(window)
+{:ok, pane_ref} = Ref.from_observation(pane)
 
 {:ok, created_id} =
   Control.with_connection(
     [server: server, session: {:existing, session.id}, lane: :host_qualified],
     fn control ->
-      %{outcome: :completed} = Session.rename!(control, session_ref, "work")
-      %{outcome: :completed} = Window.rename!(control, window_ref, "editor")
+      :ok = Session.rename!(control, session_ref, "work")
+      :ok = Window.rename!(control, window_ref, "editor")
 
-      %{outcome: :completed, value: id} =
-        Pane.split!(control, pane_ref, command: ["/bin/cat", "--"])
+      %{id: id, ref: created} =
+        Pane.split!(control, pane_ref, command: {:argv, ["/bin/cat"]})
 
-      %{outcome: :completed} = Pane.send_text!(control, pane_ref, "hello")
-      %{outcome: :completed} = Pane.send_keys!(control, pane_ref, ["Enter"])
+      false = snapshot |> Snapshot.panes() |> Selection.member_id?(id)
+      :ok = Pane.send_text!(control, created, "hello")
+      :ok = Pane.send_keys!(control, created, ["Enter"])
 
       for _ <- 1..128 do
-        %{outcome: :completed, certainty: :acknowledged} =
-          Control.execute!(control, Request.field("pane_id", pane_ref))
+        %{outcome: :completed, certainty: :acknowledged, lines: ["v1:" <> ^id]} =
+          Control.execute!(control, Request.field("pane_id", created))
       end
 
       id

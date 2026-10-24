@@ -32,29 +32,29 @@ server =
 
 {:ok, snapshot} = Server.snapshot(server)
 session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
-window = Snapshot.related(snapshot, :session, session.id, :active_window)
+window = Session.active_window(snapshot, session)
 pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
-{:ok, session_ref} = Ref.new(:session, session.id, snapshot.server_instance)
-{:ok, window_ref} = Ref.new(:window, window.id, snapshot.server_instance)
-{:ok, pane_ref} = Ref.new(:pane, pane.id, snapshot.server_instance)
+{:ok, session_ref} = Ref.from_observation(session)
+{:ok, window_ref} = Ref.from_observation(window)
+{:ok, pane_ref} = Ref.from_observation(pane)
 
-%{outcome: :completed} = Session.rename!(server, session_ref, "work")
-%{outcome: :completed} = Window.rename!(server, window_ref, "editor", session: session_ref)
+Session.rename!(server, session_ref, "work")
+Window.rename!(server, window_ref, "editor", session: session_ref)
 
-%{outcome: :completed, value: created_id} =
+%{id: created_id, ref: nil} =
   Pane.split!(server, pane_ref,
     axis: :horizontal,
     size: {:percent, 30},
     session: session_ref,
-    command: ["/bin/cat", "--"]
+    command: {:argv, ["/bin/cat"]}
   )
 
 {:ok, fresh} = Server.snapshot(server)
 created = fresh |> Snapshot.panes() |> Selection.one!(id: created_id)
-{:ok, created_ref} = Ref.new(:pane, created.id, fresh.server_instance)
-%{outcome: :completed} = Pane.send_text!(server, created_ref, "hello")
-%{outcome: :completed} = Pane.send_keys!(server, created_ref, ["Enter"])
-%{outcome: :completed, value: screen} = Pane.capture!(server, created_ref, max_bytes: 4096)
+{:ok, created_ref} = Ref.from_observation(created)
+Pane.send_text!(server, created_ref, "hello")
+Pane.send_keys!(server, created_ref, ["Enter"])
+screen = Pane.capture!(server, created_ref, max_bytes: 4096)
 
 {:ok, %{name: "work"}} = Snapshot.fetch(fresh, :session, session.id)
 {:ok, %{name: "editor"}} = Snapshot.fetch(fresh, :window, window.id)
@@ -64,23 +64,23 @@ IO.puts(JSON.encode!(%{created_pane: created_id, captured_bytes: byte_size(scree
 
 <!-- /example -->
 
-A bang method raises an API error, but **failed, skipped and unknown command
-outcomes remain values**. The assertions deliberately accept only completed
-commands. A command acknowledgement does not prove input consumption, screen
+Domain bang functions return completed values. Failed, skipped and unknown
+outcomes raise `LibTmux.Action.CompletionError` with the original result in
+its `result` field; API errors are raised unchanged. Use ordinary actions
+when the caller needs to inspect every outcome without raising.
+A command acknowledgement does not prove input consumption, screen
 rendering or program exit. Consequently, the example reports the capture's
 byte count without claiming that `hello` has already appeared.
 
 | Task | Options and result |
 | --- | --- |
 | Rename | `Session.rename/4` or `Window.rename/4`; 1..1024 UTF-8 bytes without Unicode control characters. tmux's name normalization remains version-dependent. |
-| Split | `Pane.split/3`; vertical, half size and detached by default. Horizontal places panes side by side. Percent sizes use `-l N%`, including on tmux 3.4. `value` is the created pane ID. |
+| Split | `Pane.split/3`; vertical, half size and detached by default. Horizontal places panes side by side. Percent sizes use `-l N%`, including on tmux 3.4. `value` contains the pane `id` and `ref: nil`. |
 | Literal input | `Pane.send_text/4`; 0..1020 bytes, including NUL and invalid UTF-8. It never parses key names. |
 | Named input | `Pane.send_keys/4`; 1..128 supported names. Unsupported spellings fail before dispatch. See the API for modifiers. |
 | Screen capture | `Pane.capture/3`; visible lines by default, 64 KiB stdout, negative history offsets allowed. An overflow is an error. This reads rendered screen state, not original program stdout. |
 
-All actions default to one 5000ms budget. Split `command` follows tmux:
-no arguments uses the session default, one is a shell command, and two or
-more are direct argv. The example uses two arguments to avoid shell parsing.
+All actions default to one 5000ms budget.
 
 A physical window can belong to several sessions. Optional `session:` binds
 the action to membership in that exact session; it does not reserve a
@@ -91,3 +91,29 @@ unchanged, and a returned ID does not silently refresh the graph.
 exit is a canonical failed outcome with observed exit status; it does not
 prove that no side effect occurred. See `LibTmux.Action` and
 [the advanced example](advanced-execution.md) for lower-level results.
+
+## Command forms
+
+Use explicit intent when a split command is assembled dynamically:
+
+| `command` | Meaning |
+| --- | --- |
+| `:default` or omitted | Use the session default command/shell. |
+| `:empty` | Create a pane without a shell or program. |
+| `{:shell, "program \| another_program"}` | Interpret nonempty text through the session's configured shell. |
+| `{:argv, ["/path/to/program"]}` | Execute with exactly one argv entry. |
+| `{:argv, ["program", "argument with spaces"]}` | Preserve each argv entry; use tmux's PATH lookup. |
+
+Argv follows `execvp`, including its shell fallback for executable text files.
+Empty argv, an empty program, empty explicit shell text and NUL bytes are
+rejected before dispatch. Existing command byte ceilings include any adapter
+overhead. Other arguments may be empty or contain arbitrary non-NUL bytes.
+
+For singleton argv, the packaged native helper replaces itself with the
+program without forking. tmux records that helper path in `pane_start_command`
+and retains it for commandless respawn. Keep the installation available while
+that respawn behavior is needed; removing or relocating it can break respawn.
+The program runs under tmux ownership, beyond the library caller's lifetime.
+An acknowledged split can still be followed by program startup failure.
+
+Adding or removing an argument in an argv list never changes it into shell text.

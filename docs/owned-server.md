@@ -15,8 +15,9 @@ $ python3 examples/owned_server.py --run "$LIBTMUX_TMUX" \
 ```
 
 Substitute `examples/capture_and_filter.exs` or
-`examples/one_shot_actions.exs` for the other tasks. The runner accepts any
-caller command, but its cleanup contract covers these controlled examples.
+`examples/one_shot_actions.exs` or `examples/recover_command.exs` for the other
+tasks. The runner accepts any caller command, but its cleanup contract covers
+these controlled examples.
 It is not a sandbox or a supervisor for arbitrary daemonizing programs.
 
 The program borrows the server. On return, the runner verifies the original

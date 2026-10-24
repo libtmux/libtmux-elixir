@@ -1,7 +1,25 @@
 defmodule LibTmux.SnapshotTest do
   use ExUnit.Case, async: true
 
-  alias LibTmux.{Error, Schema, Snapshot}
+  alias LibTmux.{Error, Ref, Schema, Selection, Session, Snapshot, Window}
+
+  doctest Session
+  doctest Window
+
+  test "reported pane PID absence remains distinct from zero and malformed values" do
+    rows = %{pane: [%{id: "%0", pid: nil}, %{id: "%1", pid: 0}, %{id: "%2", pid: 42}]}
+    options = metadata(fields: %{pane: [:id, :pid]})
+    assert {:ok, snapshot} = Snapshot.new(rows, options)
+    panes = Snapshot.panes(snapshot)
+    assert Enum.map(Selection.where(panes, pid: nil), & &1.id) == ["%0"]
+    assert Enum.map(Selection.where(panes, pid: 0), & &1.id) == ["%1"]
+    assert Enum.map(Selection.where(panes, pid: [gt: 0]), & &1.id) == ["%2"]
+
+    for pid <- ["", "42", -1] do
+      assert {:error, %Error{kind: :invalid_field, path: [:pane, "%0", :pid]}} =
+               Snapshot.new(%{pane: [%{id: "%0", pid: pid}]}, options)
+    end
+  end
 
   test "linked rows retain memberships while physical objects have numeric identity order" do
     rows = graph()
@@ -16,6 +34,8 @@ defmodule LibTmux.SnapshotTest do
            ]
 
     assert Enum.map(Snapshot.related(snapshot, :session, "$2", :panes), & &1.id) == ["%2", "%10"]
+    assert Enum.map(Session.panes(snapshot, snapshot.sessions["$2"]), & &1.id) == ["%2", "%10"]
+    assert Enum.map(Window.panes(snapshot, snapshot.windows["@4"]), & &1.id) == ["%2", "%10"]
 
     assert Enum.map(Snapshot.related(snapshot, :window, "@4", :sessions), & &1.id) == [
              "$2",
@@ -26,6 +46,39 @@ defmodule LibTmux.SnapshotTest do
     assert snapshot.sessions["$2"].attached_count == 2
     assert snapshot.sessions["$2"].attached
     assert snapshot.panes["%2"].server_instance == "fixture-instance"
+  end
+
+  test "named traversal validates identity and uses fields from the supplied graph" do
+    assert {:ok, snapshot} = build(graph())
+    session = snapshot.sessions["$2"]
+    window = snapshot.windows["@4"]
+    assert Session.windows(snapshot, %{session | name: "older name"}) == [window]
+
+    assert Window.panes(snapshot, %{window | name: "older name"}) ==
+             Snapshot.items(snapshot, :pane)
+
+    for {call, valid, wrong} <- [
+          {&Session.windows/2, session, window},
+          {&Session.panes/2, session, window},
+          {&Session.active_window/2, session, window},
+          {&Window.panes/2, window, session}
+        ] do
+      {:ok, ref} = Ref.from_observation(valid)
+
+      for invalid <- [wrong, ref, valid.id, %{valid | id: "bad"}, %{valid | server_instance: ""}] do
+        error = assert_raise Error, fn -> call.(snapshot, invalid) end
+        assert error.kind == :invalid_target
+        assert error.path == [:target]
+        assert error.certainty == :no_write
+      end
+
+      error = assert_raise Error, fn -> call.(snapshot, %{valid | server_instance: "old"}) end
+      assert error.kind == :stale_target
+      assert error.phase == :evaluation
+      missing = binary_part(valid.id, 0, 1) <> "99"
+      error = assert_raise Error, fn -> call.(snapshot, %{valid | id: missing}) end
+      assert error.kind == :relation_not_loaded
+    end
   end
 
   test "conflicting repeated physical rows and occupied link indexes fail explicitly" do
@@ -112,6 +165,39 @@ defmodule LibTmux.SnapshotTest do
     fields = %{window: [:id], pane: [:id, :window_id]}
     assert {:ok, snapshot} = Snapshot.new(rows, metadata(fields: fields, complete: [:pane]))
     assert Snapshot.related(snapshot, :window, "@4", :panes) == []
+    assert Window.panes(snapshot, snapshot.windows["@4"]) == []
+
+    for options <- [
+          [fields: fields],
+          [
+            fields: %{window: [:id], pane: [:id]},
+            complete: [:pane],
+            unavailable: %{pane: [:window_id]}
+          ]
+        ] do
+      assert {:ok, incomplete} = Snapshot.new(rows, metadata(options))
+
+      assert_raise Error, ~r/relation_not_loaded/, fn ->
+        Window.panes(incomplete, incomplete.windows["@4"])
+      end
+    end
+
+    assert {:ok, empty} =
+             Snapshot.new(
+               %{session: [%{id: "$0"}]},
+               metadata(
+                 complete: [:window_link, :pane],
+                 fields: %{
+                   session: [:id],
+                   window_link: [:id, :session_id, :window_id, :active],
+                   pane: [:id, :window_id]
+                 }
+               )
+             )
+
+    assert Session.windows(empty, empty.sessions["$0"]) == []
+    assert Session.panes(empty, empty.sessions["$0"]) == []
+    assert Session.active_window(empty, empty.sessions["$0"]) == nil
 
     assert_raise Error, ~r/entity_not_loaded/, fn ->
       Snapshot.require_complete!(snapshot, :window)
@@ -126,9 +212,11 @@ defmodule LibTmux.SnapshotTest do
 
     assert {:ok, snapshot} = build(rows)
     assert %{id: "@4"} = Snapshot.related(snapshot, :session, "$2", :active_window)
+    assert %{id: "@4"} = Session.active_window(snapshot, snapshot.sessions["$2"])
 
     for lookup <- [
           fn -> Snapshot.related(snapshot, :session, "$10", :active_window) end,
+          fn -> Session.active_window(snapshot, snapshot.sessions["$10"]) end,
           fn -> Snapshot.require_relation!(snapshot, :session, :active_window) end,
           fn ->
             snapshot
@@ -163,6 +251,14 @@ defmodule LibTmux.SnapshotTest do
       end)
 
     assert {:ok, snapshot} = build(rows)
+
+    assert Enum.map(Session.windows(snapshot, snapshot.sessions["$2"]), & &1.id) == ["@4", "@1"]
+
+    assert Enum.map(Session.panes(snapshot, snapshot.sessions["$2"]), & &1.id) == [
+             "%1",
+             "%2",
+             "%10"
+           ]
 
     assert Enum.map(Snapshot.related(snapshot, :session, "$2", :panes), & &1.id) == [
              "%1",

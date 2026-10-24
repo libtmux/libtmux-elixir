@@ -104,10 +104,10 @@ $ time mix run scripts/check_consumer_types.exs
 
 Typespecs document contracts; the compiler infers types from implementation
 patterns and guards. These fixtures verify selected valid and invalid uses,
-not arbitrary criteria or every value-dependent return type. The codec fixture
-records a case inference does not currently reject; runtime validation remains
-required. Neither a declaration count nor a silent compiler proves every
-contract.
+not arbitrary criteria or every value-dependent return type. The integer codec
+fixture requires a warning; the action-value fixture records a case inference
+does not currently reject. Match outcomes and validate values at runtime.
+Neither a declaration count nor a silent compiler proves every contract.
 
 With dependencies already installed, render the public reference and guides:
 

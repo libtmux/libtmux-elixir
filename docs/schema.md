@@ -67,7 +67,7 @@ See [filtering](filtering.md) for Boolean, relation and error semantics.
 | `height` | `height` | `:integer` | `pane_height` | `equals`, `not`, `in`, `not_in`, `lt`, `lte`, `gt`, `gte` |
 | `id` | `id` | `{:id, :pane}` | `pane_id` | `equals`, `not`, `in`, `not_in` |
 | `index` | `index` | `:integer` | `pane_index` | `equals`, `not`, `in`, `not_in`, `lt`, `lte`, `gt`, `gte` |
-| `pid` | `pid` | `:integer` | `pane_pid` | `equals`, `not`, `in`, `not_in`, `lt`, `lte`, `gt`, `gte` |
+| `pid` | `pid` | `:nullable_integer` | `pane_pid` | `equals`, `not`, `in`, `not_in`, `lt`, `lte`, `gt`, `gte` |
 | `title` | `title` | `:string` | `pane_title` | `equals`, `not`, `in`, `not_in`, `contains`, `starts_with`, `ends_with` |
 | `width` | `width` | `:integer` | `pane_width` | `equals`, `not`, `in`, `not_in`, `lt`, `lte`, `gt`, `gte` |
 | `window_id` | `windowId` | `{:id, :window}` | `window_id` | `equals`, `not`, `in`, `not_in` |

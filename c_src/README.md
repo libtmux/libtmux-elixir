@@ -1,9 +1,18 @@
 # Owned I/O helper
 
 `owned_io.c` is part of libtmux, built from source by Mix. It is a separate
-Linux executable, with no NIF or third-party library. It requires Linux
-process/pipe APIs and a mounted `/proc`. It owns one ordinary finite child
-tree and uses nonblocking pipes and subreaper adoption. It is not a sandbox.
+Linux executable, with no NIF or third-party library. Its no-argument transport
+mode requires Linux process/pipe APIs and a mounted `/proc`. It owns one
+ordinary finite child tree and uses nonblocking pipes and subreaper adoption.
+It is not a sandbox.
+
+The private `--exec-one PROGRAM` mode preserves singleton argv for pane splits.
+Before transport initialization, it replaces itself through `execvp` with
+`[PROGRAM]`, retaining tmux's environment, descriptors and cwd. It forks no
+child and provides no transport ownership/cleanup protocol; tmux owns the
+pane process. Exec failure exits 1, as tmux's argv path does. Other argument
+shapes are rejected. tmux retains this helper path for commandless respawn,
+so removing or relocating the installation can break that later operation.
 
 ## Private protocol
 

@@ -31,8 +31,19 @@ defmodule LibTmux.Error do
         }
 
   @impl true
-  def message(%__MODULE__{kind: kind, phase: phase, path: path}) do
+  def message(%__MODULE__{kind: kind, phase: phase, path: path, details: details}) do
     location = if path == [], do: "", else: " at #{inspect(path)}"
-    "#{kind} during #{phase}#{location}"
+
+    reason =
+      case {kind, phase, details} do
+        {:invalid_command, :validation, %{reason: reason}}
+        when is_binary(reason) and byte_size(reason) <= 256 ->
+          ": " <> reason
+
+        _ ->
+          ""
+      end
+
+    "#{kind} during #{phase}#{location}#{reason}"
   end
 end
