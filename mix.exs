@@ -25,6 +25,7 @@ defmodule LibTmux.MixProject do
           "lib",
           "examples",
           "README.md",
+          "CHANGELOG.md",
           "LICENSE",
           ".tool-versions",
           "AGENTS.md",
@@ -72,6 +73,7 @@ defmodule LibTmux.MixProject do
 
     extras = [
       "README.md",
+      "CHANGELOG.md",
       "docs/first-task.md",
       "docs/standalone-demo.md",
       "docs/one-shot-actions.md",

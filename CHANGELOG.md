@@ -2,16 +2,33 @@
 
 ## Unreleased
 
+### Added
+
+- Execute routine commands with `LibTmux.Control.execute/3` without manually
+  reclaiming completed operations. `LibTmux.Control.with_connection/2` owns
+  connection setup and cleanup around a callback. (#9)
+- Split panes, rename sessions and windows, send text or named keys, and
+  capture pane contents through domain functions. (#9)
+
+### Changed
+
+- Capture larger servers with fewer tmux commands and query relationships
+  without repeatedly validating the captured graph. Direct relationship
+  lookups report ambiguity only for the requested objects. (#9)
+
 ### Documentation
 
+- Follow separate guides for capture, one-shot actions, managed control and
+  retained operations, with executable examples for each workflow. (#9)
 - Add `examples/quickstart.exs`, a script that starts a private tmux
   server, captures it and prints its window and pane counts. (#7)
-- Document `LibTmux.Snapshot.indexes/0` as an opaque type. The
-  `LibTmux.Snapshot.t/0` reference now links it instead of printing the name
+- Document `t:LibTmux.Snapshot.indexes/0` as an opaque type. The
+  `t:LibTmux.Snapshot.t/0` reference now links it instead of printing the name
   as plain text. (#8)
 
 ### Development
 
+- Include this changelog in the Hex package and ExDoc reference. (#9)
 - Fail `scripts/check_public_contracts.exs` and `mix test` when a public type,
   spec or callback names a private type, which the generated reference cannot
   link. (#8)
