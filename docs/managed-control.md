@@ -35,9 +35,9 @@ server =
 session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
 window = Snapshot.related(snapshot, :session, session.id, :active_window)
 pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
-{:ok, session_ref} = Ref.new(:session, session.id, snapshot.server_instance)
-{:ok, window_ref} = Ref.new(:window, window.id, snapshot.server_instance)
-{:ok, pane_ref} = Ref.new(:pane, pane.id, snapshot.server_instance)
+{:ok, session_ref} = Ref.from_observation(session)
+{:ok, window_ref} = Ref.from_observation(window)
+{:ok, pane_ref} = Ref.from_observation(pane)
 
 {:ok, created_id} =
   Control.with_connection(
@@ -46,15 +46,16 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
       %{outcome: :completed} = Session.rename!(control, session_ref, "work")
       %{outcome: :completed} = Window.rename!(control, window_ref, "editor")
 
-      %{outcome: :completed, value: id} =
-        Pane.split!(control, pane_ref, command: ["/bin/cat", "--"])
+      %{outcome: :completed, value: id, ref: created} =
+        Pane.split!(control, pane_ref, command: {:argv, ["/bin/cat"]})
 
-      %{outcome: :completed} = Pane.send_text!(control, pane_ref, "hello")
-      %{outcome: :completed} = Pane.send_keys!(control, pane_ref, ["Enter"])
+      false = snapshot |> Snapshot.panes() |> Selection.member_id?(id)
+      %{outcome: :completed} = Pane.send_text!(control, created, "hello")
+      %{outcome: :completed} = Pane.send_keys!(control, created, ["Enter"])
 
       for _ <- 1..128 do
-        %{outcome: :completed, certainty: :acknowledged} =
-          Control.execute!(control, Request.field("pane_id", pane_ref))
+        %{outcome: :completed, certainty: :acknowledged, lines: ["v1:" <> ^id]} =
+          Control.execute!(control, Request.field("pane_id", created))
       end
 
       id
@@ -66,7 +67,9 @@ IO.puts(JSON.encode!(%{created_pane: created_id, repeated_reads: 128, connection
 
 <!-- /example -->
 
-This runs all actions and 128 field reads at the default capacity of 32.
+The split returns a bound reference used immediately for input and field
+reads. The captured snapshot remains unchanged. This runs all actions and
+128 field reads at the default capacity of 32.
 `connection_retired: true` is printed only after the scope confirms native
 retirement and supervisor exit. The server and panes belong to the runner,
 which checks their survival before its separate teardown.
@@ -76,6 +79,7 @@ which checks their survival before its separate teardown.
 | Operation | `Server` one-shot | Qualified `Control` |
 | --- | --- | --- |
 | Split, rename, literal text, named keys | Supported, with an incarnation check/use race | Managed execution bound to the connection |
+| Created pane reference | `ref: nil`; ID remains in `value` | Bound `ref` on a completed split |
 | Screen capture | Bounded bytes | Returns `unsupported_transport`; no fallback |
 | Encoded field read | `Command` + `Format` + `Server.run` | `Request.field` + `Control.execute` |
 | Arbitrary trusted command | `Server.run` | Outside the qualified request lane |

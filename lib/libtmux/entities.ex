@@ -181,6 +181,13 @@ defmodule LibTmux.Pane do
   @doc """
   Splits an exact pane and returns an acknowledged created pane ID as `value`.
 
+  A completed qualified-control result also carries the pane's bound `ref`.
+  Use it for another action without recapturing. It identifies the pane in
+  that server incarnation, contains no fresh fields and does not reserve its
+  lifetime. Closing the connection does not invalidate the reference while
+  the pane and server remain. One-shot execution does not establish this
+  binding and returns `ref: nil`; unsuccessful split results also use `nil`.
+
   Defaults: vertical split, half size, detached, after the target, and tmux's
   session default shell/command and directory. `axis: :horizontal` places panes
   side by side; `size: {:percent, n}` uses `-l n%` on every supported release.
@@ -206,7 +213,9 @@ defmodule LibTmux.Pane do
   when a new observation is needed. See `LibTmux.Action` for outcomes and the
   one-shot identity check/use limitation.
 
-      Pane.split(control, pane_ref, axis: :horizontal, size: {:percent, 30})
+      {:ok, %{outcome: :completed, ref: created}} =
+        Pane.split(control, pane_ref, axis: :horizontal, size: {:percent, 30})
+      Pane.send_text(control, created, "hello")
   """
   @spec split(LibTmux.Action.connection(), LibTmux.Ref.t(), [split_option()]) ::
           {:ok, LibTmux.Action.result(String.t())} | {:error, LibTmux.Action.error()}

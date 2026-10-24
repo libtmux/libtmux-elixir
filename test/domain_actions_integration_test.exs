@@ -227,7 +227,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
 
           assert field(fixture, "$1", "session_name") == normalized
 
-          assert {:ok, %{outcome: :completed, value: created}} =
+          assert {:ok, %{outcome: :completed, value: created, ref: created_ref}} =
                    Pane.split(connection, pane,
                      session: session,
                      axis: :horizontal,
@@ -236,6 +236,15 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                    )
 
           assert created != pane.id
+          refute Map.has_key?(before.panes, created)
+          assert before.server_instance == instance
+
+          if lane == :control do
+            assert created_ref == ref(:pane, created, instance)
+          else
+            assert created_ref == nil
+          end
+
           assert field(fixture, "$1:.#{created}", "window_id") == "@0"
           assert field(fixture, created, "pane_width") == "25"
 
@@ -285,14 +294,15 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                   {_, 0} = OwnedTmux.command(fixture, ["unlink-window", "-t", "$1:#{index}"])
                 )
 
-          assert %{outcome: :failed, value: nil} = Pane.split!(connection, pane, session: session)
+          assert %{outcome: :failed, value: nil, ref: nil} =
+                   Pane.split!(connection, pane, session: session)
 
           assert %{outcome: :failed} =
                    Window.rename!(connection, window, "must not rename", session: session)
 
           assert field(fixture, "$0:@0", "window_name") == normalized
 
-          dead = ref(:pane, created, instance)
+          dead = created_ref || ref(:pane, created, instance)
           pid = field(fixture, created, "pane_pid") |> String.to_integer()
           watch = OwnedTmux.watch_processes([pid])
           assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", created])
@@ -359,13 +369,13 @@ defmodule LibTmux.DomainActionsIntegrationTest do
 
       try do
         with_lane(lane, server, fn connection ->
-          assert {:ok, %{outcome: :completed, value: id}} =
+          assert {:ok, %{outcome: :completed, value: id, ref: created_ref}} =
                    Pane.split(connection, pane, command: [python, "-c", program, path])
 
           {:ok, peer} = :socket.accept(listener, 750)
           assert {:ok, "R"} = :socket.recv(peer, 1, 750)
           assert {:ok, "\e[3;1R"} = :socket.recv(peer, 6, 750)
-          target = ref(:pane, id, instance)
+          target = if lane == :control, do: created_ref, else: ref(:pane, id, instance)
           assert %{outcome: :completed} = Pane.send_text!(connection, target, "")
           bytes = ~S"Enter C-c #{pid}; $HOME" <> <<92, 0, 255, 9, 10, 13>> <> "λ"
           assert %{outcome: :completed, value: :ok} = Pane.send_text!(connection, target, bytes)

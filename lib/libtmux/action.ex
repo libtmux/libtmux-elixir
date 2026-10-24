@@ -45,9 +45,14 @@ defmodule LibTmux.Action do
   A completed outcome carries the action's value; failed, skipped and unknown
   outcomes carry `nil`. Match the outcome before using the value. Command
   acknowledgement remains distinct from external program completion.
+
+  Split results also carry `ref`: a bound pane reference for completed control
+  execution, otherwise `nil`. Other actions omit this key. See
+  `LibTmux.Pane.split/3` for identity and lifetime limits.
   """
   @type result(value) ::
           %{
+            optional(:ref) => Ref.t() | nil,
             outcome: :completed,
             certainty: Error.certainty(),
             evidence: atom(),
@@ -56,6 +61,7 @@ defmodule LibTmux.Action do
             details: map()
           }
           | %{
+              optional(:ref) => nil,
               outcome: :failed | :skipped | :unknown,
               certainty: Error.certainty(),
               evidence: atom(),
@@ -134,6 +140,7 @@ defmodule LibTmux.Action do
             execute(connection, kind, command, options, deadline)
           end
       end
+      |> created_reference(kind, target)
     end
   end
 
@@ -513,6 +520,20 @@ defmodule LibTmux.Action do
   defp action_value(:split, %{outcome: :completed, lines: [id]}), do: id
   defp action_value(_kind, %{outcome: :completed}), do: :ok
   defp action_value(_kind, _result), do: nil
+
+  defp created_reference(
+         {:ok, %{outcome: :completed, transport: :control, value: id} = result},
+         :split,
+         %Ref{server_instance: instance}
+       ) do
+    {:ok, ref} = Ref.new(:pane, id, instance)
+    {:ok, Map.put(result, :ref, ref)}
+  end
+
+  defp created_reference({:ok, result}, :split, _target),
+    do: {:ok, Map.put(result, :ref, nil)}
+
+  defp created_reference(result, _kind, _target), do: result
 
   defp result(result, lane, value),
     do: %{
