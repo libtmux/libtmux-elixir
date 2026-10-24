@@ -45,7 +45,7 @@ captured snapshot; actions contact tmux explicitly.
 Add the published alpha to your Mix dependencies:
 
 ```elixir
-{:libtmux, "== 0.0.1-alpha.2"}
+{:libtmux, "== 0.0.1-alpha.3"}
 ```
 
 Fetch dependencies:

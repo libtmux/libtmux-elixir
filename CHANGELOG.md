@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## libtmux 0.0.1-alpha.3 (2026-10-24)
+
 ### Documentation
 
 - Follow README examples for capture, filtering, window renaming and pane

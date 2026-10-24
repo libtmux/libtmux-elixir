@@ -1,7 +1,7 @@
 # Split, rename, send input and capture
 
 Split panes, rename sessions and windows, send input and capture screen
-contents with the domain helpers in `0.0.1-alpha.2`. Run the packaged example
+contents with the domain helpers in `0.0.1-alpha.3`. Run the packaged example
 with the [owned-server recipe](owned-server.md).
 
 Pass a `LibTmux.Server` to choose one-shot execution. Each action checks the
