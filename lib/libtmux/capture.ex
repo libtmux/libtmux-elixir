@@ -3,9 +3,9 @@ defmodule LibTmux.Capture do
   Builds a bounded one-shot observation of one existing Linux tmux server.
 
   Capture checks topology and OS server identity before and after field
-  reads. At most two attempts share the original deadline and work budgets;
-  `attempts` accepts 1–3. Only inconsistent topology or disappearing read
-  targets retry. Decoding and coverage errors remain visible.
+  reads. Attempts share the original deadline and work budgets; `attempts`
+  defaults to 2 and accepts 1–3. Only inconsistent topology or disappearing
+  read targets retry. Decoding and coverage errors remain visible.
 
   Defaults: 1024 contextual entity rows, 512 commands, 8 MiB total response
   bytes, 64 KiB per response and 5000 ms. Exceeding a ceiling returns an
