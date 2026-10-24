@@ -7,7 +7,7 @@ defmodule LibTmux.APIExamplesIntegrationTest do
   @moduletag :integration
   @moduletag reason: "Executes the API reference snippets on an owned tmux server"
 
-  test "action and control documentation runs without aliases from the test module" do
+  test "server, action and control documentation runs without test-module aliases" do
     fixture = start_supervised!({OwnedTmux, []})
     %{socket: socket} = OwnedTmux.info(fixture)
 
@@ -34,6 +34,8 @@ defmodule LibTmux.APIExamplesIntegrationTest do
       pane_ref: pane_ref,
       options: options
     ]
+
+    assert [pane.id] == run_example(Server, executable: server.executable, socket: socket)
 
     assert {:ok, %{outcome: :completed}} = run_example(Session, :rename, 4, bindings)
 
@@ -63,22 +65,30 @@ defmodule LibTmux.APIExamplesIntegrationTest do
              OwnedTmux.close(fixture)
   end
 
+  defp run_example(module, bindings) do
+    {:docs_v1, _, _, _, %{"en" => doc}, _, _} = Code.fetch_docs(module)
+    eval_example(doc, bindings, "#{inspect(module)} example")
+  end
+
   defp run_example(module, function, arity, bindings) do
     {:docs_v1, _, _, _, _, _, docs} = Code.fetch_docs(module)
 
     {{:function, ^function, ^arity}, _, _, %{"en" => doc}, _} =
       List.keyfind(docs, {:function, function, arity}, 0)
 
+    eval_example(doc, bindings, "#{inspect(module)}.#{function}/#{arity} example")
+  end
+
+  defp eval_example(doc, bindings, file) do
     source =
       doc
       |> String.split("\n")
       |> Enum.filter(&String.starts_with?(&1, "    "))
       |> Enum.map_join("\n", &String.replace_prefix(&1, "    ", ""))
 
-    assert source != "", "missing example for #{inspect(module)}.#{function}/#{arity}"
+    assert source != "", "missing source for #{file}"
 
-    {result, _binding} =
-      Code.eval_string(source, bindings, file: "#{inspect(module)}.#{function}/#{arity} example")
+    {result, _binding} = Code.eval_string(source, bindings, file: file)
 
     result
   end
