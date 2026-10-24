@@ -46,7 +46,13 @@ defmodule LibTmux.ExampleCheck do
       IO.puts("PASS: packed #{name}; executed public reference examples")
     end
 
-    for name <- ["capture_and_filter", "one_shot_actions", "managed_control", "capture_and_read"] do
+    for name <- [
+          "readme",
+          "capture_and_filter",
+          "one_shot_actions",
+          "managed_control",
+          "capture_and_read"
+        ] do
       example = Path.join(package, "examples/#{name}.exs")
 
       {:ok, %{stdout: stdout, stderr: "", exit_status: 0, cleanup: :retired}} =
@@ -207,6 +213,7 @@ defmodule LibTmux.ExampleCheck do
     options = Keyword.update!(options, :env, &Map.put(&1, "MIX_ENV", "prod"))
 
     for {name, script} <- [
+          {"readme", "examples/readme.exs"},
           {"capture_and_filter", "capture_and_filter.exs"},
           {"managed_control", "examples/managed_control.exs"},
           {"recover_command", "examples/recover_command.exs"}
@@ -228,6 +235,14 @@ defmodule LibTmux.ExampleCheck do
   end
 
   defp check("capture_and_filter", %{"active_panes" => ["%0"]}), do: :ok
+
+  defp check("readme", %{
+         "active_panes" => ["%0"],
+         "window" => "editor",
+         "created_pane" => "%1",
+         "connection_retired" => true
+       }),
+       do: :ok
 
   defp check("one_shot_actions", %{"created_pane" => "%1", "captured_bytes" => bytes})
        when bytes in 0..4096, do: :ok

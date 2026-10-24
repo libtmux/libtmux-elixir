@@ -42,6 +42,8 @@ criteria; `not` accepts one criteria object. Empty `and` is true and empty
 `or` is false. Normalization never combines separate relation quantifiers:
 
 ```elixir
+alias LibTmux.{Selection, Snapshot}
+
 Selection.where(Snapshot.sessions(snapshot), %{
   panes: %{some: %{active: true, current_command: "nvim"}}
 })
