@@ -86,6 +86,9 @@ which checks their survival before its separate teardown.
 
 ## Inspect failures without replaying
 
+The [recovery example](recovery.md) handles admission errors, unsuccessful
+outcomes, lost operation context and cleanup failure in one application.
+
 `execute/3` returns `{:ok, outcome}` only after wire retirement and record
 reclamation. A failed command is still a canonical outcome. `execute!/3`
 raises API/context errors; it can return `:failed`, `:skipped` or `:unknown`.

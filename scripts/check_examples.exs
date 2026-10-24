@@ -70,6 +70,41 @@ defmodule LibTmux.ExampleCheck do
           runner,
           "--run",
           executable,
+          elixir,
+          "-pa",
+          ebin,
+          "-e",
+          code,
+          "--",
+          ebin,
+          Path.expand("../test/support/recovery_cases.exs", __DIR__),
+          Path.join(package, "examples/recover_command.exs")
+        ],
+        options
+      )
+
+    [normal, faults, cleanup] =
+      stdout |> String.split("\n", trim: true) |> Enum.map(&JSON.decode!/1)
+
+    check("recover_command", normal)
+
+    %{"recovery_cases" => "ok", "inspected_before_scope_exit" => true, "native_exited" => true} =
+      faults
+
+    %{"caller_exit" => 0} = cleanup
+    check_cleanup(cleanup)
+
+    IO.puts(
+      "PASS: packed recovery example; admission, uncertainty, context loss and primary cleanup evidence"
+    )
+
+    {:ok, %{stdout: stdout, stderr: "", exit_status: 0, cleanup: :retired}} =
+      OneShot.run(
+        python,
+        [
+          runner,
+          "--run",
+          executable,
           python,
           Path.expand("../test/support/split_argv_lifetime.py", __DIR__),
           elixir,
@@ -173,7 +208,8 @@ defmodule LibTmux.ExampleCheck do
 
     for {name, script} <- [
           {"capture_and_filter", "capture_and_filter.exs"},
-          {"managed_control", "examples/managed_control.exs"}
+          {"managed_control", "examples/managed_control.exs"},
+          {"recover_command", "examples/recover_command.exs"}
         ] do
       {:ok, %{stdout: stdout, stderr: "", exit_status: 0, cleanup: :retired}} =
         OneShot.run(
@@ -199,6 +235,12 @@ defmodule LibTmux.ExampleCheck do
   defp check("managed_control", %{
          "created_pane" => "%1",
          "repeated_reads" => 128,
+         "connection_retired" => true
+       }),
+       do: :ok
+
+  defp check("recover_command", %{
+         "recovery_example" => "completed",
          "connection_retired" => true
        }),
        do: :ok

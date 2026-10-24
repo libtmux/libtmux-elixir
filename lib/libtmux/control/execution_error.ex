@@ -1,6 +1,6 @@
 defmodule LibTmux.Control.ExecutionError do
   @moduledoc """
-  A managed execution ended without delivering its reclaimed result.
+  A managed execution reported an error after admission.
 
   `error` explains the wait or context failure. `operation` is the exact
   admitted handle. `context` reports whether its record was retained when
@@ -9,7 +9,8 @@ defmodule LibTmux.Control.ExecutionError do
   transfer recovery ownership; use `Control.submit/3` for durable retention
   independent of the submitting caller. `:lost` never
   establishes that the command was unwritten and does not authorize replay.
-  Inspect a retained handle with `LibTmux.Operation.result/1` or `await/2`.
+  Inspect a retained handle with `LibTmux.Operation.status/1` before leaving
+  its owning scope. See the [recovery example](recovery.html).
   """
   defexception [:error, :operation, :context]
   @typedoc "Recovery evidence after admission; the original operation deadline is unchanged."
