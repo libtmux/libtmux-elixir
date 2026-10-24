@@ -26,7 +26,7 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
       %{outcome: :completed} = Session.rename!(control, session_ref, "work")
       %{outcome: :completed} = Window.rename!(control, window_ref, "editor")
 
-      %{outcome: :completed, value: id, ref: created} =
+      %{outcome: :completed, value: %{id: id, ref: created}} =
         Pane.split!(control, pane_ref, command: {:argv, ["/bin/cat"]})
 
       false = snapshot |> Snapshot.panes() |> Selection.member_id?(id)

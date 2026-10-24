@@ -21,7 +21,7 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
 Session.rename!(server, session_ref, "work") |> Action.value!()
 Window.rename!(server, window_ref, "editor", session: session_ref) |> Action.value!()
 
-created_id =
+%{id: created_id, ref: nil} =
   Pane.split!(server, pane_ref,
     axis: :horizontal,
     size: {:percent, 30},

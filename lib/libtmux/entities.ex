@@ -236,7 +236,10 @@ defmodule LibTmux.Pane do
           exit_status: LibTmux.Schema.observed(non_neg_integer() | nil)
         }
 
-  @typedoc "Split geometry and process arguments; the returned ID identifies the newly created physical pane."
+  @typedoc "A created pane ID; `ref` is bound for qualified control and `nil` for one-shot."
+  @type split_value :: %{id: String.t(), ref: LibTmux.Ref.t() | nil}
+
+  @typedoc "Split geometry and process arguments."
   @type split_option ::
           LibTmux.Action.option()
           | {:axis, :horizontal | :vertical}
@@ -257,14 +260,14 @@ defmodule LibTmux.Pane do
           | {:max_bytes, 0..1_048_576}
 
   @doc """
-  Splits an exact pane and returns an acknowledged created pane ID as `value`.
+  Splits an exact pane and returns its ID and optional bound reference as `value`.
 
-  A completed qualified-control result also carries the pane's bound `ref`.
+  A completed value contains `id` and `ref`. Qualified control binds the reference.
   Use it for another action without recapturing. It identifies the pane in
   that server incarnation, contains no fresh fields and does not reserve its
   lifetime. Closing the connection does not invalidate the reference while
   the pane and server remain. One-shot execution does not establish this
-  binding and returns `ref: nil`; unsuccessful split results also use `nil`.
+  binding and returns `ref: nil`. Unsuccessful split results have `value: nil`.
 
   Defaults: vertical split, half size, detached, after the target, and tmux's
   session default shell/command and directory. `axis: :horizontal` places panes
@@ -287,18 +290,18 @@ defmodule LibTmux.Pane do
   when a new observation is needed. See `LibTmux.Action` for outcomes and the
   one-shot identity check/use limitation.
 
-      {:ok, %{outcome: :completed, ref: created}} =
+      {:ok, %{outcome: :completed, value: %{ref: created}}} =
         Pane.split(control, pane_ref, axis: :horizontal, size: {:percent, 30})
       Pane.send_text(control, created, "hello")
   """
   @spec split(LibTmux.Action.connection(), LibTmux.Ref.t(), [split_option()]) ::
-          {:ok, LibTmux.Action.result(String.t())} | {:error, LibTmux.Action.error()}
+          {:ok, LibTmux.Action.result(split_value())} | {:error, LibTmux.Action.error()}
   def split(connection, ref, options \\ []),
     do: LibTmux.Action.run(:split, connection, ref, nil, options)
 
   @doc "Splits as in `split/3`, raising API errors while preserving canonical failed outcomes."
   @spec split!(LibTmux.Action.connection(), LibTmux.Ref.t(), [split_option()]) ::
-          LibTmux.Action.result(String.t())
+          LibTmux.Action.result(split_value())
   def split!(connection, ref, options \\ []),
     do: connection |> split(ref, options) |> LibTmux.Action.unwrap()
 

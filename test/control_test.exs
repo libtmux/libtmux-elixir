@@ -25,12 +25,16 @@ defmodule LibTmux.ControlTest do
       assert :ok = Inbox.finish(endpoint.waiter_inbox, ticket, {:ok, canonical})
       assert_receive {:split, {:ok, result}}
       assert result.details == canonical
+      refute Map.has_key?(result, :ref)
 
       if outcome == :completed do
-        assert result.ref == %Ref{entity: :pane, id: "%7", server_instance: "instance"}
-        assert Action.value!(result) == "%7"
+        assert result.value == %{
+                 id: "%7",
+                 ref: %Ref{entity: :pane, id: "%7", server_instance: "instance"}
+               }
+
+        assert Action.value!(result) == result.value
       else
-        assert result.ref == nil
         assert result.value == nil
       end
 

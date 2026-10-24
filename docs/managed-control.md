@@ -46,7 +46,7 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
       %{outcome: :completed} = Session.rename!(control, session_ref, "work")
       %{outcome: :completed} = Window.rename!(control, window_ref, "editor")
 
-      %{outcome: :completed, value: id, ref: created} =
+      %{outcome: :completed, value: %{id: id, ref: created}} =
         Pane.split!(control, pane_ref, command: {:argv, ["/bin/cat"]})
 
       false = snapshot |> Snapshot.panes() |> Selection.member_id?(id)
@@ -79,7 +79,7 @@ which checks their survival before its separate teardown.
 | Operation | `Server` one-shot | Qualified `Control` |
 | --- | --- | --- |
 | Split, rename, literal text, named keys | Supported, with an incarnation check/use race | Managed execution bound to the connection |
-| Created pane reference | `ref: nil`; ID remains in `value` | Bound `ref` on a completed split |
+| Created pane reference | `value.ref: nil`; ID in `value.id` | Bound `value.ref` on a completed split |
 | Screen capture | Bounded bytes | Returns `unsupported_transport`; no fallback |
 | Encoded field read | `Command` + `Format` + `Server.run` | `Request.field` + `Control.execute` |
 | Arbitrary trusted command | `Server.run` | Outside the qualified request lane |

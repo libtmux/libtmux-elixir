@@ -41,7 +41,7 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
 Session.rename!(server, session_ref, "work") |> Action.value!()
 Window.rename!(server, window_ref, "editor", session: session_ref) |> Action.value!()
 
-created_id =
+%{id: created_id, ref: nil} =
   Pane.split!(server, pane_ref,
     axis: :horizontal,
     size: {:percent, 30},
@@ -75,7 +75,7 @@ byte count without claiming that `hello` has already appeared.
 | Task | Options and result |
 | --- | --- |
 | Rename | `Session.rename/4` or `Window.rename/4`; 1..1024 UTF-8 bytes without Unicode control characters. tmux's name normalization remains version-dependent. |
-| Split | `Pane.split/3`; vertical, half size and detached by default. Horizontal places panes side by side. Percent sizes use `-l N%`, including on tmux 3.4. `value` is the created pane ID. |
+| Split | `Pane.split/3`; vertical, half size and detached by default. Horizontal places panes side by side. Percent sizes use `-l N%`, including on tmux 3.4. `value` contains the pane `id` and `ref: nil`. |
 | Literal input | `Pane.send_text/4`; 0..1020 bytes, including NUL and invalid UTF-8. It never parses key names. |
 | Named input | `Pane.send_keys/4`; 1..128 supported names. Unsupported spellings fail before dispatch. See the API for modifiers. |
 | Screen capture | `Pane.capture/3`; visible lines by default, 64 KiB stdout, negative history offsets allowed. An overflow is an error. This reads rendered screen state, not original program stdout. |

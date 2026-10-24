@@ -104,7 +104,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
               ]
 
           for {command, expected} <- cases do
-            assert %{outcome: :completed, value: created} =
+            assert %{outcome: :completed, value: %{id: created}} =
                      Pane.split!(connection, pane, command: command, cwd: cwd)
 
             try do
@@ -134,7 +134,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
             end
           end
 
-          assert %{outcome: :completed, value: created} =
+          assert %{outcome: :completed, value: %{id: created}} =
                    Pane.split!(connection, pane, command: :empty)
 
           try do
@@ -148,7 +148,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           File.write!(denied, "exit 0\n")
 
           for name <- ["missing-program", denied] do
-            assert %{outcome: :completed, value: created} =
+            assert %{outcome: :completed, value: %{id: created}} =
                      Pane.split!(connection, pane, command: {:argv, [name]})
 
             try do
@@ -222,7 +222,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
 
           assert field(fixture, "$1", "session_name") == normalized
 
-          assert {:ok, %{outcome: :completed, value: created, ref: created_ref}} =
+          assert {:ok, %{outcome: :completed, value: %{id: created, ref: created_ref}}} =
                    Pane.split(connection, pane,
                      session: session,
                      axis: :horizontal,
@@ -252,7 +252,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                      "exec /bin/cat"
                    ])
 
-          assert %{outcome: :completed, value: empty} =
+          assert %{outcome: :completed, value: %{id: empty}} =
                    Pane.split!(connection, pane, command: :empty, session: session)
 
           try do
@@ -261,7 +261,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
             assert field(fixture, empty, "pane_tty") == ""
 
             for options <- [[], [command: :default]] do
-              assert %{outcome: :completed, value: default} =
+              assert %{outcome: :completed, value: %{id: default}} =
                        Pane.split!(connection, pane, options ++ [session: session])
 
               pid = field(fixture, default, "pane_pid") |> String.to_integer()
@@ -289,7 +289,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                   {_, 0} = OwnedTmux.command(fixture, ["unlink-window", "-t", "$1:#{index}"])
                 )
 
-          assert %{outcome: :failed, value: nil, ref: nil} =
+          assert %{outcome: :failed, value: nil} =
                    Pane.split!(connection, pane, session: session)
 
           assert %{outcome: :failed} =
@@ -364,7 +364,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
 
       try do
         with_lane(lane, server, fn connection ->
-          assert {:ok, %{outcome: :completed, value: id, ref: created_ref}} =
+          assert {:ok, %{outcome: :completed, value: %{id: id, ref: created_ref}}} =
                    Pane.split(connection, pane, command: {:argv, [python, "-c", program, path]})
 
           {:ok, peer} = :socket.accept(listener, 750)

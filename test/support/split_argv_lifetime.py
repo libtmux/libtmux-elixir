@@ -74,7 +74,7 @@ stamp.("snapshot")
 {:ok, ref} = Ref.from_observation(snapshot.panes["%0"])
 call = fn connection ->
   stamp.("action_start")
-  value = Pane.split!(connection, ref, command: {:argv, [program]}) |> Action.value!()
+  %{id: value} = Pane.split!(connection, ref, command: {:argv, [program]}) |> Action.value!()
   stamp.("action_completed")
   value
 end
