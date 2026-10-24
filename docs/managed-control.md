@@ -115,8 +115,10 @@ Use `submit/3` when another process needs independently retained results.
 
 `Control.submit/3` plus `Operation.await/2` retains a handle. Await can return
 before wire retirement and does not free admission capacity. `forget/2`
-refuses active wire records. Unforgotten records expire after their operation
-deadline plus `retention_ms` (default 60000ms); retained mode can fill its
+refuses active wire records. Unforgotten records become eligible for reclamation
+at their operation deadline plus `retention_ms` (default 60000ms). Reclamation
+requires the connection owner to run and the wire to retire; accepted waiter
+results are preserved before the slot is reused. Retained mode can fill its
 capacity even when all commands completed. The [advanced example](advanced-execution.md)
 shows explicit ownership. `Operation.await!/2` also keeps canonical failures
 as values. **`Operation.stop/1` can close the whole epoch, including siblings.**
