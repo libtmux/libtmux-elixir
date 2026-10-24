@@ -3,6 +3,9 @@ defmodule LibTmux.SnapshotTest do
 
   alias LibTmux.{Error, Ref, Schema, Selection, Session, Snapshot, Window}
 
+  doctest Session
+  doctest Window
+
   test "reported pane PID absence remains distinct from zero and malformed values" do
     rows = %{pane: [%{id: "%0", pid: nil}, %{id: "%1", pid: 0}, %{id: "%2", pid: 42}]}
     options = metadata(fields: %{pane: [:id, :pid]})

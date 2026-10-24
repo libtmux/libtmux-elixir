@@ -29,7 +29,25 @@ defmodule LibTmux.Session do
   Invalid or stale identities and missing source/relationship coverage raise
   `LibTmux.Error`. A covered empty relation returns `[]`. No I/O occurs.
 
-      Session.windows(snapshot, session) |> Enum.map(& &1.name)
+  ## Examples
+
+      iex> alias LibTmux.{Session, Snapshot}
+      iex> rows = %{session: [%{id: "$0"}], window: [%{id: "@7"}],
+      ...>   window_link: [%{session_id: "$0", window_id: "@7", index: 0, active: true},
+      ...>     %{session_id: "$0", window_id: "@7", index: 3, active: false}],
+      ...>   pane: [%{id: "%9", window_id: "@7"}]}
+      iex> {:ok, snapshot} = Snapshot.new(rows,
+      ...>   server_instance: "example", captured_from: 0, captured_until: 0,
+      ...>   complete: [:window_link, :pane],
+      ...>   fields: %{window_link: [:session_id, :window_id, :active], pane: [:window_id]})
+      iex> {:ok, session} = Snapshot.fetch(snapshot, :session, "$0")
+      iex> [window] = Session.windows(snapshot, session)
+      iex> window.id
+      "@7"
+      iex> Session.panes(snapshot, session) |> Enum.map(& &1.id)
+      ["%9"]
+      iex> Session.active_window(snapshot, session) == window
+      true
   """
   @spec windows(LibTmux.Snapshot.t(), t()) :: [LibTmux.Window.t()]
   def windows(snapshot, session),
@@ -39,7 +57,7 @@ defmodule LibTmux.Session do
   Returns a plain list of captured physical panes in numeric pane-ID order.
 
   Linked windows contribute their panes once. Identity, coverage, empty-list
-  and no-I/O behavior follow `windows/2`.
+  and no-I/O behavior follow `windows/2`, which includes a worked example.
   """
   @spec panes(LibTmux.Snapshot.t(), t()) :: [LibTmux.Pane.t()]
   def panes(snapshot, session),
@@ -50,7 +68,7 @@ defmodule LibTmux.Session do
 
   Multiple active links raise `LibTmux.Error`, even when they name the same
   window. Unrelated sessions do not affect this lookup. Identity, coverage
-  and no-I/O behavior follow `windows/2`.
+  and no-I/O behavior follow `windows/2`, which includes a worked example.
   """
   @spec active_window(LibTmux.Snapshot.t(), t()) :: LibTmux.Window.t() | nil
   def active_window(snapshot, session),
@@ -113,6 +131,18 @@ defmodule LibTmux.Window do
   Uses the supplied snapshot and validates the window's ID and incarnation.
   Identity, coverage, empty-list and no-I/O behavior follow
   `LibTmux.Session.windows/2`.
+
+  ## Examples
+
+      iex> alias LibTmux.{Snapshot, Window}
+      iex> rows = %{window: [%{id: "@0"}], pane: [
+      ...>   %{id: "%10", window_id: "@0"}, %{id: "%2", window_id: "@0"}]}
+      iex> {:ok, snapshot} = Snapshot.new(rows,
+      ...>   server_instance: "example", captured_from: 0, captured_until: 0,
+      ...>   complete: [:pane], fields: %{pane: [:window_id]})
+      iex> {:ok, window} = Snapshot.fetch(snapshot, :window, "@0")
+      iex> Window.panes(snapshot, window) |> Enum.map(& &1.id)
+      ["%2", "%10"]
   """
   @spec panes(LibTmux.Snapshot.t(), t()) :: [LibTmux.Pane.t()]
   def panes(snapshot, window),

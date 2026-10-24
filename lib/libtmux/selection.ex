@@ -55,7 +55,24 @@ defmodule LibTmux.Selection do
   @doc """
   Filters validated data while retaining order and captured graph context.
 
-  See the [worked example](api-examples.html#local-graph-and-filtering).
+  ## Examples
+
+  One pane must satisfy both conditions inside `some`. Window `@0` has an
+  active shell and an inactive editor; only `@1` has an active editor.
+  See [filtering](filtering.html#predicate-grammar) for the complete semantics.
+
+      iex> alias LibTmux.{Selection, Snapshot}
+      iex> rows = %{window: [%{id: "@0"}, %{id: "@1"}], pane: [
+      ...>   %{id: "%0", window_id: "@0", active: true, current_command: "bash"},
+      ...>   %{id: "%1", window_id: "@0", active: false, current_command: "nvim"},
+      ...>   %{id: "%2", window_id: "@1", active: true, current_command: "nvim"}]}
+      iex> {:ok, snapshot} = Snapshot.new(rows,
+      ...>   server_instance: "example", captured_from: 0, captured_until: 0,
+      ...>   complete: [:pane], fields: %{pane: [:window_id, :active, :current_command]})
+      iex> snapshot |> Snapshot.windows()
+      ...> |> Selection.where(panes: [some: [active: true, current_command: "nvim"]])
+      ...> |> Enum.map(& &1.id)
+      ["@1"]
   """
   @spec where(t(item), Filter.input()) :: t(item) when item: Schema.observation()
   def where(%__MODULE__{} = selection, criteria) do
@@ -88,7 +105,22 @@ defmodule LibTmux.Selection do
   @doc """
   Returns exactly one match, or a structured cardinality error; stops at the second match.
 
-  See the [worked example](api-examples.html#local-graph-and-filtering).
+  ## Examples
+
+      iex> alias LibTmux.{Selection, Snapshot}
+      iex> {:ok, snapshot} = Snapshot.new(%{pane: [%{id: "%0"}, %{id: "%1"}]},
+      ...>   server_instance: "example", captured_from: 0, captured_until: 0,
+      ...>   fields: %{pane: [:id]})
+      iex> panes = Snapshot.panes(snapshot)
+      iex> {:ok, pane} = Selection.one(panes, id: "%1")
+      iex> pane.id
+      "%1"
+      iex> {:error, error} = Selection.one(panes, id: "%9")
+      iex> error.kind
+      :no_match
+      iex> {:error, error} = Selection.one(panes)
+      iex> error.kind
+      :multiple_matches
   """
   @spec one(t(item), Filter.input()) :: {:ok, item} | {:error, Error.t()}
         when item: Schema.observation()
@@ -105,7 +137,21 @@ defmodule LibTmux.Selection do
   @doc """
   Returns one match or nil; a second match remains an error.
 
-  See the [worked example](api-examples.html#local-graph-and-filtering).
+  ## Examples
+
+      iex> alias LibTmux.{Selection, Snapshot}
+      iex> {:ok, snapshot} = Snapshot.new(%{pane: [%{id: "%0"}, %{id: "%1"}]},
+      ...>   server_instance: "example", captured_from: 0, captured_until: 0,
+      ...>   fields: %{pane: [:id]})
+      iex> panes = Snapshot.panes(snapshot)
+      iex> Selection.one_or_nil(panes, id: "%9")
+      {:ok, nil}
+      iex> {:ok, pane} = Selection.one_or_nil(panes, id: "%0")
+      iex> pane.id
+      "%0"
+      iex> {:error, error} = Selection.one_or_nil(panes)
+      iex> error.kind
+      :multiple_matches
   """
   @spec one_or_nil(t(item), Filter.input()) :: {:ok, item | nil} | {:error, Error.t()}
         when item: Schema.observation()
