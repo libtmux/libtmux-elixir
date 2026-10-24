@@ -87,6 +87,9 @@ defmodule LibTmux.Wire do
   @doc """
   Validates already-decoded JSON data and its complete encoded byte size.
 
+  Arrays must be proper lists; a malformed tail reports the containing
+  array's path. An excess prefix returns the list limit before inspecting its tail.
+
   See the [worked example](api-examples.html#encoding-and-protocol).
   """
   @spec validate(term(), [Filter.limit_option()]) :: {:ok, value()} | {:error, Error.t()}
@@ -133,8 +136,8 @@ defmodule LibTmux.Wire do
         end)
 
       is_list(value) ->
-        if length(value) > state.limits.max_list, do: fail(:resource_limit, path, :list)
-        state = charge(state, 2 + max(length(value) - 1, 0), path)
+        count = list_length(value, path, state.limits.max_list, 0)
+        state = charge(state, 2 + max(count - 1, 0), path)
 
         value
         |> Enum.with_index()
@@ -158,6 +161,14 @@ defmodule LibTmux.Wire do
         fail(:invalid_json, path, :unsupported_value)
     end
   end
+
+  defp list_length([], _path, _maximum, count), do: count
+
+  defp list_length([_ | tail], path, maximum, count) when count < maximum,
+    do: list_length(tail, path, maximum, count + 1)
+
+  defp list_length([_ | _], path, _maximum, _count), do: fail(:resource_limit, path, :list)
+  defp list_length(_tail, path, _maximum, _count), do: fail(:invalid_json, path, :improper_list)
 
   defp charge_string(state, value, path) do
     unless String.valid?(value), do: fail(:invalid_json, path, :utf8)

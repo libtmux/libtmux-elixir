@@ -1,6 +1,6 @@
 defmodule LibTmux.FilterWireTest do
   use ExUnit.Case, async: true
-  alias LibTmux.{Error, Filter, Selection, Snapshot}
+  alias LibTmux.{Error, Filter, Selection, Snapshot, Wire}
 
   test "versioned wire filters preserve canonical meaning through built-in JSON" do
     panes = LibTmux.Test.QueryGraph.snapshot() |> Snapshot.panes()
@@ -101,6 +101,45 @@ defmodule LibTmux.FilterWireTest do
 
     assert {:error, %Error{path: ["where", "panes", "count", "in", 1]}} =
              Filter.from_wire(LibTmux.Window, payload)
+  end
+
+  test "improper external arrays return bounded errors at the array path" do
+    for {value, path} <- [{[1 | 2], []}, {%{"items" => [[1 | 2]]}, ["items", 0]}] do
+      assert {:error,
+              %Error{
+                kind: :invalid_json,
+                phase: :parse,
+                certainty: :no_write,
+                path: ^path,
+                details: %{code: :improper_list}
+              }} = Wire.validate(value)
+    end
+
+    payload = %{
+      "version" => 1,
+      "entity" => "pane",
+      "where" => %{"id" => %{"in" => ["%0" | :tail]}}
+    }
+
+    assert {:error, %Error{path: ["where", "id", "in"], details: %{code: :improper_list}}} =
+             Filter.from_wire(LibTmux.Pane, payload)
+  end
+
+  test "array limits reject excess prefixes before walking children" do
+    assert {:ok, [1, 2]} = Wire.validate([1, 2], max_list: 2, max_bytes: 5, max_nodes: 3)
+
+    for value <- [[self(), 2, 3], [1, 2, 3 | :tail]] do
+      assert {:error, %Error{kind: :resource_limit, path: [], details: %{code: :list}}} =
+               Wire.validate(value, max_list: 2)
+    end
+
+    assert {:error, %Error{details: %{code: :improper_list}}} =
+             Wire.validate([1, 2 | :tail], max_list: 2)
+
+    assert {:error, %Error{details: %{code: :bytes}}} = Wire.validate([1, 2], max_bytes: 4)
+
+    assert {:error, %Error{path: [1], details: %{code: :nodes}}} =
+             Wire.validate([1, 2], max_nodes: 2)
   end
 
   test "decoded maps and JSON use the same inclusive depth boundary" do
