@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## libtmux 0.0.1-alpha.2 (2026-10-24)
+
 ### Added
 
 - Execute routine commands with `LibTmux.Control.execute/3` without manually

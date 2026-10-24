@@ -1,8 +1,8 @@
 # Split, rename, send input and capture
 
-These domain helpers are implemented in this development revision and are
-not in the published `0.0.1-alpha.1` package. Run the packaged example from
-this source revision with the [owned-server recipe](owned-server.md).
+Split panes, rename sessions and windows, send input and capture screen
+contents with the domain helpers in `0.0.1-alpha.2`. Run the packaged example
+with the [owned-server recipe](owned-server.md).
 
 Pass a `LibTmux.Server` to choose one-shot execution. Each action checks the
 captured server incarnation before issuing its command. That check leaves a

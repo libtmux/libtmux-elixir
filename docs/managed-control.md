@@ -1,8 +1,8 @@
 # Run repeated work with managed control
 
-These helpers are implemented in this development revision and are not in
-the published `0.0.1-alpha.1` package. Use the [owned-server recipe](owned-server.md)
-to run them from a packed copy of this source.
+Managed execution and scoped connections are available in `0.0.1-alpha.2`.
+Use the [owned-server recipe](owned-server.md) to run the example from a
+packed copy of the library.
 
 `Control.with_connection/2` owns connection and supervisor teardown around a
 callback. `Control.execute/3` owns a command through wire retirement and

@@ -1,8 +1,8 @@
 # Contributing
 
-The core has an alpha release. This source includes unreleased domain and
-managed-execution helpers. Pure tests, packed public examples and owned
-real-tmux checks qualify implemented behavior. Consumer packages remain planned.
+The core has an alpha release with domain actions and managed execution.
+Pure tests, packed public examples and owned real-tmux checks qualify
+implemented behavior. Consumer packages remain planned.
 [WRITING.md](WRITING.md) governs prose, comments, and commits.
 
 ## Setup

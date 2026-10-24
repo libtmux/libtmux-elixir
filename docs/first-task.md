@@ -1,7 +1,7 @@
 # Capture and filter an existing server
 
 Capture once, then query the immutable result without more tmux commands.
-This example works with the published `0.0.1-alpha.1` package. Install it in
+This example works with the published `0.0.1-alpha.2` package. Install it in
 an Elixir project as shown in the [README](../README.md#installation).
 
 Save this program as `capture_and_filter.exs` in your application:
@@ -58,5 +58,4 @@ A limit failure returns an error rather than a partial graph.
 
 For an isolated demonstration, use the [owned-server recipe](owned-server.md).
 Next: [filter and select](filtering.md), [one-shot actions](one-shot-actions.md),
-or [managed control](managed-control.md). The last two require this development
-revision; their new helpers are not in the published alpha.
+or [managed control](managed-control.md).

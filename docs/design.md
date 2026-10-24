@@ -1,10 +1,10 @@
 # Design and remaining work
 
 The core implements immutable observations, indexed filters, bounded capture,
-one-shot execution, persistent control and explicit domain actions. The new
-managed/action helpers are unreleased. This page preserves constraints for
-that implementation and for the remaining Query, Tracker, planner, workspace
-and MCP work; it is not a claim that those planned components exist.
+one-shot execution, persistent control and explicit domain actions. This page
+preserves constraints for that implementation and for the remaining Query,
+Tracker, planner, workspace and MCP work; it is not a claim that those planned
+components exist.
 The [implementation contracts](implementation.md) map those responsibilities
 to package boundaries and qualification gates.
 

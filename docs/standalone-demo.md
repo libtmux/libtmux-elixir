@@ -1,10 +1,10 @@
 # Run the standalone alpha demo
 
-This self-contained example installs the published `0.0.1-alpha.1` package,
+This self-contained example installs the published `0.0.1-alpha.2` package,
 creates a private server, adds a pane and window, then prints
 `demo: 2 windows, 3 panes`. It uses the alpha's explicit command API.
 The [first task](first-task.md) shows how to observe an existing server;
-[one-shot actions](one-shot-actions.md) introduces this revision's new helpers.
+[one-shot actions](one-shot-actions.md) introduces the domain helpers.
 
 Save the program as `quickstart.exs`. Linux, Elixir 1.20.4 on OTP 29, a C11
 compiler and tmux 3.3 or a later qualified version on `PATH` are required.
@@ -13,7 +13,7 @@ Its first run needs network access to install the package.
 <!-- example: examples/quickstart.exs -->
 
 ```elixir
-Mix.install([{:libtmux, "== 0.0.1-alpha.1"}])
+Mix.install([{:libtmux, "== 0.0.1-alpha.2"}])
 
 alias LibTmux.{Command, Selection, Server, Snapshot}
 

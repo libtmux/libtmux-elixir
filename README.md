@@ -24,10 +24,9 @@ Choose bounded one-shot execution or an explicitly qualified control connection.
 
 ## Status and requirements
 
-The published alpha is `0.0.1-alpha.1`. This development revision adds domain
-actions, managed execution and scoped connections; those helpers are not in
-that published artifact. Observation/filtering and retained control APIs
-already exist. Workspace, MCP, Tracker and dependency planners remain planned.
+The `0.0.1-alpha.2` core includes capture/filtering, domain actions, managed
+execution and scoped connections. Workspace, MCP, Tracker and dependency
+planners remain planned.
 
 | Requirement | Scope |
 | --- | --- |
@@ -45,7 +44,7 @@ example runner and integration tooling. See [setup](.github/CONTRIBUTING.md#setu
 Add the published alpha to your Mix dependencies:
 
 ```elixir
-{:libtmux, "== 0.0.1-alpha.1"}
+{:libtmux, "== 0.0.1-alpha.2"}
 ```
 
 Fetch dependencies:
