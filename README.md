@@ -110,7 +110,7 @@ Capture again explicitly when you need fresh observations.
 
 ## Rename a window
 
-Continue with the same `snapshot` and `server`.
+Continue with the same [`snapshot`][snapshot-type] and [`server`][server-type].
 [`Selection.one!/2`][one] requires exactly one match, and
 [`Session.active_window/2`][active-window] reads the captured relationship.
 [`Ref.from_observation/1`][ref] carries the observed identity into an action.
@@ -136,7 +136,8 @@ snapshot still contains the name captured before the action.
 
 ## Split a pane and send input
 
-Continue with that window and session. [`Control.with_connection/2`][scope]
+Continue with that [`window`][window-type] and [`session`][session-type].
+[`Control.with_connection/2`][scope]
 owns connection startup and cleanup around the callback. Its returned value
 is available after connection retirement.
 
@@ -204,6 +205,10 @@ Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
 [Artwork](docs/branding.md). Licensed under the [MIT License](LICENSE).
 
 [snapshot]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-snapshot-bang-2/
+[snapshot-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot/
+[server-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-server/
+[window-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-window/
+[session-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-session/
 [where]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-where-2/
 [filter]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-filter-2/
 [one]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-one-bang-2/
