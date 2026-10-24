@@ -11,6 +11,12 @@
 
 # libtmux for Elixir
 
+<p>
+  <a href="https://hex.pm/packages/libtmux">Hex.pm</a> ·
+  <a href="https://libtmux.hexdocs.pm/">API reference</a> ·
+  <a href="https://libtmux.org/en/elixir/">Documentation</a>
+</p>
+
 </div>
 
 Capture and query tmux state, then act on exact session, window and pane
