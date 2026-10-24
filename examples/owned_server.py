@@ -1,4 +1,4 @@
-"""Own a foreground Linux tmux fixture and report verified process exit."""
+"""Run a controlled example on an owned Linux tmux server, or serve test fixtures."""
 
 import base64
 import ctypes
@@ -62,7 +62,7 @@ def watch(pids):
             os.close(fd)
 
 
-def serve(executable):
+def serve(executable, consumer=None):
     environment = os.environ.copy()
     environment.pop("TMUX", None)
     environment.pop("TMUX_PANE", None)
@@ -76,6 +76,7 @@ def serve(executable):
         server_fd = None
         pane_fd = None
         clients = []
+        additional_panes = []
 
         def command(argv):
             return subprocess.run(
@@ -90,28 +91,55 @@ def serve(executable):
         def stop():
             if server is None:
                 return None
+            failures = []
+            clients_exited = True
             for process, fd in clients:
-                process.stdin.close()
-                if not exited(fd):
-                    process.kill()
+                try:
+                    process.stdin.close()
+                    if not exited(fd):
+                        process.kill()
+                        failures.append("control client needed forced termination")
                     process.wait()
-                    raise TimeoutError("owned control client did not exit after EOF")
-                process.wait()
-                process.stdout.close()
-                process.stderr.close()
-                os.close(fd)
+                    clients_exited = clients_exited and exited(fd, 0)
+                except Exception as error:
+                    failures.append(str(error))
+                    clients_exited = False
+                finally:
+                    for stream in [process.stdout, process.stderr]:
+                        stream.close()
+                    os.close(fd)
             clients.clear()
             if server.poll() is None:
-                command([b"kill-server"])
+                # The consumer has returned; no peer may create more example panes.
+                if consumer is not None:
+                    try:
+                        panes = command([b"list-panes", b"-a", b"-F", b"#{pane_pid}"])
+                        if panes.returncode != 0:
+                            raise RuntimeError("cannot identify owned panes before teardown")
+                        for pid in set(panes.stdout.split()):
+                            try:
+                                additional_panes.append(os.pidfd_open(int(pid)))
+                            except ProcessLookupError:
+                                pass
+                    except Exception as error:
+                        failures.append(str(error))
+                try:
+                    command([b"kill-server"])
+                except Exception as error:
+                    failures.append(str(error))
                 if not exited(server_fd):
                     server.kill()
-                    raise TimeoutError("owned server did not exit after kill-server")
+                    failures.append("server needed forced termination")
             status = server.wait()
             pane_exited = pane_fd is None or exited(pane_fd)
+            for fd in additional_panes:
+                pane_exited = exited(fd) and pane_exited
+                os.close(fd)
+            additional_panes.clear()
             if not pane_exited:
-                raise TimeoutError("owned pane process remained alive")
+                failures.append("owned pane exit was not observed")
             return {"kind": "stopped", "server_exit": status, "pane_exited": pane_exited,
-                    "clients_exited": True}
+                    "clients_exited": clients_exited, "cleanup_errors": failures}
 
         def attach():
             process = subprocess.Popen(
@@ -158,11 +186,34 @@ def serve(executable):
                 raise RuntimeError(created.stdout[:1024])
             pane_pid = int(created.stdout.strip())
             pane_fd = os.pidfd_open(pane_pid)
+            if consumer is not None:
+                caller_exit = None
+                caller_error = None
+                borrowed_survived = False
+                try:
+                    completed = subprocess.run(
+                        [*consumer, executable, socket, "$0"], env=environment, timeout=10
+                    )
+                    caller_exit = completed.returncode
+                    borrowed_survived = not exited(server_fd, 0) and not exited(pane_fd, 0)
+                except Exception as error:
+                    caller_error = str(error)
+                finally:
+                    cleanup = stop()
+                cleanup.update(caller_exit=caller_exit, caller_error=caller_error,
+                               borrowed_survived=borrowed_survived)
+                emit(cleanup)
+                failed = (caller_error is not None or not borrowed_survived or
+                          cleanup["cleanup_errors"] or cleanup["server_exit"] != 0)
+                return caller_exit if caller_exit else int(bool(failed))
             emit({"kind": "ready", "socket": socket, "server_pid": server.pid, "pane_pid": pane_pid})
             for line in sys.stdin:
                 request = json.loads(line)
                 if request["op"] == "stop":
-                    emit(stop())
+                    stopped = stop()
+                    if stopped["cleanup_errors"]:
+                        raise RuntimeError(stopped["cleanup_errors"])
+                    emit(stopped)
                     return
                 if request["op"] == "attach":
                     emit(attach())
@@ -187,12 +238,18 @@ def serve(executable):
             for fd in [notify, server_fd, pane_fd]:
                 if fd is not None:
                     os.close(fd)
+            for fd in additional_panes:
+                os.close(fd)
 
 
 if __name__ == "__main__":
     try:
         if sys.argv[1] == "--watch":
             watch(sys.argv[2:])
+        elif sys.argv[1] == "--run":
+            if len(sys.argv) < 4:
+                raise ValueError("usage: owned_server.py --run TMUX COMMAND [ARG ...]")
+            raise SystemExit(serve(os.path.abspath(sys.argv[2]), sys.argv[3:]))
         else:
             serve(sys.argv[1])
     except Exception as error:

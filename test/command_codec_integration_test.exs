@@ -34,6 +34,26 @@ defmodule LibTmux.CommandCodecIntegrationTest do
     end
   end
 
+  test "versioned rows preserve independent hostile fields through the real print path" do
+    fixture = start_supervised!({OwnedTmux, []})
+    expression = LibTmux.Capture.Row.format(["@left", "@right", "@empty"])
+
+    for {value, index} <- Enum.with_index(values()) do
+      other = Enum.at(values(), rem(index + 3, length(values())))
+
+      for {name, bytes} <- [{"@left", value}, {"@right", other}, {"@empty", ""}] do
+        command = Command.new("set-option", ["-s", name, bytes])
+        assert {_, 0} = OwnedTmux.command(fixture, Command.argv(command))
+      end
+
+      assert {response, 0} = OwnedTmux.command(fixture, ["display-message", "-p", expression])
+      assert {:ok, [^value, ^other, ""]} = LibTmux.Capture.Row.decode(response, 3)
+    end
+
+    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+             OwnedTmux.close(fixture)
+  end
+
   defp read_value(fixture) do
     assert {response, 0} =
              OwnedTmux.command(fixture, ["display-message", "-p", Format.field("@codec")])

@@ -64,7 +64,11 @@ defmodule LibTmux.Protocol do
           {:max_chunk_bytes | :max_line_bytes | :max_frame_bytes | :max_frame_lines | :max_events,
            pos_integer()}
 
-  @doc "Constructs a parser with positive byte, line and event limits."
+  @doc """
+  Constructs a parser with positive byte, line and event limits.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec new([option()]) :: t()
   def new(options \\ []) do
     limits = options |> Keyword.validate!(Map.to_list(@limits)) |> Map.new()
@@ -77,7 +81,11 @@ defmodule LibTmux.Protocol do
     %__MODULE__{limits: limits}
   end
 
-  @doc "Consumes one byte chunk without performing I/O."
+  @doc """
+  Consumes one byte chunk without performing I/O.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec feed(t(), binary()) :: {:ok, [event()], t()} | {:error, Error.t()}
   def feed(%__MODULE__{} = state, chunk) when is_binary(chunk) do
     if byte_size(chunk) > state.limits.max_chunk_bytes do
@@ -87,7 +95,11 @@ defmodule LibTmux.Protocol do
     end
   end
 
-  @doc "Rejects a stream ending inside a line or reply block."
+  @doc """
+  Rejects a stream ending inside a line or reply block.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec finish(t()) :: :ok | {:error, Error.t()}
   def finish(%__MODULE__{carry: "", guard: nil}), do: :ok
   def finish(%__MODULE__{}), do: error(:protocol_error, :truncated_stream, [])

@@ -1,164 +1,62 @@
-# Capture a pane and read it through both transports
+# Capture and filter an existing server
 
-From a source checkout, run one complete example against an isolated tmux
-server:
+Capture once, then query the immutable result without more tmux commands.
+This example works with the published `0.0.1-alpha.1` package. Install it in
+an Elixir project as shown in the [README](../README.md#installation).
 
-```console
-$ MIX_ENV=test mix run scripts/check_package.exs --examples
-```
+Save this program as `capture_and_filter.exs` in your application:
 
-Use the development toolchain and Linux prerequisites in
-[Contributing](../.github/CONTRIBUTING.md#setup), plus Python 3 and tmux 3.3 or
-newer on `PATH`. Set `LIBTMUX_TMUX` to an absolute executable when checking a
-particular tmux build. Hex must already be installed; the check downloads
-nothing.
-
-The check builds and extracts a real package, compiles its core in a fresh
-directory, and executes the packaged example outside the checkout. An owned
-fixture supplies a unique socket, empty configuration and existing session.
-It clears inherited `TMUX` and `TMUX_PANE` and verifies its server, pane,
-clients and helper exit afterward. It never uses the default server.
-
-## The complete program
-
-[Executable source](../examples/capture_and_read.exs) receives the absolute
-tmux executable, socket and existing session ID from that fixture. All its
-library calls use the public core. The embedded program is checked against
-that source file.
-
-<!-- example: examples/capture_and_read.exs -->
+<!-- example: examples/capture_and_filter.exs -->
 
 ```elixir
-alias LibTmux.{Codec, Command, Control, Format, Operation, Ref, Selection, Server, Snapshot}
-alias LibTmux.Control.Request
+alias LibTmux.{Selection, Server, Snapshot}
 
-[executable, socket, session_id] = System.argv()
+[executable, socket | _] = System.argv()
 {:ok, _} = Application.ensure_all_started(:libtmux)
 
 server =
   Server.new(
     executable: executable,
     socket: socket,
-    cwd: "/",
     env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
   )
 
 {:ok, snapshot} = Server.snapshot(server)
-session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
-window = Snapshot.related(snapshot, :session, session.id, :active_window)
 
-pane =
+active_ids =
   snapshot
   |> Snapshot.panes()
-  |> Selection.where(window_id: window.id)
-  |> Selection.filter(& &1.active)
-  |> Selection.one!()
+  |> Selection.where(active: true)
+  |> Enum.map(& &1.id)
 
-{:ok, target} = Ref.new(:pane, pane.id, snapshot.server_instance)
-command = Command.new("display-message", ["-p", "-t", pane.id, Format.field("pane_id")])
-{:ok, %{stdout: stdout, cleanup: :retired}} = Server.run(server, command)
-{:ok, one_shot_id} = Codec.decode_field(stdout, :string, encoding: :escaped_v1)
-true = one_shot_id == pane.id
-
-{:ok, root, control} =
-  Control.start_link(
-    server: server,
-    session: {:existing, session.id},
-    lane: :host_qualified,
-    timeout: 800
-  )
-
-root_monitor = Process.monitor(root)
-
-control_id =
-  try do
-    {:ok, operation} = Control.submit(control, Request.field("pane_id", target), timeout: 800)
-
-    {:ok,
-     %{
-       outcome: :completed,
-       certainty: :acknowledged,
-       evidence: :command_reply,
-       lines: [line]
-     }} = Operation.await(operation, timeout: 800)
-
-    {:ok, id} = Codec.decode_field(line <> "\n", :string, encoding: :escaped_v1)
-    true = id == pane.id
-    id
-  after
-    try do
-      :ok = Control.close(control, timeout: 800)
-    after
-      :ok = Supervisor.stop(root, :normal, 800)
-
-      receive do
-        {:DOWN, ^root_monitor, :process, ^root, :normal} -> :ok
-      after
-        800 -> raise "connection supervisor did not exit"
-      end
-    end
-  end
-
-IO.puts(
-  JSON.encode!(%{
-    "session" => session.id,
-    "window" => window.id,
-    "pane" => pane.id,
-    "oneShot" => one_shot_id,
-    "control" => control_id,
-    "connectionRetired" => true
-  })
-)
+IO.puts(JSON.encode!(%{active_panes: active_ids}))
 ```
 
 <!-- /example -->
 
-The result contains the observed session, window and pane IDs. Both replies
-must identify the selected pane, and `connectionRetired` is true only after
-connection close and supervisor exit succeed. The harness checks that the
-borrowed server and pane survived the program, then tears down its own fixture.
+Set `LIBTMUX_TMUX` to the absolute tmux executable and `LIBTMUX_SOCKET` to
+the absolute socket of the existing server you intend to observe. Run:
 
-## What each step establishes
+```console
+$ mix run capture_and_filter.exs "$LIBTMUX_TMUX" "$LIBTMUX_SOCKET"
+```
 
-`LibTmux.Server.snapshot/2` observes a capture interval. `LibTmux.Selection`
-then runs `where`, a native predicate and checked cardinality locally, without
-another tmux command. Relationships resolve against the same graph. Keep
-using that snapshot when several decisions need the same captured values.
+The JSON result lists active physical pane IDs in numeric order. A pane is
+active within its physical window; this is not a choice of one session's
+active window. Linked windows do not duplicate their panes.
 
-The one-shot read uses an exact pane ID and the escaped field codec. Its
-check/use race remains: a captured pane is not reserved. The control request
-also carries a `LibTmux.Ref` bound to the observed server incarnation.
+`Server.new/1` builds a descriptor without I/O. `Server.snapshot/2` runs
+bounded one-shot reads without attaching a control client or creating a
+missing server. `Selection.where/2` and `Enum.map/2` use the captured graph.
+Capturing covers an interval, not an atomic tmux transaction. Capture again
+explicitly when fresh state is needed.
 
-Control startup explicitly attaches a client and can change session state
-and attachment counts. The fixture's empty, controlled configuration is why
-this example can declare `lane: :host_qualified`. A caller using another
-server must qualify its effective hooks, aliases and stream writers before
-using that lane; the option does not perform that qualification.
+The pattern match makes a capture error visible; production callers can
+handle `{:error, %LibTmux.Error{}}`. The default capture budgets are 5000ms,
+512 commands, 1024 contextual rows, 64 KiB per response and 8 MiB total.
+A limit failure returns an error rather than a partial graph.
 
-`LibTmux.Control.submit/3` returns an admitted operation. The example checks
-the result of `LibTmux.Operation.await/2` for both `:completed` and
-`:acknowledged`. A reply acknowledges this tmux command; it does not prove
-that an arbitrary program started by another command has exited.
-
-## Failure behavior and cleanup
-
-The program uses assertions so unexpected results make the example fail.
-Capture and transport errors return `{:error, %LibTmux.Error{}}`, with `kind`,
-`phase` and `certainty` describing the failure. A control field read whose
-target disappeared returns an acknowledged `:failed` operation; a present
-empty field remains `:completed`. Raw one-shot commands retain tmux's native
-semantics, so the example also checks the returned pane ID. Neither path
-retries with a positional target.
-`LibTmux.Selection.one!/2` raises `:no_match` or `:multiple_matches` rather
-than selecting arbitrarily.
-
-An await API timeout ends only that waiter. Canonical failed, skipped and
-unknown operation outcomes are values, including from bang methods. Inspect
-the retained operation instead of replaying an uncertain command. This
-example deliberately accepts only an acknowledged completed read.
-
-The `after` block closes the connection and stops its enclosing supervisor.
-The separate fixture harness runs owned teardown even when the example
-fails. See [the mental model](mental-model.md) and
-[ownership](ownership.md) for the different lifetimes and remaining runtime
-qualification limits.
+For an isolated demonstration, use the [owned-server recipe](owned-server.md).
+Next: [filter and select](filtering.md), [one-shot actions](one-shot-actions.md),
+or [managed control](managed-control.md). The last two require this development
+revision; their new helpers are not in the published alpha.

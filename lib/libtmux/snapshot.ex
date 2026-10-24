@@ -83,7 +83,11 @@ defmodule LibTmux.Snapshot do
           indexes: indexes()
         }
 
-  @doc "Validates observed rows, rejecting conflicts, invalid fields and dangling covered references."
+  @doc """
+  Validates observed rows, rejecting conflicts, invalid fields and dangling covered references.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec new(rows(), [option()]) :: {:ok, t()} | {:error, Error.t()}
   def new(rows, options) do
     options =
@@ -151,7 +155,11 @@ defmodule LibTmux.Snapshot do
     end
   end
 
-  @doc "Returns plain observed items in stable identity order without loading data."
+  @doc """
+  Returns plain observed items in stable identity order without loading data.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec items(t(), Schema.entity_selector()) :: [Schema.observation()]
   def items(%__MODULE__{} = snapshot, entity) do
     entity = Schema.entity(entity)
@@ -159,23 +167,51 @@ defmodule LibTmux.Snapshot do
     Enum.map(snapshot.order[entity], &Map.fetch!(table, &1))
   end
 
-  @doc "Returns a materialized session selection without I/O."
+  @doc """
+  Returns a materialized session selection without I/O.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec sessions(t()) :: LibTmux.Selection.t(LibTmux.Session.t())
   def sessions(snapshot), do: LibTmux.Selection.new(snapshot, :session)
-  @doc "Returns a materialized physical window selection without I/O."
+
+  @doc """
+  Returns a materialized physical window selection without I/O.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec windows(t()) :: LibTmux.Selection.t(LibTmux.Window.t())
   def windows(snapshot), do: LibTmux.Selection.new(snapshot, :window)
-  @doc "Returns a materialized physical pane selection without I/O."
+
+  @doc """
+  Returns a materialized physical pane selection without I/O.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec panes(t()) :: LibTmux.Selection.t(LibTmux.Pane.t())
   def panes(snapshot), do: LibTmux.Selection.new(snapshot, :pane)
-  @doc "Returns a materialized membership selection without I/O."
+
+  @doc """
+  Returns a materialized membership selection without I/O.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec window_links(t()) :: LibTmux.Selection.t(LibTmux.WindowLink.t())
   def window_links(snapshot), do: LibTmux.Selection.new(snapshot, :window_link)
-  @doc "Returns a materialized attached-client selection without I/O."
+
+  @doc """
+  Returns a materialized attached-client selection without I/O.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec clients(t()) :: LibTmux.Selection.t(LibTmux.Client.t())
   def clients(snapshot), do: LibTmux.Selection.new(snapshot, :client)
 
-  @doc "Looks up one exact observed ID without I/O."
+  @doc """
+  Looks up one exact observed ID without I/O.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec fetch(t(), Schema.entity_selector(), Ref.id()) ::
           {:ok, Schema.observation()} | {:error, Error.t()}
   def fetch(%__MODULE__{} = snapshot, entity, id) do
@@ -191,7 +227,11 @@ defmodule LibTmux.Snapshot do
     end
   end
 
-  @doc "Requires a declared complete entity set, even when it has no rows."
+  @doc """
+  Requires a declared complete entity set, even when it has no rows.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec require_complete!(t(), Schema.entity_selector()) :: :ok
   def require_complete!(snapshot, entity) do
     entity = Schema.entity(entity)
@@ -202,7 +242,11 @@ defmodule LibTmux.Snapshot do
     :ok
   end
 
-  @doc "Requires a loaded field over the captured entity domain before evaluation."
+  @doc """
+  Requires a loaded field over the captured entity domain before evaluation.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec require_field!(t(), Schema.entity_selector(), atom()) :: :ok
   def require_field!(snapshot, entity, field) do
     entity = Schema.entity(entity)
@@ -215,7 +259,14 @@ defmodule LibTmux.Snapshot do
     end
   end
 
-  @doc "Requires a complete relation domain, including known-empty domains."
+  @doc """
+  Requires relation coverage for the requested source IDs, including known-empty relations.
+
+  The default `:all` validates the entire captured source domain. An explicit
+  ID list does not resolve unrelated sources or their ambiguous relationships.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec require_relation!(t(), Schema.entity_selector(), atom(), :all | [Ref.id()]) :: :ok
   def require_relation!(snapshot, entity, relation, ids \\ :all) do
     entity = Schema.entity(entity)
@@ -223,16 +274,22 @@ defmodule LibTmux.Snapshot do
     unless Map.has_key?(Schema.relations(entity), relation),
       do: raise_error(:invalid_relation, [entity, relation])
 
-    coverage = relation_coverage(snapshot, entity, relation)
     ids = if ids == :all, do: snapshot.order[entity], else: ids
 
-    unless coverage.loaded and Enum.all?(ids, &MapSet.member?(coverage.ids, &1)),
+    unless relation_covered?(snapshot, entity, relation, ids),
       do: raise_error(:relation_not_loaded, [entity, relation])
 
     :ok
   end
 
-  @doc "Resolves a covered relation through captured indexes; never refreshes."
+  @doc """
+  Resolves one source's covered relation through captured indexes; never refreshes.
+
+  Ambiguity in another source does not affect this lookup. Whole-selection
+  filtering still validates its entire required relationship domain first.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec related(t(), Schema.entity_selector(), Ref.id(), atom()) ::
           Schema.observation() | nil | [Schema.observation()]
   def related(snapshot, entity, id, relation) do
@@ -240,6 +297,20 @@ defmodule LibTmux.Snapshot do
     require_relation!(snapshot, entity, relation, [id])
     {:ok, item} = fetch(snapshot, entity, id)
     project(snapshot, entity, item, relation)
+  end
+
+  @doc false
+  def prepare_relation!(snapshot, entity, relation) do
+    entity = Schema.entity(entity)
+    require_relation!(snapshot, entity, relation)
+    sources = table(snapshot, entity)
+
+    fn id ->
+      case Map.fetch(sources, id) do
+        {:ok, item} -> project(snapshot, entity, item, relation)
+        :error -> raise_error(:relation_not_loaded, [entity, relation])
+      end
+    end
   end
 
   defp index_rows(entity, rows, instance, unavailable) when is_list(rows) do
@@ -425,22 +496,26 @@ defmodule LibTmux.Snapshot do
     |> Map.new(fn {id, rows} -> {id, rows |> Enum.sort_by(order) |> Enum.map(& &1.id)} end)
   end
 
-  defp relation_coverage(snapshot, entity, relation) do
+  defp relation_covered?(snapshot, entity, relation, ids) do
     {complete, required} = requirements(entity, relation)
 
     loaded =
       Enum.all?(complete, &snapshot.coverage.entities[&1].complete) and
         Enum.all?(required, fn {e, f} -> snapshot.coverage.entities[e].fields[f] == :loaded end)
 
-    ids =
-      if loaded,
-        do:
-          Enum.filter(snapshot.order[entity], fn id ->
-            relation_targets_present?(snapshot, entity, id, relation)
-          end),
-        else: []
+    if loaded do
+      sources = table(snapshot, entity)
 
-    %{loaded: loaded, ids: MapSet.new(ids)}
+      # Visit the whole requested domain so later ambiguity remains visible.
+      Enum.reduce(ids, true, fn id, covered ->
+        present =
+          Map.has_key?(sources, id) and relation_targets_present?(snapshot, entity, id, relation)
+
+        present and covered
+      end)
+    else
+      false
+    end
   end
 
   defp requirements(:pane, :window), do: {[], [pane: :window_id]}
@@ -513,10 +588,12 @@ defmodule LibTmux.Snapshot do
       |> Enum.sort_by(&if(&1, do: sort_key(:session, &1.id)))
 
   defp project(s, :session, item, :panes) do
-    windows =
-      project(s, :session, item, :window_links) |> Enum.map(& &1.window_id) |> MapSet.new()
-
-    items(s, :pane) |> Enum.filter(&MapSet.member?(windows, &1.window_id))
+    project(s, :session, item, :window_links)
+    |> Enum.map(& &1.window_id)
+    |> Enum.uniq()
+    |> Enum.flat_map(&Map.get(s.indexes.window_panes, &1, []))
+    |> Enum.sort_by(&sort_key(:pane, &1))
+    |> Enum.map(&s.panes[&1])
   end
 
   defp table(snapshot, entity), do: Map.fetch!(snapshot, @collections[entity])

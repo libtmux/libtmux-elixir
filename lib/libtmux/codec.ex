@@ -19,7 +19,11 @@ defmodule LibTmux.Codec do
           | {:max_bytes, pos_integer()}
           | {:min | :max, integer() | nil}
 
-  @doc "Removes one framing newline and validates the complete field value."
+  @doc """
+  Removes one framing newline and validates the complete field value.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec decode_field(binary(), :bytes | :string, [field_option()]) ::
           {:ok, binary()} | {:error, Error.t()}
   @spec decode_field(binary(), :integer, [field_option()]) ::
@@ -43,7 +47,11 @@ defmodule LibTmux.Codec do
     end
   end
 
-  @doc "Decodes tmux's three-digit octal output escapes as bytes."
+  @doc """
+  Decodes tmux's three-digit octal output escapes as bytes.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec decode_output(binary(), [{:max_bytes, pos_integer()}]) ::
           {:ok, binary()} | {:error, Error.t()}
   def decode_output(value, options \\ []) when is_binary(value) do

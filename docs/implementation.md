@@ -1,7 +1,10 @@
 # Implementation contracts
 
-This page records the selected implementation boundaries. Features remain
-planned until their public contracts and checks exist. See [design](design.md)
+This page records the selected implementation boundaries. The implemented core
+includes capture/filtering, bounded one-shot execution, persistent retained
+and managed control, scoped connections and split/rename/input/capture actions.
+Query, Batch/Group/Plan, Observation/Tracker, the owned program runner, workspace
+and MCP remain planned. Their rows below are contracts for future work. See [design](design.md)
 for the observation and execution model.
 
 ## Packages and support
@@ -16,14 +19,15 @@ runtime dependencies and never imports a consumer package.
 MCP also consumes the workspace package for workspace tools; it must not
 duplicate the loader, planner or apply journal.
 
-Workspace and MCP initially distribute escripts with Elixir embedded by
+Workspace and MCP are planned to distribute escripts with Elixir embedded by
 Mix. Running an escript requires the supported OTP runtime, while building
 it requires the supported Elixir toolchain. ERTS is not bundled. A later
 Mix release is an additional choice, subject to installed-consumer checks.
 
 The implementation targets Elixir 1.20.4 or newer patches in the 1.20 line,
 OTP releases at or above 29.1.2 and below 30, and tmux 3.3 or newer. These are
-intended support contracts; current scaffold checks do not establish them.
+version requirements. The required cells below qualify implemented cases;
+they do not establish support for every later tmux release or planned feature.
 The development selectors remain `elixir 1.20` and `erlang 29`. Resolve the
 selected Elixir build for OTP 29 and record its compiled/runtime identity.
 The selectors do not expand the tested support range to OTP 29.0.
@@ -54,8 +58,9 @@ required cell; they cannot become successful skips.
 | `Workspace` | Versioned JSON loader and real CLI, read-only planning, exact preconditions, explicit apply and partial journal. |
 | `MCP` | STDIO discovery and bounded retained operations under host authority. Models choose allowlisted server IDs and exact returned references. |
 
-Server/session/window/pane/client operations also cover options, hooks and
-formats. Preserve server/session/window scope and local/inherited/effective
+Future server/session/window/pane/client operations extend to options, hooks
+and formats. The current domain surface covers split, rename, separate literal
+and named input, and bounded one-shot screen capture. Preserve server/session/window scope and local/inherited/effective
 option distinctions. Literal text and named keys are different operations.
 Configured hooks and aliases are part of lane qualification; never disable
 them silently to make attribution easier.
@@ -83,7 +88,8 @@ never fall back to positions when an object disappears.
 Convert each positive millisecond timeout once into a monotonic budget for
 queueing, writes, replies and required proof. One error envelope carries
 kind, phase, certainty, retryable, path and bounded details/partial results.
-Bang APIs raise that same error. Retryable never authorizes mutation replay.
+Bang APIs raise API/context errors; canonical failed, skipped and unknown
+command outcomes remain values. Retryable never authorizes mutation replay.
 Command acknowledgement does not prove external process completion.
 
 Bound parser carry, frames, queues, Port delivery, BEAM mailboxes, captures,
@@ -94,7 +100,8 @@ retirement; ordinary Port busy limits do not bound inbound delivery.
 Mix builds the helper from shipped source, requiring a C11 compiler but no
 third-party runtime package or NIF. See [ownership](ownership.md) for
 per-call memory accounting, cleanup limits and pending escript distribution
-checks. Persistent connection admission and epoch ownership remain planned.
+checks. Persistent admission, epoch ownership and managed reclamation are
+implemented; aggregate connection-wide heap accounting remains unqualified.
 A third-party runtime dependency remains outside the core contract unless
 the user separately approves a measured critical exception.
 
@@ -102,7 +109,8 @@ the user separately approves a measured critical exception.
 
 The [conservative codec](encoding.md) uses one free-form field per response,
 with explicit versioned encoding before printing and one framing newline.
-Raw mode requires a separately qualified raw source. Restricted ID/numeric
+Snapshot capture batches those escaped fields into a versioned row per
+physical entity. Raw mode requires a separately qualified raw source. Restricted ID/numeric
 fields may share a validated format. US/RS with tmux `q` is not a safe
 delimiter scheme. More efficient encodings must first pass hostile-byte
 round trips at every required release. Never decode quoting by shell evaluation.

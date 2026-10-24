@@ -27,7 +27,11 @@ defmodule LibTmux.Control.Births do
 
     :ets.insert(table, [
       {:context, births},
-      {:state, %{gate: :open, roles: Map.new(@roles, &{&1, nil})}}
+      {:state,
+       %{
+         gate: if(Lifetime.shutting_down?(lifetime), do: :closed, else: :open),
+         roles: Map.new(@roles, &{&1, nil})
+       }}
     ])
 
     births
@@ -78,7 +82,7 @@ defmodule LibTmux.Control.Births do
     [{:state, current}] = :ets.lookup(births.table, :state)
 
     cond do
-      current.gate == :closed ->
+      current.gate == :closed or Lifetime.shutting_down?(births.lifetime) ->
         rejected(:startup_closed)
 
       Deadline.remaining(births.deadline, options) == 0 ->

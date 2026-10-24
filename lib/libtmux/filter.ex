@@ -49,6 +49,8 @@ defmodule LibTmux.Filter do
   An existing filter retains its constructor's validation when no new limits
   are supplied. Explicit limits check the normalized tree directly, without
   expanding it into synthetic input syntax.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
   """
   @spec new(Schema.entity_selector(), input(), [limit_option()]) ::
           {:ok, t()} | {:error, Error.t()}
@@ -93,7 +95,11 @@ defmodule LibTmux.Filter do
     end
   end
 
-  @doc "Constructs a filter or raises its structured validation error."
+  @doc """
+  Constructs a filter or raises its structured validation error.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec new!(Schema.entity_selector(), input(), [limit_option()]) :: t()
   def new!(entity, criteria, options \\ []) do
     case new(entity, criteria, options) do
@@ -102,7 +108,11 @@ defmodule LibTmux.Filter do
     end
   end
 
-  @doc "Prepares a local unary predicate after validating captured coverage, including empty domains."
+  @doc """
+  Prepares a local unary predicate after validating captured coverage, including empty domains.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec to_predicate(t(), [{:snapshot, LibTmux.Snapshot.t()}]) ::
           (Schema.observation() -> boolean())
   def to_predicate(%__MODULE__{} = filter, options) do
@@ -110,19 +120,31 @@ defmodule LibTmux.Filter do
     LibTmux.Filter.Evaluator.prepare(filter, Keyword.fetch!(options, :snapshot))
   end
 
-  @doc "Decodes a whitelisted versioned map; raw JSON must use from_json to retain duplicate keys."
+  @doc """
+  Decodes a whitelisted versioned map; raw JSON must use from_json to retain duplicate keys.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec from_wire(Schema.entity_selector(), term(), [limit_option()]) ::
           {:ok, t()} | {:error, Error.t()}
   def from_wire(entity, payload, options \\ []),
     do: LibTmux.Filter.Wire.decode(entity, payload, options)
 
-  @doc "Decodes bounded JSON, rejecting duplicate object keys and trailing data."
+  @doc """
+  Decodes bounded JSON, rejecting duplicate object keys and trailing data.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec from_json(Schema.entity_selector(), binary(), [limit_option()]) ::
           {:ok, t()} | {:error, Error.t()}
   def from_json(entity, json, options \\ []),
     do: LibTmux.Filter.Wire.decode_json(entity, json, options)
 
-  @doc "Returns the explicit versioned string-keyed wire representation."
+  @doc """
+  Returns the explicit versioned string-keyed wire representation.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec to_wire(t()) :: LibTmux.Wire.object()
   def to_wire(%__MODULE__{} = filter), do: LibTmux.Filter.Wire.encode(new!(filter.entity, filter))
 

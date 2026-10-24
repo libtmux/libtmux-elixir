@@ -1,9 +1,30 @@
 defmodule LibTmux.Control.SupervisorStart do
   @moduledoc false
   @behaviour Supervisor
-  alias LibTmux.Deadline
+  alias LibTmux.{Deadline, Error}
+  @compiled_otp System.build_info().otp_release
 
   def start_link(callback, argument, %Deadline{} = deadline) do
+    with :ok <- compatibility(:erlang.system_info(:otp_release), @compiled_otp),
+         do: start_compatible(callback, argument, deadline)
+  end
+
+  # This guards the internal init shape's OTP line, not patch qualification.
+  # Capture the build's Elixir OTP identity before the startup/cleanup path.
+  # Reference/tracking checks also qualify the running Elixir and patch minima.
+  def compatibility(~c"29", "29"), do: :ok
+
+  def compatibility(runtime, compiled) do
+    {:error,
+     %Error{
+       kind: :unsupported_runtime,
+       phase: :connect,
+       certainty: :no_write,
+       details: %{runtime_otp: runtime, compiled_otp: compiled, expected_otp: "29"}
+     }}
+  end
+
+  defp start_compatible(callback, argument, deadline) do
     case Deadline.remaining(deadline) do
       0 ->
         {:error, :timeout}
@@ -13,7 +34,7 @@ defmodule LibTmux.Control.SupervisorStart do
         token = make_ref()
 
         try do
-          # OTP's Supervisor entry uses this callback shape without a timeout.
+          # OTP-29.1.2 supervisor:start_link/2 uses this shape without a timeout.
           # proc_lib still awaits actual Root DOWN after its init timer expires.
           result =
             :gen_server.start_link(

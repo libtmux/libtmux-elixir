@@ -193,7 +193,13 @@ defmodule LibTmux.Control.Manager do
             dead: MapSet.new()
         }
 
-        request(state, :epoch, state.host, {:start_child, EpochSupervisor.child_spec(births)})
+        if Lifetime.shutting_down?(state.lifetime),
+          do: close(state, :connection_closed),
+          else:
+            request(state, :epoch, state.host, {:start_child, EpochSupervisor.child_spec(births)})
+
+      {:error, %{kind: :connection_closed}} ->
+        fail_waiters(state, :connection_closed)
 
       {:error, error} ->
         fail_waiters(%{state | phase: :unknown, unclean: true}, error.kind)
@@ -569,6 +575,9 @@ defmodule LibTmux.Control.Manager do
       {ticket, {:connection, :retired}}, state ->
         watch_retired(state, ticket)
 
+      {ticket, {:connection, :shutdown}}, state ->
+        watch_shutdown(observe_gate(state), ticket)
+
       {ticket, {:reconnect, nil}}, state ->
         reconnect(state, ticket)
 
@@ -586,15 +595,19 @@ defmodule LibTmux.Control.Manager do
     observed = Lifetime.status(state.lifetime)
     allowed = if phase == :starting, do: [:starting, :ready], else: [:ready]
 
-    if observed.generation == state.generation and observed.phase in allowed,
-      do: state,
-      else: close(state, :closure_requested)
+    if observed.generation == state.generation and observed.phase in allowed and
+         not Lifetime.shutting_down?(state.lifetime),
+       do: state,
+       else: close(state, :closure_requested)
   end
 
   defp observe_gate(state), do: state
 
   defp reconnect(state, ticket) do
     cond do
+      Lifetime.shutting_down?(state.lifetime) ->
+        finish(state, ticket, failure(:connection_closed))
+
       state.unclean or state.metadata_fault ->
         finish(state, ticket, failure(:cleanup_unknown))
 
@@ -644,6 +657,16 @@ defmodule LibTmux.Control.Manager do
     cond do
       state.unclean or state.metadata_fault -> finish(state, ticket, failure(:cleanup_unknown))
       ticket.epoch != state.epoch -> finish(state, ticket, failure(:stale_epoch))
+      state.phase == :closed -> finish(state, ticket, :ok)
+      state.phase == :closing -> %{state | retiring: [ticket | state.retiring]}
+      true -> finish(state, ticket, failure(:not_closing))
+    end
+  end
+
+  defp watch_shutdown(state, ticket) do
+    cond do
+      not Lifetime.shutting_down?(state.lifetime) -> finish(state, ticket, failure(:not_closing))
+      state.unclean or state.metadata_fault -> finish(state, ticket, failure(:cleanup_unknown))
       state.phase == :closed -> finish(state, ticket, :ok)
       state.phase == :closing -> %{state | retiring: [ticket | state.retiring]}
       true -> finish(state, ticket, failure(:not_closing))

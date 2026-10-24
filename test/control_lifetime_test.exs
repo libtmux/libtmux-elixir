@@ -3,6 +3,53 @@ defmodule LibTmux.ControlLifetimeTest do
   alias LibTmux.Control.Lifetime
   alias LibTmux.Error
 
+  test "permanent shutdown preserves retirement evidence and wins against a racing epoch reservation" do
+    for _ <- 1..32 do
+      lifetime = Lifetime.new()
+      observer = self()
+      token = make_ref()
+
+      workers =
+        for action <- [&Lifetime.begin_epoch/1, &Lifetime.shutdown/1] do
+          spawn_monitor(fn ->
+            receive do
+              ^token -> send(observer, {token, action.(lifetime)})
+            end
+          end)
+        end
+
+      for {pid, _} <- workers, do: send(pid, token)
+      for _ <- workers, do: assert_receive({^token, _}, 100)
+      for {pid, ref} <- workers, do: assert_receive({:DOWN, ^ref, :process, ^pid, :normal}, 100)
+      assert Lifetime.shutting_down?(lifetime)
+      refute Lifetime.allows_write?(lifetime, 1)
+      assert {:error, %{kind: :connection_closed}} = Lifetime.begin_epoch(lifetime)
+
+      case Lifetime.status(lifetime) do
+        %{phase: :starting, generation: generation} ->
+          assert {:error, %{kind: :connection_closed}} = Lifetime.ready(lifetime, generation)
+          assert :ok = Lifetime.revoke(lifetime, generation)
+          assert :ok = Lifetime.retired(lifetime, generation)
+
+        %{phase: :retired} ->
+          :ok
+      end
+
+      assert %{phase: :retired} = Lifetime.status(lifetime)
+      assert :ok = Lifetime.shutdown(lifetime)
+      assert {:error, %{kind: :connection_closed}} = Lifetime.begin_epoch(lifetime)
+    end
+
+    lifetime = Lifetime.new()
+    {:ok, generation} = Lifetime.begin_epoch(lifetime)
+    :ok = Lifetime.ready(lifetime, generation)
+    :ok = Lifetime.shutdown(lifetime)
+    :ok = Lifetime.abandon(lifetime, generation)
+    assert %{phase: :unknown} = Lifetime.status(lifetime)
+    assert Lifetime.shutting_down?(lifetime)
+    assert {:error, %{kind: :cleanup_unknown}} = Lifetime.retired(lifetime, generation)
+  end
+
   test "failed initial startup cannot reopen a fresh or first generation" do
     fresh = Lifetime.new()
     assert :ok = Lifetime.abandon_initial(fresh)

@@ -3,6 +3,39 @@ defmodule LibTmux.ControlTest do
   alias LibTmux.{Control, Deadline, Error, Operation, Ref}
   alias LibTmux.Control.{Admission, Births, Inbox, Lifetime, Records, Request, Waiters}
 
+  test "managed execution distinguishes pre-admission refusal from lost admitted context" do
+    {control, endpoint, _view} = connection()
+
+    assert {:error, %Error{kind: :invalid_command, certainty: :no_write}} =
+             Control.execute(control, Request.field("invalid{"))
+
+    observer = self()
+
+    {caller, monitor} =
+      spawn_monitor(fn ->
+        send(observer, {:execution, Control.execute(control, Request.field("pid"), timeout: 500)})
+      end)
+
+    assert_receive {:submit, _, lease, _}
+    assert lease.mode == :managed
+    table = endpoint.waiter_inbox.table
+    assert_receive {Inbox, :wake, ^table, _}
+    assert {:ok, [{ticket, {:collect, ^lease}}]} = Inbox.take(endpoint.waiter_inbox)
+    :ets.delete(endpoint.records.table)
+    :ok = Inbox.finish(endpoint.waiter_inbox, ticket, {:error, %Error{kind: :connection_lost}})
+
+    assert_receive {:execution,
+                    {:error,
+                     %LibTmux.Control.ExecutionError{
+                       context: :lost,
+                       operation: operation,
+                       error: %Error{kind: :connection_lost, certainty: :unknown}
+                     }}}
+
+    assert operation.lease == lease
+    assert_receive {:DOWN, ^monitor, :process, ^caller, :normal}
+  end
+
   @tag lifecycle_api: true
   test "awaited close reports overload while reserved closure still takes effect" do
     {control, endpoint, _view} = connection()

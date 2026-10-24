@@ -54,7 +54,11 @@ defmodule LibTmux.Transport.OneShot do
   @cleanup_ms 750
   @chunk_bytes 8192
 
-  @doc "Runs argv without a shell, retaining exit status separately from stdout and stderr."
+  @doc """
+  Runs argv without a shell, retaining exit status separately from stdout and stderr.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec run(binary(), [binary()], [option()]) :: {:ok, result()} | {:error, Error.t()}
   def run(executable, arguments, options \\ []) do
     if length(options) != map_size(Map.new(options)),
@@ -87,7 +91,11 @@ defmodule LibTmux.Transport.OneShot do
       else: {:error, %Error{kind: :unsupported_platform, phase: :spawn, certainty: :no_write}}
   end
 
-  @doc "Runs argv, raising the same structured transport error on failure."
+  @doc """
+  Runs argv, raising the same structured transport error on failure.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec run!(binary(), [binary()], [option()]) :: result()
   def run!(executable, arguments, options \\ []) do
     case run(executable, arguments, options) do

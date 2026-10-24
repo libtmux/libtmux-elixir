@@ -22,7 +22,11 @@ defmodule LibTmux.Selection do
   @typedoc "A selection without a concrete observation type; use `t:t/1` to preserve item types."
   @type t :: t(Schema.observation())
 
-  @doc "Materializes the observed items of an entity without I/O."
+  @doc """
+  Materializes the observed items of an entity without I/O.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec new(Snapshot.t(), :session | LibTmux.Session) :: t(LibTmux.Session.t())
   @spec new(Snapshot.t(), :window | LibTmux.Window) :: t(LibTmux.Window.t())
   @spec new(Snapshot.t(), :pane | LibTmux.Pane) :: t(LibTmux.Pane.t())
@@ -40,17 +44,29 @@ defmodule LibTmux.Selection do
     }
   end
 
-  @doc "Returns cached materialized size in constant time."
+  @doc """
+  Returns cached materialized size in constant time.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec size(t()) :: non_neg_integer()
   def size(%__MODULE__{count: count}), do: count
 
-  @doc "Filters validated data while retaining order and captured graph context."
+  @doc """
+  Filters validated data while retaining order and captured graph context.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec where(t(item), Filter.input()) :: t(item) when item: Schema.observation()
   def where(%__MODULE__{} = selection, criteria) do
     filter(selection, predicate(selection, criteria))
   end
 
-  @doc "Filters with a unary local function; normal predicate exceptions propagate."
+  @doc """
+  Filters with a unary local function; normal predicate exceptions propagate.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec filter(t(item), (item -> as_boolean(term()))) :: t(item)
         when item: Schema.observation()
   def filter(%__MODULE__{} = selection, predicate) when is_function(predicate, 1) do
@@ -61,34 +77,62 @@ defmodule LibTmux.Selection do
   def filter(%__MODULE__{}, _predicate),
     do: raise(ArgumentError, "filter requires a unary function")
 
-  @doc "Checks native identity separately from Enumerable element membership."
+  @doc """
+  Checks native identity separately from Enumerable element membership.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec member_id?(t(), LibTmux.Ref.id()) :: boolean()
   def member_id?(selection, id), do: Enum.any?(selection.items, &(&1.id == id))
 
-  @doc "Returns exactly one match, or a structured cardinality error; stops at the second match."
+  @doc """
+  Returns exactly one match, or a structured cardinality error; stops at the second match.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec one(t(item), Filter.input()) :: {:ok, item} | {:error, Error.t()}
         when item: Schema.observation()
   def one(selection, criteria \\ []), do: cardinality(selection, criteria, false)
 
-  @doc "Returns exactly one match or raises its cardinality error."
+  @doc """
+  Returns exactly one match or raises its cardinality error.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec one!(t(item), Filter.input()) :: item when item: Schema.observation()
   def one!(selection, criteria \\ []), do: unwrap(one(selection, criteria))
 
-  @doc "Returns one match or nil; a second match remains an error."
+  @doc """
+  Returns one match or nil; a second match remains an error.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec one_or_nil(t(item), Filter.input()) :: {:ok, item | nil} | {:error, Error.t()}
         when item: Schema.observation()
   def one_or_nil(selection, criteria \\ []), do: cardinality(selection, criteria, true)
 
-  @doc "Returns one match or nil, raising on multiple matches."
+  @doc """
+  Returns one match or nil, raising on multiple matches.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec one_or_nil!(t(item), Filter.input()) :: item | nil when item: Schema.observation()
   def one_or_nil!(selection, criteria \\ []), do: unwrap(one_or_nil(selection, criteria))
 
-  @doc "Returns true on the first matching observed item."
+  @doc """
+  Returns true on the first matching observed item.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec exists?(t(), Filter.input()) :: boolean()
   def exists?(selection, criteria \\ []),
     do: Enum.any?(selection.items, predicate(selection, criteria))
 
-  @doc "Counts observed matching items; use size/1 for cached unfiltered size."
+  @doc """
+  Counts observed matching items; use size/1 for cached unfiltered size.
+
+  See the [worked example](api-examples.html#local-graph-and-filtering).
+  """
   @spec count(t(), Filter.input()) :: non_neg_integer()
   def count(selection, criteria \\ []),
     do: Enum.count(selection.items, predicate(selection, criteria))

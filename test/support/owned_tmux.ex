@@ -19,8 +19,7 @@ defmodule LibTmux.Test.OwnedTmux do
         :binary,
         :exit_status,
         {:line, 65_536},
-        {:args,
-         [Path.join(__DIR__, "owned_tmux.py"), "--watch" | Enum.map(pids, &Integer.to_string/1)]}
+        {:args, [script(), "--watch" | Enum.map(pids, &Integer.to_string/1)]}
       ])
 
     %{"kind" => "watching"} = receive_json(port)
@@ -47,7 +46,7 @@ defmodule LibTmux.Test.OwnedTmux do
         :binary,
         :exit_status,
         {:line, 65_536},
-        {:args, [Path.join(__DIR__, "owned_tmux.py"), executable]},
+        {:args, [script(), executable]},
         {:env, [{~c"TMUX", false}, {~c"TMUX_PANE", false}]}
       ])
 
@@ -138,4 +137,6 @@ defmodule LibTmux.Test.OwnedTmux do
     System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux") ||
       raise "real tmux tests require an explicit tmux binary or tmux on PATH"
   end
+
+  defp script, do: Path.expand("../../examples/owned_server.py", __DIR__)
 end

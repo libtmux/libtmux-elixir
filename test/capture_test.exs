@@ -1,12 +1,80 @@
 defmodule LibTmux.CaptureTest do
   use ExUnit.Case, async: true
 
-  alias LibTmux.{Error, Format, Selection, Server, Snapshot}
+  alias LibTmux.{Command, Error, Format, Selection, Server, Snapshot}
   alias LibTmux.Test.OwnedTmux
 
   @moduletag :integration
   @moduletag reason:
                "Captures linked topology and qualifies bounded reconciliation on an owned tmux server"
+
+  test "capture batches text fields while counting every tmux command" do
+    fixture = start_supervised!({OwnedTmux, []})
+    server = fixture |> OwnedTmux.info() |> server()
+    assert {:ok, snapshot} = Server.snapshot(server, max_commands: 13)
+    assert map_size(snapshot.panes) == 1
+
+    assert {:error, %Error{kind: :resource_limit, details: %{reason: :commands}}} =
+             Server.snapshot(server, max_commands: 12)
+
+    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+             OwnedTmux.close(fixture)
+  end
+
+  test "default budgets capture ten windows and 200 panes with owned cleanup" do
+    fixture = start_supervised!({OwnedTmux, []})
+    info = OwnedTmux.info(fixture)
+    script = Path.join(Path.dirname(info.socket), "panes.conf")
+
+    for window <- 0..9 do
+      if window > 0 do
+        assert {_, 0} = OwnedTmux.command(fixture, ["new-window", "-d", "/bin/cat", "--"])
+      end
+
+      target = "@#{window}"
+      assert {_, 0} = OwnedTmux.command(fixture, ["resize-window", "-t", target, "-y", "200"])
+      split = Command.new("split-window", ["-d", "-t", target, "-l", "1", "/bin/cat", "--"])
+      File.write!(script, List.duplicate(Command.render(split) <> "\n", 19))
+      assert {_, 0} = OwnedTmux.command(fixture, ["source-file", script])
+    end
+
+    assert {pid_text, 0} = OwnedTmux.command(fixture, ["list-panes", "-a", "-F", ~S"#{pane_pid}"])
+    pids = pid_text |> String.split() |> Enum.map(&String.to_integer/1)
+    assert length(pids) == 200
+
+    try do
+      assert {:ok, snapshot} = Server.snapshot(server(info))
+      assert map_size(snapshot.sessions) == 1
+      assert map_size(snapshot.windows) == 10
+      assert map_size(snapshot.panes) == 200
+    after
+      watch = OwnedTmux.watch_processes([info.server_pid, info.helper_pid | pids])
+
+      assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+               OwnedTmux.close(fixture)
+
+      :ok = OwnedTmux.await_exit(watch)
+    end
+  end
+
+  test "large fields stay bounded by the complete encoded response" do
+    fixture = start_supervised!({OwnedTmux, []})
+    info = OwnedTmux.info(fixture)
+    name = String.duplicate("x", 32_000)
+    script = Path.join(Path.dirname(info.socket), "large-name.conf")
+    command = Command.new("rename-window", ["-t", "@0", name])
+    File.write!(script, Command.render(command, max_bytes: 131_072) <> "\n")
+    assert {_, 0} = OwnedTmux.command(fixture, ["source-file", script])
+    server = server(info)
+    assert {:ok, snapshot} = Server.snapshot(server)
+    assert snapshot.windows["@0"].name == name
+
+    assert {:error, %Error{kind: :resource_limit}} =
+             Server.snapshot(server, max_response_bytes: 32_010)
+
+    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+             OwnedTmux.close(fixture)
+  end
 
   test "capture preserves physical identity, membership context and hostile text without attachment" do
     fixture = start_supervised!({OwnedTmux, []})

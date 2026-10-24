@@ -14,7 +14,11 @@ defmodule LibTmux.Deadline do
   @typedoc "An optional node-local monotonic clock sample in milliseconds, used instead of sampling the current clock."
   @type option :: {:now, integer()}
 
-  @doc "Creates a deadline from a positive millisecond budget."
+  @doc """
+  Creates a deadline from a positive millisecond budget.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec new(pos_integer(), [option()]) :: t()
   def new(milliseconds, options \\ [])
 
@@ -26,7 +30,11 @@ defmodule LibTmux.Deadline do
     raise ArgumentError, "timeout must be a positive integer in milliseconds"
   end
 
-  @doc "Returns the remaining milliseconds, clamped to zero after expiry."
+  @doc """
+  Returns the remaining milliseconds, clamped to zero after expiry.
+
+  See the [worked example](api-examples.html#encoding-and-protocol).
+  """
   @spec remaining(t(), [option()]) :: non_neg_integer()
   def remaining(%__MODULE__{expires_at: expires_at}, options \\ []) do
     max(expires_at - now(options), 0)

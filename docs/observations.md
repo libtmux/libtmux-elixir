@@ -15,6 +15,11 @@ These functions perform no I/O. `Snapshot.sessions/1`, `windows/1`, `panes/1`,
 `window_links/1` and `clients/1` return materialized Enumerable selections.
 See [filtering](filtering.md) for local predicates and portable criteria.
 
+Direct traversal validates the requested source. Looking up one session's
+active window does not fail because another session has ambiguous active
+links. Relationship filters validate their entire captured source domain
+before iteration, even when the selection is empty.
+
 Sessions, physical windows, panes and clients have separate maps. A pane
 belongs to one physical window. `WindowLink` records session membership,
 window index and active state. Its key includes session ID, index and window

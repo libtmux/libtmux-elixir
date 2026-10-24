@@ -118,6 +118,59 @@ defmodule LibTmux.SnapshotTest do
     end
   end
 
+  test "direct relation lookup isolates ambiguity while whole-domain validation retains it" do
+    rows =
+      Map.update!(graph(), :window_link, fn links ->
+        [%{session_id: "$10", window_id: "@4", index: 8, active: true} | links]
+      end)
+
+    assert {:ok, snapshot} = build(rows)
+    assert %{id: "@4"} = Snapshot.related(snapshot, :session, "$2", :active_window)
+
+    for lookup <- [
+          fn -> Snapshot.related(snapshot, :session, "$10", :active_window) end,
+          fn -> Snapshot.require_relation!(snapshot, :session, :active_window) end,
+          fn ->
+            snapshot
+            |> Snapshot.sessions()
+            |> LibTmux.Selection.filter(fn _ -> false end)
+            |> LibTmux.Selection.where(active_window: [is: nil])
+          end
+        ] do
+      error = assert_raise Error, lookup
+      assert error.kind == :ambiguous_relation
+      assert error.path == [:session, "$10", :active_window]
+    end
+
+    error =
+      assert_raise Error, fn ->
+        Snapshot.related(snapshot, :session, "$99", :active_window)
+      end
+
+    assert error.kind == :relation_not_loaded
+    assert error.path == [:session, :active_window]
+  end
+
+  test "session panes preserve numeric order across physical windows and repeated links" do
+    rows =
+      graph()
+      |> Map.update!(:window, &[%{id: "@1", name: "other"} | &1])
+      |> Map.update!(:pane, fn panes ->
+        [%{id: "%1", window_id: "@1", width: 120} | panes]
+      end)
+      |> Map.update!(:window_link, fn links ->
+        [%{session_id: "$2", window_id: "@1", index: 9, active: false} | links]
+      end)
+
+    assert {:ok, snapshot} = build(rows)
+
+    assert Enum.map(Snapshot.related(snapshot, :session, "$2", :panes), & &1.id) == [
+             "%1",
+             "%2",
+             "%10"
+           ]
+  end
+
   test "schema rejects unknown fields and native IDs before graph construction" do
     assert Schema.field(:pane, :current_command).wire == "currentCommand"
     assert {:error, %Error{kind: :invalid_field}} = build(%{pane: [%{id: "%2", mystery: 1}]})

@@ -17,7 +17,10 @@ defmodule LibTmux.Control.Exchange do
           end
         after
           try do
-            Inbox.close(inbox, ticket)
+            case Inbox.close(inbox, ticket) do
+              :ok -> Inbox.notify(inbox)
+              error -> error
+            end
           after
             Reply.close(ticket.reply, ticket.token)
           end

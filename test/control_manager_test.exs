@@ -16,6 +16,26 @@ defmodule LibTmux.ControlManagerTest do
   alias LibTmux.Test.NativeDriver
   @moduletag :capture_log
 
+  test "permanent shutdown retires its current epoch and rejects reconnect without poisoning proof" do
+    {_host, view, lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    initial = endpoint(view)
+    connecting = metadata(initial, initial.epoch, {:connection, :ready})
+    peer = bootstrap(view)
+    ready = result(initial, connecting)
+    :ok = Lifetime.shutdown(lifetime)
+    closing = metadata(ready, make_ref(), {:connection, :shutdown})
+    reconnecting = metadata(ready, ready.epoch, {:reconnect, nil})
+    assert {:error, %{kind: :connection_closed}} = result(ready, reconnecting)
+    retire(peer)
+    assert :ok = result(ready, closing)
+    assert %{phase: :closed, unclean: false} = :sys.get_state(manager, 500)
+    assert %{phase: :retired, generation: generation} = Lifetime.status(lifetime)
+    assert generation == ready.generation
+    assert {:error, %{kind: :connection_closed}} = Lifetime.begin_epoch(lifetime)
+    refute_receive {:driver_open, _, _}, 0
+  end
+
   @tag :receive_buffer
   test "draining arms the original cleanup cutoff without settling waiters or restarting on close" do
     {_host, view, lifetime, options} = setup_manager()

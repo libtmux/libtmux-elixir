@@ -10,11 +10,15 @@ defmodule LibTmux.Capture do
   Defaults: 1024 contextual entity rows, 512 commands, 8 MiB total response
   bytes, 64 KiB per response and 5000 ms. Exceeding a ceiling returns an
   error, never a partial success. Linked rows count against the work limit.
+  Free-form fields share one encoded response per physical entity, including
+  its framing overhead. One successful attempt uses `10 + S + W + P`
+  commands for S sessions, W physical windows and P panes.
   Capture adds no control attachment. Hooks configured on list commands can
   still have effects; retries do not replay application mutations.
   """
 
   alias LibTmux.{Codec, Command, Deadline, Error, Format, Schema, Server, Snapshot}
+  alias LibTmux.Capture.Row
 
   @typedoc """
   Capture-wide budgets shared by all attempts and reads.
@@ -45,6 +49,8 @@ defmodule LibTmux.Capture do
 
   See `t:option/0` for the composed work, response and remaining-deadline
   constraints inherited from `LibTmux.Transport.OneShot.run/3`.
+
+  See the [worked example](first-task.html).
   """
   @spec fetch(Server.t(), [option()]) :: {:ok, Snapshot.t()} | {:error, Error.t()}
   def fetch(%Server{} = server, options \\ []) do
@@ -221,12 +227,12 @@ defmodule LibTmux.Capture do
     end)
   end
 
-  defp decode(state, output, metadata, entity, field) do
+  defp decode(state, output, metadata, entity, field, encoding \\ :escaped_v1) do
     {type, options} =
       case metadata.type do
-        {:id, :client} -> {:string, [encoding: :escaped_v1]}
+        {:id, :client} -> {:string, [encoding: encoding]}
         {:id, _} -> {:string, []}
-        :string -> {:string, [encoding: :escaped_v1]}
+        :string -> {:string, [encoding: encoding]}
         :nullable_integer -> {:integer, [min: 0, max: 2_147_483_647]}
         :integer -> {:integer, [min: 0, max: 2_147_483_647]}
         :boolean -> {:boolean, []}
@@ -259,17 +265,36 @@ defmodule LibTmux.Capture do
 
   defp text_fields(rows, state) do
     Enum.reduce(@strings, {rows, state}, fn {entity, fields}, {rows, state} ->
+      expression = Row.format(Enum.map(fields, &Schema.field(entity, &1).format))
+
       {values, state} =
         rows[entity]
         |> Enum.uniq_by(& &1.id)
         |> Enum.map_reduce(state, fn row, state ->
-          Enum.reduce(fields, {row, state}, fn field, {row, state} ->
-            {output, state} =
-              read(state, "display-message", ["-p", "-t", row.id, format(entity, field)])
+          {output, state} = read(state, "display-message", ["-p", "-t", row.id, expression])
 
-            value = decode(state, output, Schema.field(entity, field), entity, field)
-            {Map.put(row, field, value), state}
-          end)
+          case Row.decode(output, length(fields), max_bytes: state.options.max_response_bytes) do
+            {:ok, values} ->
+              row =
+                Enum.zip(fields, values)
+                |> Enum.reduce(row, fn {field, value}, row ->
+                  value =
+                    decode(state, value <> "\n", Schema.field(entity, field), entity, field, :raw)
+
+                  Map.put(row, field, value)
+                end)
+
+              {row, state}
+
+            {:error, error} ->
+              path =
+                case error.path do
+                  [index] -> [entity, Enum.at(fields, index)]
+                  _ -> [entity]
+                end
+
+              throw({:capture_error, %{error | path: path}, state})
+          end
         end)
 
       # Merge free-form fields into every contextual row so physical conflicts remain visible.

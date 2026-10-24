@@ -1,7 +1,8 @@
 # Command and field encoding
 
 `LibTmux.Command` is a value. Constructing it or rendering its bytes performs
-no I/O. The one-shot and control transports remain under implementation.
+no I/O. Both one-shot execution and the qualified persistent control lane
+use these encoders.
 
 ## Separate parsers
 
@@ -9,7 +10,7 @@ no I/O. The one-shot and control transports remain under implementation.
 from tmux's argument-vector parser. It does not invoke a shell.
 `Command.render/2` produces one tmux command line with every argument byte
 octal-escaped inside double quotes. The result contains no raw newline or
-carriage return. It excludes the framing newline a future writer must add.
+carriage return. It excludes the framing newline the control writer adds.
 Both renderers validate the encoded byte budget before dispatch.
 
 Command quoting does not protect a value that a command interprets as a
@@ -24,8 +25,7 @@ format flags; arbitrary commands have different expansion behavior.
 backslashes first, then dollars and ASCII control bytes, using fixed tmux
 substitutions. `LibTmux.Codec.decode_field/3` with `encoding: :escaped_v1`
 requires that marker, removes one framing newline and decodes escapes once.
-The conservative format performs several substitutions; it makes no
-zero-copy or optimized multi-field claim.
+The conservative field format performs several substitutions.
 
 This encoding avoids an ambiguity in tmux 3.4: its command print path
 escapes some bytes while preserving literal backslashes. Removing arbitrary
@@ -38,6 +38,28 @@ must independently guarantee unmodified bytes. It must not be applied to
 an unqualified tmux print path. Text decoding requires UTF-8; `:bytes`
 retains arbitrary bytes. Integer parsing consumes the whole value and can
 enforce a range; Boolean parsing accepts only `0` or `1`.
+
+## Capture rows
+
+Snapshot capture batches each physical entity's free-form fields in one
+response. A row starts with `r1:N`, followed by N tab-separated `v1:` fields
+and one final newline. Each field uses the same conservative encoder above:
+tabs and newlines inside values become escapes, so they cannot become row
+delimiters. The decoder requires the expected version and field count,
+rejects malformed or truncated data, then validates each decoded field
+against its schema. Invalid UTF-8 remains an error for text fields.
+
+The response ceiling applies to the complete encoded row, including markers
+and separators. Multiple fields that each fit the ceiling individually can
+exceed it together; capture returns a resource-limit error, with no partial
+graph or alternate decoder. The default ceiling remains 64 KiB per response.
+
+One successful attempt uses `10 + S + W + P` commands, where S, W and P are
+the physical session, window and pane counts. Each command still launches
+one owned helper and one tmux client. Linked windows share their text read.
+The two topology scans, incarnation checks, contextual-row accounting and
+capture-wide deadline and byte budgets remain in force. This encoding does
+not qualify arbitrary pane output or hook output for a shared control lane.
 
 ## Bounded framing
 

@@ -1,14 +1,17 @@
-# Planned design
+# Design and remaining work
 
-These are implementation constraints for the unpublished scaffold. Module
-names describe proposed responsibilities; no tmux API exists yet.
+The core implements immutable observations, indexed filters, bounded capture,
+one-shot execution, persistent control and explicit domain actions. The new
+managed/action helpers are unreleased. This page preserves constraints for
+that implementation and for the remaining Query, Tracker, planner, workspace
+and MCP work; it is not a claim that those planned components exist.
 The [implementation contracts](implementation.md) map those responsibilities
 to package boundaries and qualification gates.
 
 ## Values and explicit observation
 
 Use Elixir `1.20.x` (at least `1.20.4`) and OTP `29.x` as the development
-toolchain, and tmux `3.3` as the proposed compatibility floor. Keep the core
+toolchain, and tmux `3.3` as the compatibility floor. Keep the core
 free of third-party runtime dependencies. Use
 [standard-library JSON][elixir-json] and OTP processes where their contracts
 fit; development dependencies are separate.
@@ -16,13 +19,13 @@ fit; development dependencies are separate.
 The initial declared OTP support minimum is `29.1.2`; the floating
 development selector does not establish support for older OTP 29 releases.
 
-| Responsibility | Planned contract |
+| Responsibility | Status and contract |
 | --- | --- |
-| Snapshot | Immutable graph, capture interval, server identity, and coverage |
-| Selection | Ordered materialized values implementing `Enumerable`; no hidden I/O |
-| Filter | Validated portable criteria; native Elixir predicates remain local code |
-| Query | Explicit source plan; execution occurs at fetch, not enumeration |
-| Tracker | Optional supervised owner of retained snapshots with visible status and bounded refresh |
+| Snapshot | Implemented: immutable graph, capture interval, server identity, and coverage |
+| Selection | Implemented: ordered materialized values implementing `Enumerable`; no hidden I/O |
+| Filter | Implemented: validated portable criteria; native Elixir predicates remain local code |
+| Query | Planned: explicit source plan; execution occurs at fetch, not enumeration |
+| Tracker | Planned: optional supervised owner of retained snapshots with visible status and bounded refresh |
 
 Model physical windows separately from session window links. Pane identity
 belongs to a physical window; session-relative index and active state belong
@@ -49,6 +52,7 @@ identity to a qualified server connection; disconnects and cancellation can
 leave a mutation's result uncertain. Never silently replay such a mutation
 or fall back to a positional target.
 
+The planned batch/group/dependency surfaces retain these distinctions.
 An independent batch preserves separate command results. A semicolon group
 [stops at a runtime error][command-groups], leaving an applied prefix and
 skipping its suffix.
@@ -59,7 +63,7 @@ observation of the result are separate events.
 
 ## Retained state and output
 
-The optional Tracker reuses Snapshot rather than defining another graph.
+The planned optional Tracker reuses Snapshot rather than defining another graph.
 Retained reads perform no tmux command and report loading, ready, stale, or
 disconnected status. Refresh is explicit and bounded. Updates carry their
 connection epoch so late results cannot modify a replacement connection.
@@ -86,11 +90,12 @@ qualification.
 Implementation must establish parser and quoting behavior, real-tmux
 compatibility, completion and cancellation semantics, bounded resource
 ownership, and package consumption outside the checkout. Documentation must
-use examples that execute those contracts. Current scaffold checks establish
-none of these runtime properties; see the
+use examples that execute those contracts. Current checks exercise implemented
+core behavior, including native retirement and packaged callers; they do not
+qualify planned consumers or unexercised operations. See the
 [contribution guide](../.github/CONTRIBUTING.md) for validation scope.
 
-The tmux links point to the 3.3 source commit, matching the proposed floor.
+The tmux links point to the 3.3 source commit, matching the compatibility floor.
 
 [elixir-json]: https://hexdocs.pm/elixir/1.20.4/JSON.html
 [attachment-counts]: https://github.com/tmux/tmux/blob/87fe00e8b44901240fc22d7120c1b31e4331f6f5/resize.c#L439-L461

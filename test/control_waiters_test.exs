@@ -4,6 +4,145 @@ defmodule LibTmux.ControlWaitersTest do
   alias LibTmux.Control.{Admission, Inbox, Records, Waiters}
   alias LibTmux.Operation.Lifecycle
 
+  test "an expired collector cannot time out a live sibling or prevent explicit forget" do
+    for deadlines <- [[2, 100], [100, 2]] do
+      {records, lease, record} = operation()
+      waiters = Waiters.new(records, 2)
+      tickets = for timeout <- deadlines, do: {timeout, collect_ticket(waiters, lease, timeout)}
+      waiters = Waiters.turn(waiters, now: 1)
+      terminal = complete(record)
+      :ets.insert(records.table, {lease.slot, terminal})
+      waiters = Waiters.turn(waiters, now: 3)
+      assert waiters.active == %{}
+
+      for {timeout, ticket} <- tickets do
+        if timeout == 2 do
+          assert {:ok, {:error, %Error{kind: :timeout}}} = Inbox.result(waiters.inbox, ticket)
+        else
+          result = terminal.life.result
+          assert {:ok, {:ok, ^result}} = Inbox.result(waiters.inbox, ticket)
+        end
+
+        :ok = Inbox.close(waiters.inbox, ticket)
+      end
+
+      assert {:error, %Error{kind: :stale_operation}} = Records.fetch(records, lease)
+    end
+
+    {records, lease, record} = operation()
+    waiters = Waiters.new(records, 1)
+    ticket = collect_ticket(waiters, lease, 2)
+    waiters = Waiters.turn(waiters, now: 1)
+    :ets.insert(records.table, {lease.slot, complete(record)})
+    {waiters, :ok} = Waiters.forget_current(waiters, lease, now: 3)
+    assert {:ok, {:error, %Error{kind: :timeout}}} = Inbox.result(waiters.inbox, ticket)
+    :ok = Inbox.close(waiters.inbox, ticket)
+  end
+
+  test "managed ownership starts at admission and reclaims dead publishers only after retirement" do
+    pool = Admission.new(1)
+    records = Records.new(pool)
+    epoch = make_ref()
+    owner = self()
+
+    {publisher, monitor} =
+      spawn_monitor(fn ->
+        {:ok, lease} =
+          Admission.claim(pool, epoch, owner, Deadline.new(500, now: 0), 5,
+            now: 0,
+            mode: :managed
+          )
+
+        send(owner, {:managed_lease, lease})
+
+        receive do
+          :finish -> :ok
+        end
+      end)
+
+    assert_receive {:managed_lease, lease}
+    assert :ok = Admission.consume(pool, lease, 5)
+    token = make_ref()
+    life = Lifecycle.new(epoch, token, %Deadline{expires_at: lease.expires_at}, 5)
+    {:ok, life, _} = Lifecycle.step(life, {:owner, epoch, token, :dispatch}, now: 1)
+    record = %{lease: lease, token: token, life: life, reply: nil}
+    :ets.insert(records.table, {lease.slot, record})
+    waiters = Waiters.new(records, 1) |> Waiters.turn(now: 1)
+    assert map_size(waiters.publishers) == 1
+    send(publisher, :finish)
+    assert_receive {:DOWN, ^monitor, :process, ^publisher, :normal}
+    waiters = Waiters.turn(waiters, now: 2)
+    assert {:ok, _} = Records.fetch(records, lease)
+    :ets.insert(records.table, {lease.slot, complete(record)})
+    waiters = Waiters.turn(waiters, now: 3)
+    assert {:ok, []} = Admission.entries(pool)
+    assert waiters.publishers == %{}
+    assert waiters.active == %{}
+  end
+
+  test "collection keeps capacity until wire retirement then publishes all accepted copies" do
+    {records, lease, record} = operation()
+    waiters = Waiters.new(records, 3)
+    ordinary = await_ticket(waiters, lease)
+    collectors = for _ <- 1..2, do: collect_ticket(waiters, lease)
+    waiters = Waiters.turn(waiters, now: 1)
+
+    {:ok, life, _} =
+      Lifecycle.step(
+        record.life,
+        {:owner, lease.epoch, record.token, {:reply, :ok, {1, 4, 1}, ["v1:early"]}},
+        now: 2
+      )
+
+    :ets.insert(records.table, {lease.slot, %{record | life: life}})
+    waiters = Waiters.turn(waiters, now: 2)
+    assert {:ok, {:ok, result}} = Inbox.result(waiters.inbox, ordinary)
+    for ticket <- collectors, do: assert(:pending == Inbox.result(waiters.inbox, ticket))
+
+    assert {:error, %Error{kind: :resource_limit}} =
+             Admission.claim(records.pool, lease.epoch, self(), Deadline.new(500, now: 0), 5,
+               now: 2
+             )
+
+    {:ok, life, _} =
+      Lifecycle.step(life, {:owner, lease.epoch, record.token, {:written, 5}}, now: 3)
+
+    {:ok, life, _} = Lifecycle.step(life, {:owner, lease.epoch, record.token, :retire}, now: 3)
+    :ets.insert(records.table, {lease.slot, %{record | life: life}})
+    waiters = Waiters.turn(waiters, now: 3)
+    assert waiters.active == %{}
+    assert {:error, %Error{kind: :stale_operation}} = Records.fetch(records, lease)
+    replacement = claim(records.pool, lease.epoch)
+    assert replacement.generation > lease.generation
+
+    for ticket <- [ordinary | collectors] do
+      assert {:ok, {:ok, ^result}} = Inbox.result(waiters.inbox, ticket)
+      assert :ok = Inbox.close(waiters.inbox, ticket)
+    end
+  end
+
+  test "expired collection preserves the retained record and detached preparation is not readable" do
+    {records, lease, record} = operation()
+    waiters = Waiters.new(records, 1)
+    ticket = collect_ticket(waiters, lease, 2)
+    waiters = Waiters.turn(waiters, now: 1)
+    :ets.insert(records.table, {lease.slot, complete(record)})
+    waiters = Waiters.turn(waiters, now: 3)
+    assert {:ok, {:error, %Error{kind: :timeout}}} = Inbox.result(waiters.inbox, ticket)
+    assert {:ok, _} = Records.fetch(records, lease)
+    assert :ok = Inbox.close(waiters.inbox, ticket)
+    waiters = Waiters.turn(waiters, now: 3)
+    ticket = collect_ticket(waiters, lease, 5)
+    assert {:ok, [{^ticket, _}]} = Inbox.take(waiters.inbox, now: 3)
+    assert {:ok, copy} = Inbox.prepare(waiters.inbox, ticket, {:ok, record.life.result}, now: 4)
+    assert :pending = Inbox.result(waiters.inbox, ticket)
+    assert :ok = Records.forget(records, lease)
+    assert :ok = Inbox.finish_prepared(waiters.inbox, ticket, copy, now: 5)
+    assert {:ok, {:error, %Error{kind: :timeout}}} = Inbox.result(waiters.inbox, ticket)
+    assert {:error, %Error{kind: :stale_operation}} = Records.fetch(records, lease)
+    assert :ok = Inbox.close(waiters.inbox, ticket)
+  end
+
   test "a paused recipient keeps its exact result after record forget and slot reuse" do
     {records, lease, record} = operation()
     waiters = Waiters.new(records, 1)
@@ -203,6 +342,15 @@ defmodule LibTmux.ControlWaitersTest do
   defp await_ticket(waiters, lease, timeout \\ 100) do
     {:ok, ticket} =
       Inbox.publish(waiters.inbox, lease.epoch, Deadline.new(timeout, now: 0), {:await, lease},
+        now: 0
+      )
+
+    ticket
+  end
+
+  defp collect_ticket(waiters, lease, timeout \\ 100) do
+    {:ok, ticket} =
+      Inbox.publish(waiters.inbox, lease.epoch, Deadline.new(timeout, now: 0), {:collect, lease},
         now: 0
       )
 
