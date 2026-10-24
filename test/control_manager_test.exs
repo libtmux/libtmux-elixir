@@ -1,6 +1,6 @@
 defmodule LibTmux.ControlManagerTest do
   use ExUnit.Case, async: true
-  alias LibTmux.{Deadline, Error}
+  alias LibTmux.{Control, Deadline, Error}
 
   alias LibTmux.Control.{
     Admission,
@@ -15,6 +15,53 @@ defmodule LibTmux.ControlManagerTest do
 
   alias LibTmux.Test.NativeDriver
   @moduletag :capture_log
+
+  test "terminal diagnostics retain bounded stderr and reset without changing endpoint identity" do
+    {_host, view, lifetime, options} = setup_manager()
+    manager = start_supervised!({Manager, options})
+    initial = endpoint(view)
+    connecting = metadata(initial, initial.epoch, {:connection, :ready})
+    peer = bootstrap(view)
+    ready = result(initial, connecting)
+    :ets.insert(view, {:context, %{owner: self(), lifetime: lifetime}})
+    {:ok, control} = Control.from_descriptor(%{owner: self(), view: view, lifetime: lifetime})
+    assert {:ok, %{terminal: nil}} = Control.status(control)
+
+    %{guardian: guardian, handle: handle} = peer
+    bytes = :binary.copy(<<0, 255>>, 4096)
+    send(guardian, {handle, {:data, <<?D, 2, bytes::binary>>}})
+    assert_receive {:driver_command, ^guardian, ^handle, <<?R, 2, 8192::16>>}
+    send(guardian, {handle, {:data, <<?D, 2, "overflow">>}})
+    retire(peer)
+    assert :ok = Control.close(control, timeout: 500)
+
+    assert {:ok,
+            %{
+              phase: :retired,
+              terminal: %{reason: :resource_limit, phase: :transport, stderr: ^bytes}
+            }} =
+             Control.status(control)
+
+    assert :ok = Control.request_close(control)
+    assert Map.drop(endpoint(view), [:phase, :births]) == Map.drop(ready, [:phase, :births])
+
+    reconnecting = metadata(ready, ready.epoch, {:reconnect, nil})
+    next_peer = bootstrap(view)
+    fresh = result(ready, reconnecting)
+    {:ok, replacement} = Control.from_descriptor(Map.from_struct(control))
+    assert {:ok, %{terminal: nil}} = Control.status(replacement)
+    assert {:error, %{kind: :stale_connection}} = Control.status(control)
+
+    send(manager, {:guardian, ready.epoch, guardian, {:retired, %{}}})
+    :sys.get_state(manager, 500)
+    assert {:ok, %{terminal: nil}} = Control.status(replacement)
+    assert [{:terminal, _, _, nil}] = :ets.lookup(view, :terminal)
+
+    :ok = Lifetime.revoke(lifetime, fresh.generation)
+    retire(next_peer)
+    assert :ok = Control.close(replacement, timeout: 500)
+    assert {:ok, %{terminal: %{stderr: ""}}} = Control.status(replacement)
+  end
 
   test "permanent shutdown retires its current epoch and rejects reconnect without poisoning proof" do
     {_host, view, lifetime, options} = setup_manager()

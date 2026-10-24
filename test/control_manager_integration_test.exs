@@ -95,10 +95,17 @@ defmodule LibTmux.ControlManagerIntegrationTest do
 
     old = monitor_actors(first)
     :ok = Control.close(control, timeout: 800)
-    assert {:ok, %{phase: :retired}} = Control.status(control)
+
+    assert {:ok,
+            %{
+              phase: :retired,
+              terminal: %{reason: :closure_requested, phase: :transport, stderr: ""}
+            }} =
+             Control.status(control)
+
     {:ok, replacement} = Control.reconnect(control, timeout: 800)
     [{:connection, second}] = :ets.lookup(view, :connection)
-    assert {:ok, %{epoch: epoch, phase: :ready}} = Control.status(replacement)
+    assert {:ok, %{epoch: epoch, phase: :ready, terminal: nil}} = Control.status(replacement)
     assert epoch == second.epoch
     assert second.generation == first.generation + 1
     assert second.epoch != first.epoch

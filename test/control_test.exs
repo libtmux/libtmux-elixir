@@ -3,6 +3,19 @@ defmodule LibTmux.ControlTest do
   alias LibTmux.{Action, Control, Deadline, Error, Operation, Pane, Ref}
   alias LibTmux.Control.{Admission, Births, Inbox, Lifetime, Records, Request, Waiters}
 
+  test "status refuses terminal evidence tagged for another epoch or generation" do
+    {control, endpoint, view} = connection()
+    assert {:ok, %{terminal: :unavailable}} = Control.status(control)
+
+    for {epoch, generation} <- [
+          {make_ref(), endpoint.generation},
+          {endpoint.epoch, endpoint.generation + 1}
+        ] do
+      :ets.insert(view, {:terminal, epoch, generation, %{reason: :old}})
+      assert {:error, %{kind: :stale_connection}} = Control.status(control)
+    end
+  end
+
   test "split results bind only completed creation replies and preserve their evidence" do
     for {outcome, certainty, evidence, lines} <- [
           {:completed, :acknowledged, :command_reply, ["%7"]},
