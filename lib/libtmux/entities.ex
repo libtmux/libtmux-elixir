@@ -19,6 +19,44 @@ defmodule LibTmux.Session do
         }
 
   @doc """
+  Returns a plain list of captured physical windows in first-link order.
+
+  Repeated links to a window contribute it once. For membership indexes use
+  `LibTmux.Snapshot.related/4` with `:window_links`.
+
+  The supplied snapshot owns all returned fields and relationships. Only the
+  session's ID and incarnation are used; its other fields may be older.
+  Invalid or stale identities and missing source/relationship coverage raise
+  `LibTmux.Error`. A covered empty relation returns `[]`. No I/O occurs.
+
+      Session.windows(snapshot, session) |> Enum.map(& &1.name)
+  """
+  @spec windows(LibTmux.Snapshot.t(), t()) :: [LibTmux.Window.t()]
+  def windows(snapshot, session),
+    do: LibTmux.Snapshot.related_observation(snapshot, :session, session, :windows)
+
+  @doc """
+  Returns a plain list of captured physical panes in numeric pane-ID order.
+
+  Linked windows contribute their panes once. Identity, coverage, empty-list
+  and no-I/O behavior follow `windows/2`.
+  """
+  @spec panes(LibTmux.Snapshot.t(), t()) :: [LibTmux.Pane.t()]
+  def panes(snapshot, session),
+    do: LibTmux.Snapshot.related_observation(snapshot, :session, session, :panes)
+
+  @doc """
+  Returns the captured active physical window, or `nil` when none is active.
+
+  Multiple active links raise `LibTmux.Error`, even when they name the same
+  window. Unrelated sessions do not affect this lookup. Identity, coverage
+  and no-I/O behavior follow `windows/2`.
+  """
+  @spec active_window(LibTmux.Snapshot.t(), t()) :: LibTmux.Window.t() | nil
+  def active_window(snapshot, session),
+    do: LibTmux.Snapshot.related_observation(snapshot, :session, session, :active_window)
+
+  @doc """
   Renames an exact session through the selected transport; returns an action result.
 
   Names contain 1..1024 UTF-8 bytes without Unicode control characters (Cc).
@@ -68,6 +106,17 @@ defmodule LibTmux.Window do
           layout: LibTmux.Schema.observed(String.t()),
           zoomed: LibTmux.Schema.observed(boolean())
         }
+
+  @doc """
+  Returns a plain list of captured physical panes in numeric pane-ID order.
+
+  Uses the supplied snapshot and validates the window's ID and incarnation.
+  Identity, coverage, empty-list and no-I/O behavior follow
+  `LibTmux.Session.windows/2`.
+  """
+  @spec panes(LibTmux.Snapshot.t(), t()) :: [LibTmux.Pane.t()]
+  def panes(snapshot, window),
+    do: LibTmux.Snapshot.related_observation(snapshot, :window, window, :panes)
 
   @doc """
   Renames an exact physical window across all its memberships.

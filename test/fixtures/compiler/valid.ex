@@ -13,6 +13,10 @@ defmodule LibTmux.CompilerExamples.Valid do
     ref.id
   end
 
+  def session_window_names(snapshot, session) do
+    snapshot |> LibTmux.Session.windows(session) |> Enum.map(& &1.name)
+  end
+
   def created_pane_id(connection, pane) do
     case Pane.split(connection, pane) do
       {:ok, %{outcome: :completed, value: id}} when is_binary(id) -> {:ok, id}

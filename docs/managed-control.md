@@ -33,7 +33,7 @@ server =
 
 {:ok, snapshot} = Server.snapshot(server)
 session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
-window = Snapshot.related(snapshot, :session, session.id, :active_window)
+window = Session.active_window(snapshot, session)
 pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
 {:ok, session_ref} = Ref.from_observation(session)
 {:ok, window_ref} = Ref.from_observation(window)

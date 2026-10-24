@@ -15,6 +15,13 @@ These functions perform no I/O. `Snapshot.sessions/1`, `windows/1`, `panes/1`,
 `window_links/1` and `clients/1` return materialized Enumerable selections.
 See [filtering](filtering.md) for local predicates and portable criteria.
 
+For common relationships, pass the snapshot and a session/window observation
+to `Session.windows/2`, `Session.panes/2`, `Session.active_window/2` or
+`Window.panes/2`. The plural helpers return plain lists; `active_window/2`
+returns a window or `nil`. They validate the observation's kind, ID and server
+incarnation, then use the supplied graph's fields and coverage. An older
+observation from the same incarnation is valid; its other fields are ignored.
+
 Direct traversal validates the requested source. Looking up one session's
 active window does not fail because another session has ambiguous active
 links. Relationship filters validate their entire captured source domain
@@ -28,9 +35,11 @@ ID; it does not prove a unique lifetime after unlink and relink.
 A window can appear at multiple indexes in the same session and in other
 sessions. Server-wide physical maps deduplicate identical rows and reject
 conflicting rows. Session pane traversal returns each physical pane once;
-window-link traversal preserves memberships. Session/window/pane lists sort
-by numeric native ID. Links sort by numeric session ID and index; clients
-sort bytewise by their validated observed names.
+window-link traversal preserves memberships. Top-level session/window/pane
+collections sort by numeric native ID. Session windows follow their first
+link's index; session and window panes sort by numeric pane ID. Links sort
+by numeric session ID and index; clients sort bytewise by their validated
+observed names.
 
 `Session.attached_count` preserves tmux's raw client count. `attached` is
 derived from that count. Explicit control clients remain counted even with
