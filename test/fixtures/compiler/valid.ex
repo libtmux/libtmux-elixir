@@ -25,6 +25,11 @@ defmodule LibTmux.CompilerExamples.Valid do
     end
   end
 
+  def created_pane_id!(connection, pane) do
+    %{id: id} = Pane.split!(connection, pane)
+    id
+  end
+
   def submit(%Control{} = control) do
     case Control.submit(control, LibTmux.Control.Request.field("pid")) do
       {:ok, operation} -> Operation.result(operation)

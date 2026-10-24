@@ -88,9 +88,11 @@ never fall back to positions when an object disappears.
 Convert each positive millisecond timeout once into a monotonic budget for
 queueing, writes, replies and required proof. One error envelope carries
 kind, phase, certainty, retryable, path and bounded details/partial results.
-Bang APIs raise API/context errors; canonical failed, skipped and unknown
-command outcomes remain values. Retryable never authorizes mutation replay.
-Command acknowledgement does not prove external process completion.
+Domain bang actions return completed values or raise with the original
+unsuccessful result. Control and Operation bangs raise API/context errors;
+canonical failed, skipped and unknown command outcomes remain values.
+Retryable never authorizes mutation replay. Command acknowledgement does
+not prove external process completion.
 
 Bound parser carry, frames, queues, Port delivery, BEAM mailboxes, captures,
 stderr, pending calls and retained results together. A later bounded queue

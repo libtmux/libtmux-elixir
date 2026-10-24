@@ -7,14 +7,17 @@ defmodule LibTmux.Action do
   replays a mutation or refreshes an observation. One-shot actions check the
   server incarnation before execution; that check leaves a check/use race.
 
-  Completed, failed, skipped and unknown outcomes remain values, including
-  from bang functions. `value` is populated only for a completed command.
-  `details` retains the transport's original bounded evidence. Acknowledgement
-  does not prove that a program processed input or finished running.
-  API errors use `LibTmux.Error`; admitted control errors preserve the recovery
-  handle in `LibTmux.Control.ExecutionError`.
+  Ordinary actions return completed, failed, skipped and unknown outcomes.
+  `value` is populated only for a completed command; `details` retains the
+  transport's original bounded evidence. Domain bang functions return the
+  completed value or raise `LibTmux.Action.CompletionError` with the original
+  unsuccessful result. Acknowledgement does not prove that a program
+  processed input or finished running.
 
-  Use `value!/1` to require a completed outcome and extract its value.
+  API errors use `LibTmux.Error`; admitted control errors preserve the recovery
+  handle in `LibTmux.Control.ExecutionError`. Domain bang functions raise
+  these errors unchanged. Lower-level `LibTmux.Control` and `LibTmux.Operation`
+  bang functions retain canonical outcomes as values.
 
   Action errors with kind `:invalid_command` include a validation `path` such
   as `[:options, :size]` and a bounded `details.reason` describing accepted
@@ -72,50 +75,6 @@ defmodule LibTmux.Action do
   @keys ~w(Enter Space Tab BTab BSpace Escape Up Down Left Right Home End PageUp PageDown Insert Delete)
   @modified_keys ~w(Up Down Left Right Home End PageUp PageDown Insert Delete)
 
-  @doc """
-  Returns a completed action's value or raises `LibTmux.Action.CompletionError`.
-
-  The exception preserves the original failed, skipped or unknown result in
-  `result`. This pure helper performs no I/O and does not authorize replay or
-  prove external program completion. Existing bang actions still return
-  canonical unsuccessful outcomes until the caller applies this helper.
-
-  Pass the bare action result. Tagged API errors, raw `LibTmux.Operation`
-  results and malformed maps raise `ArgumentError`.
-
-  ## Examples
-
-      iex> result = %{outcome: :completed, value: "%7",
-      ...>   certainty: :acknowledged, evidence: :command_reply,
-      ...>   transport: :control, details: %{lines: ["%7"]}}
-      iex> LibTmux.Action.value!(result)
-      "%7"
-
-  See the [one-shot actions example](one-shot-actions.html) for a complete caller.
-  """
-  @spec value!(result(value)) :: value when value: term()
-  def value!(
-        %{
-          outcome: outcome,
-          certainty: certainty,
-          evidence: evidence,
-          transport: transport,
-          value: value,
-          details: details
-        } = result
-      )
-      when outcome in [:completed, :failed, :skipped, :unknown] and
-             certainty in [:acknowledged, :observed, :no_write, :unknown] and
-             is_atom(evidence) and transport in [:one_shot, :control] and is_map(details) and
-             (outcome == :completed or is_nil(value)) do
-    case outcome do
-      :completed -> value
-      _ -> raise LibTmux.Action.CompletionError, result: result
-    end
-  end
-
-  def value!(_result), do: raise(ArgumentError, "expected a bare LibTmux.Action result")
-
   @doc false
   def run(:capture, %Control{}, _target, _value, _options), do: failure(:unsupported_transport)
 
@@ -144,7 +103,8 @@ defmodule LibTmux.Action do
   def run(_kind, _connection, _target, _value, _options), do: failure(:invalid_target)
 
   @doc false
-  def unwrap({:ok, result}), do: result
+  def unwrap({:ok, %{outcome: :completed, value: value}}), do: value
+  def unwrap({:ok, result}), do: raise(LibTmux.Action.CompletionError, result: result)
   def unwrap({:error, error}), do: raise(error)
 
   defp prepare_options(options, entered_at) do

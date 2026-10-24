@@ -2,7 +2,8 @@ defmodule LibTmux.Action.CompletionError do
   @moduledoc """
   An action result did not meet an explicit completion requirement.
 
-  Raised by `LibTmux.Action.value!/1`. `result` preserves the original
+  Raised by domain bang actions such as `LibTmux.Pane.split!/3`. `result`
+  preserves the original
   failed, skipped or unknown outcome, including certainty and transport
   evidence. An unknown outcome remains unknown; this exception does not
   cancel work or authorize replay. Its message omits transport output.

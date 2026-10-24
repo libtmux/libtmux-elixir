@@ -23,15 +23,15 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
   Control.with_connection(
     [server: server, session: {:existing, session.id}, lane: :host_qualified],
     fn control ->
-      %{outcome: :completed} = Session.rename!(control, session_ref, "work")
-      %{outcome: :completed} = Window.rename!(control, window_ref, "editor")
+      :ok = Session.rename!(control, session_ref, "work")
+      :ok = Window.rename!(control, window_ref, "editor")
 
-      %{outcome: :completed, value: %{id: id, ref: created}} =
+      %{id: id, ref: created} =
         Pane.split!(control, pane_ref, command: {:argv, ["/bin/cat"]})
 
       false = snapshot |> Snapshot.panes() |> Selection.member_id?(id)
-      %{outcome: :completed} = Pane.send_text!(control, created, "hello")
-      %{outcome: :completed} = Pane.send_keys!(control, created, ["Enter"])
+      :ok = Pane.send_text!(control, created, "hello")
+      :ok = Pane.send_keys!(control, created, ["Enter"])
 
       for _ <- 1..128 do
         %{outcome: :completed, certainty: :acknowledged, lines: ["v1:" <> ^id]} =

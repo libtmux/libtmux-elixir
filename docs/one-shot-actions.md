@@ -18,7 +18,7 @@ a `cat` pane; the owned runner removes that pane and server after it returns.
 <!-- example: examples/one_shot_actions.exs -->
 
 ```elixir
-alias LibTmux.{Action, Pane, Ref, Selection, Server, Session, Snapshot, Window}
+alias LibTmux.{Pane, Ref, Selection, Server, Session, Snapshot, Window}
 
 [executable, socket, session_id] = System.argv()
 {:ok, _} = Application.ensure_all_started(:libtmux)
@@ -38,8 +38,8 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
 {:ok, window_ref} = Ref.from_observation(window)
 {:ok, pane_ref} = Ref.from_observation(pane)
 
-Session.rename!(server, session_ref, "work") |> Action.value!()
-Window.rename!(server, window_ref, "editor", session: session_ref) |> Action.value!()
+Session.rename!(server, session_ref, "work")
+Window.rename!(server, window_ref, "editor", session: session_ref)
 
 %{id: created_id, ref: nil} =
   Pane.split!(server, pane_ref,
@@ -48,14 +48,13 @@ Window.rename!(server, window_ref, "editor", session: session_ref) |> Action.val
     session: session_ref,
     command: {:argv, ["/bin/cat"]}
   )
-  |> Action.value!()
 
 {:ok, fresh} = Server.snapshot(server)
 created = fresh |> Snapshot.panes() |> Selection.one!(id: created_id)
 {:ok, created_ref} = Ref.from_observation(created)
-Pane.send_text!(server, created_ref, "hello") |> Action.value!()
-Pane.send_keys!(server, created_ref, ["Enter"]) |> Action.value!()
-screen = Pane.capture!(server, created_ref, max_bytes: 4096) |> Action.value!()
+Pane.send_text!(server, created_ref, "hello")
+Pane.send_keys!(server, created_ref, ["Enter"])
+screen = Pane.capture!(server, created_ref, max_bytes: 4096)
 
 {:ok, %{name: "work"}} = Snapshot.fetch(fresh, :session, session.id)
 {:ok, %{name: "editor"}} = Snapshot.fetch(fresh, :window, window.id)
@@ -65,9 +64,10 @@ IO.puts(JSON.encode!(%{created_pane: created_id, captured_bytes: byte_size(scree
 
 <!-- /example -->
 
-A bang method raises an API error, but **failed, skipped and unknown command
-outcomes remain values**. `Action.value!/1` extracts a completed value or raises
-`LibTmux.Action.CompletionError` with the original result in its `result` field.
+Domain bang functions return completed values. Failed, skipped and unknown
+outcomes raise `LibTmux.Action.CompletionError` with the original result in
+its `result` field; API errors are raised unchanged. Use ordinary actions
+when the caller needs to inspect every outcome without raising.
 A command acknowledgement does not prove input consumption, screen
 rendering or program exit. Consequently, the example reports the capture's
 byte count without claiming that `hello` has already appeared.

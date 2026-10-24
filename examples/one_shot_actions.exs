@@ -1,4 +1,4 @@
-alias LibTmux.{Action, Pane, Ref, Selection, Server, Session, Snapshot, Window}
+alias LibTmux.{Pane, Ref, Selection, Server, Session, Snapshot, Window}
 
 [executable, socket, session_id] = System.argv()
 {:ok, _} = Application.ensure_all_started(:libtmux)
@@ -18,8 +18,8 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
 {:ok, window_ref} = Ref.from_observation(window)
 {:ok, pane_ref} = Ref.from_observation(pane)
 
-Session.rename!(server, session_ref, "work") |> Action.value!()
-Window.rename!(server, window_ref, "editor", session: session_ref) |> Action.value!()
+Session.rename!(server, session_ref, "work")
+Window.rename!(server, window_ref, "editor", session: session_ref)
 
 %{id: created_id, ref: nil} =
   Pane.split!(server, pane_ref,
@@ -28,14 +28,13 @@ Window.rename!(server, window_ref, "editor", session: session_ref) |> Action.val
     session: session_ref,
     command: {:argv, ["/bin/cat"]}
   )
-  |> Action.value!()
 
 {:ok, fresh} = Server.snapshot(server)
 created = fresh |> Snapshot.panes() |> Selection.one!(id: created_id)
 {:ok, created_ref} = Ref.from_observation(created)
-Pane.send_text!(server, created_ref, "hello") |> Action.value!()
-Pane.send_keys!(server, created_ref, ["Enter"]) |> Action.value!()
-screen = Pane.capture!(server, created_ref, max_bytes: 4096) |> Action.value!()
+Pane.send_text!(server, created_ref, "hello")
+Pane.send_keys!(server, created_ref, ["Enter"])
+screen = Pane.capture!(server, created_ref, max_bytes: 4096)
 
 {:ok, %{name: "work"}} = Snapshot.fetch(fresh, :session, session.id)
 {:ok, %{name: "editor"}} = Snapshot.fetch(fresh, :window, window.id)

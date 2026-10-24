@@ -64,7 +64,7 @@ code = r'''
 started = System.monotonic_time(:microsecond)
 stamp = fn phase -> IO.puts(:stderr, JSON.encode!(%{phase: phase, micros: System.monotonic_time(:microsecond) - started})) end
 stamp.("entry")
-alias LibTmux.{Action, Control, Pane, Ref, Server}
+alias LibTmux.{Control, Pane, Ref, Server}
 [tmux, socket, session, lane, program, expected] = System.argv()
 {:ok, _} = Application.ensure_all_started(:libtmux)
 stamp.("application")
@@ -74,7 +74,7 @@ stamp.("snapshot")
 {:ok, ref} = Ref.from_observation(snapshot.panes["%0"])
 call = fn connection ->
   stamp.("action_start")
-  %{id: value} = Pane.split!(connection, ref, command: {:argv, [program]}) |> Action.value!()
+  %{id: value} = Pane.split!(connection, ref, command: {:argv, [program]})
   stamp.("action_completed")
   value
 end

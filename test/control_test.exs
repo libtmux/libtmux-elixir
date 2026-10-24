@@ -33,9 +33,11 @@ defmodule LibTmux.ControlTest do
                  ref: %Ref{entity: :pane, id: "%7", server_instance: "instance"}
                }
 
-        assert Action.value!(result) == result.value
+        assert Action.unwrap({:ok, result}) == result.value
       else
         assert result.value == nil
+        error = assert_raise Action.CompletionError, fn -> Action.unwrap({:ok, result}) end
+        assert error.result === result
       end
 
       assert_receive {:DOWN, ^monitor, :process, ^caller, :normal}
@@ -69,9 +71,14 @@ defmodule LibTmux.ControlTest do
                        context: :lost,
                        operation: operation,
                        error: %Error{kind: :connection_lost, certainty: :unknown}
-                     }}}
+                     } = error}}
 
     assert operation.lease == lease
+
+    assert assert_raise(LibTmux.Control.ExecutionError, fn ->
+             Action.unwrap({:error, error})
+           end) === error
+
     assert_receive {:DOWN, ^monitor, :process, ^caller, :normal}
   end
 

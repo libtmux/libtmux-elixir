@@ -93,10 +93,10 @@ defmodule LibTmux.Session do
   def rename(connection, ref, name, options \\ []),
     do: LibTmux.Action.run(:rename_session, connection, ref, name, options)
 
-  @doc "Renames as in `rename/4`, raising API errors while preserving canonical failed outcomes."
+  @doc "Returns `:ok` when `rename/4` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
   @spec rename!(LibTmux.Action.connection(), LibTmux.Ref.t(), binary(), [
           LibTmux.Control.call_option()
-        ]) :: LibTmux.Action.result(:ok)
+        ]) :: :ok
   def rename!(connection, ref, name, options \\ []),
     do: connection |> rename(ref, name, options) |> LibTmux.Action.unwrap()
 end
@@ -165,9 +165,9 @@ defmodule LibTmux.Window do
   def rename(connection, ref, name, options \\ []),
     do: LibTmux.Action.run(:rename_window, connection, ref, name, options)
 
-  @doc "Renames as in `rename/4`, raising API errors while preserving canonical failed outcomes."
+  @doc "Returns `:ok` when `rename/4` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
   @spec rename!(LibTmux.Action.connection(), LibTmux.Ref.t(), binary(), [LibTmux.Action.option()]) ::
-          LibTmux.Action.result(:ok)
+          :ok
   def rename!(connection, ref, name, options \\ []),
     do: connection |> rename(ref, name, options) |> LibTmux.Action.unwrap()
 end
@@ -299,9 +299,9 @@ defmodule LibTmux.Pane do
   def split(connection, ref, options \\ []),
     do: LibTmux.Action.run(:split, connection, ref, nil, options)
 
-  @doc "Splits as in `split/3`, raising API errors while preserving canonical failed outcomes."
+  @doc "Returns the created pane value when `split/3` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
   @spec split!(LibTmux.Action.connection(), LibTmux.Ref.t(), [split_option()]) ::
-          LibTmux.Action.result(split_value())
+          split_value()
   def split!(connection, ref, options \\ []),
     do: connection |> split(ref, options) |> LibTmux.Action.unwrap()
 
@@ -322,10 +322,10 @@ defmodule LibTmux.Pane do
   def send_text(connection, ref, bytes, options \\ []),
     do: LibTmux.Action.run(:send_text, connection, ref, bytes, options)
 
-  @doc "Sends bytes as in `send_text/4`, raising API errors while preserving canonical failed outcomes."
+  @doc "Returns `:ok` when `send_text/4` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
   @spec send_text!(LibTmux.Action.connection(), LibTmux.Ref.t(), binary(), [
           LibTmux.Action.option()
-        ]) :: LibTmux.Action.result(:ok)
+        ]) :: :ok
   def send_text!(connection, ref, bytes, options \\ []),
     do: connection |> send_text(ref, bytes, options) |> LibTmux.Action.unwrap()
 
@@ -349,10 +349,10 @@ defmodule LibTmux.Pane do
   def send_keys(connection, ref, keys, options \\ []),
     do: LibTmux.Action.run(:send_keys, connection, ref, keys, options)
 
-  @doc "Sends keys as in `send_keys/4`, raising API errors while preserving canonical failed outcomes."
+  @doc "Returns `:ok` when `send_keys/4` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
   @spec send_keys!(LibTmux.Action.connection(), LibTmux.Ref.t(), [String.t()], [
           LibTmux.Action.option()
-        ]) :: LibTmux.Action.result(:ok)
+        ]) :: :ok
   def send_keys!(connection, ref, keys, options \\ []),
     do: connection |> send_keys(ref, keys, options) |> LibTmux.Action.unwrap()
 
@@ -377,9 +377,9 @@ defmodule LibTmux.Pane do
   def capture(connection, ref, options \\ []),
     do: LibTmux.Action.run(:capture, connection, ref, nil, options)
 
-  @doc "Captures as in `capture/3`, raising API errors while preserving canonical failed outcomes."
+  @doc "Returns screen bytes when `capture/3` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
   @spec capture!(LibTmux.Action.connection(), LibTmux.Ref.t(), [capture_option()]) ::
-          LibTmux.Action.result(binary())
+          binary()
   def capture!(connection, ref, options \\ []),
     do: connection |> capture(ref, options) |> LibTmux.Action.unwrap()
 end

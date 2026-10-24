@@ -3,8 +3,6 @@ defmodule LibTmux.ActionTest do
   alias LibTmux.Action
   alias LibTmux.Action.CompletionError
 
-  doctest Action
-
   @completed %{
     outcome: :completed,
     certainty: :acknowledged,
@@ -16,7 +14,7 @@ defmodule LibTmux.ActionTest do
 
   test "completion preserves values without interpreting them" do
     for value <- [:ok, "%7", <<0, 255>>, nil, %{id: "%7"}] do
-      assert Action.value!(%{@completed | value: value}) === value
+      assert Action.unwrap({:ok, %{@completed | value: value}}) === value
     end
   end
 
@@ -37,7 +35,7 @@ defmodule LibTmux.ActionTest do
         extra_evidence: make_ref()
       }
 
-      error = assert_raise CompletionError, fn -> Action.value!(result) end
+      error = assert_raise CompletionError, fn -> Action.unwrap({:ok, result}) end
       assert error.result === result
       message = Exception.message(error)
       assert message =~ inspect(outcome)
@@ -48,26 +46,15 @@ defmodule LibTmux.ActionTest do
     end
   end
 
-  test "non-action results are rejected without manufacturing an outcome" do
-    for invalid <- [
-          nil,
-          {:ok, @completed},
-          {:error, %LibTmux.Error{kind: :invalid_target}},
-          Map.drop(@completed, [:value]),
-          Map.drop(@completed, [:details]),
-          %{@completed | outcome: :pending},
-          %{@completed | certainty: :certain},
-          %{@completed | evidence: "command_reply"},
-          %{@completed | transport: :implicit},
-          %{@completed | details: []},
-          %{@completed | outcome: :failed, value: "%7"}
-        ] do
-      assert_raise ArgumentError, "expected a bare LibTmux.Action result", fn ->
-        Action.value!(invalid)
-      end
-    end
+  test "API refusals preserve the original exception" do
+    error = %LibTmux.Error{
+      kind: :invalid_command,
+      phase: :validation,
+      certainty: :no_write,
+      path: [:options, :size],
+      details: %{reason: "expected a percent in 1..99"}
+    }
 
-    assert Exception.message(%CompletionError{result: nil}) ==
-             "expected a completed action outcome"
+    assert assert_raise(LibTmux.Error, fn -> Action.unwrap({:error, error}) end) === error
   end
 end

@@ -104,7 +104,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
               ]
 
           for {command, expected} <- cases do
-            assert %{outcome: :completed, value: %{id: created}} =
+            assert %{id: created} =
                      Pane.split!(connection, pane, command: command, cwd: cwd)
 
             try do
@@ -134,7 +134,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
             end
           end
 
-          assert %{outcome: :completed, value: %{id: created}} =
+          assert %{id: created} =
                    Pane.split!(connection, pane, command: :empty)
 
           try do
@@ -148,7 +148,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           File.write!(denied, "exit 0\n")
 
           for name <- ["missing-program", denied] do
-            assert %{outcome: :completed, value: %{id: created}} =
+            assert %{id: created} =
                      Pane.split!(connection, pane, command: {:argv, [name]})
 
             try do
@@ -252,7 +252,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                      "exec /bin/cat"
                    ])
 
-          assert %{outcome: :completed, value: %{id: empty}} =
+          assert %{id: empty} =
                    Pane.split!(connection, pane, command: :empty, session: session)
 
           try do
@@ -261,7 +261,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
             assert field(fixture, empty, "pane_tty") == ""
 
             for options <- [[], [command: :default]] do
-              assert %{outcome: :completed, value: %{id: default}} =
+              assert %{id: default} =
                        Pane.split!(connection, pane, options ++ [session: session])
 
               pid = field(fixture, default, "pane_pid") |> String.to_integer()
@@ -289,11 +289,19 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                   {_, 0} = OwnedTmux.command(fixture, ["unlink-window", "-t", "$1:#{index}"])
                 )
 
-          assert %{outcome: :failed, value: nil} =
-                   Pane.split!(connection, pane, session: session)
+          split_error =
+            assert_raise LibTmux.Action.CompletionError, fn ->
+              Pane.split!(connection, pane, session: session)
+            end
 
-          assert %{outcome: :failed} =
-                   Window.rename!(connection, window, "must not rename", session: session)
+          assert %{outcome: :failed, value: nil, transport: ^lane} = split_error.result
+
+          rename_error =
+            assert_raise LibTmux.Action.CompletionError, fn ->
+              Window.rename!(connection, window, "must not rename", session: session)
+            end
+
+          assert %{outcome: :failed, value: nil, transport: ^lane} = rename_error.result
 
           assert field(fixture, "$0:@0", "window_name") == normalized
 
@@ -371,12 +379,12 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           assert {:ok, "R"} = :socket.recv(peer, 1, 750)
           assert {:ok, "\e[3;1R"} = :socket.recv(peer, 6, 750)
           target = if lane == :control, do: created_ref, else: ref(:pane, id, instance)
-          assert %{outcome: :completed} = Pane.send_text!(connection, target, "")
+          assert :ok = Pane.send_text!(connection, target, "")
           bytes = ~S"Enter C-c #{pid}; $HOME" <> <<92, 0, 255, 9, 10, 13>> <> "λ"
-          assert %{outcome: :completed, value: :ok} = Pane.send_text!(connection, target, bytes)
+          assert :ok = Pane.send_text!(connection, target, bytes)
           assert {:ok, ^bytes} = :socket.recv(peer, byte_size(bytes), 750)
 
-          assert %{outcome: :completed} =
+          assert :ok =
                    Pane.send_keys!(connection, target, [
                      "Enter",
                      "C-a",
