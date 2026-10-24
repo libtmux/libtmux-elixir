@@ -50,7 +50,7 @@ defmodule LibTmux.MixProject do
 
     # ExDoc flattens extras; keep repository-relative links in the originals.
     replacements = %{
-      "README.md" => [{".tool-versions", blob <> ".tool-versions"}],
+      "README.md" => [{"examples/readme.exs", blob <> "examples/readme.exs"}],
       ".github/CONTRIBUTING.md" => [
         {"../.tool-versions", blob <> ".tool-versions"},
         {"../mix.exs", blob <> "mix.exs"}

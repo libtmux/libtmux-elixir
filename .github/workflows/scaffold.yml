@@ -173,7 +173,7 @@ jobs:
         run: time mix compile --warnings-as-errors
       - name: Run pure and owned native cases
         run: time mix test --include integration --warnings-as-errors --max-cases 2 --seed 624498
-      - name: Run packed public caller example
+      - name: Run packed README and guide examples
         run: time mix run scripts/check_package.exs --examples
 
   required-linux:

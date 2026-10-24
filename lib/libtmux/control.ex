@@ -123,6 +123,8 @@ defmodule LibTmux.Control do
   limitation; a timeout can report unknown cleanup while its owner is still
   unwinding startup. It does not promise a hard native process-exit deadline.
 
+      alias LibTmux.Control
+
       Control.with_connection(options, fn control ->
         Control.execute(control, LibTmux.Control.Request.field("pid"))
       end)
@@ -245,6 +247,8 @@ defmodule LibTmux.Control do
   A new await needs its own slot; the expired collector releases its slot
   asynchronously when the owner processes closure.
   Use `submit/3` when a retained handle is required after successful waiting.
+
+      alias LibTmux.Control
 
       Control.execute(control, LibTmux.Control.Request.field("pid"))
   """

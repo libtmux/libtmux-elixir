@@ -84,6 +84,8 @@ defmodule LibTmux.Session do
   to 5000ms.
   Old observations stay unchanged. See `LibTmux.Action` for outcome semantics.
 
+      alias LibTmux.Session
+
       Session.rename(server, session_ref, "work")
   """
   @spec rename(LibTmux.Action.connection(), LibTmux.Ref.t(), binary(), [
@@ -157,6 +159,8 @@ defmodule LibTmux.Window do
   Control characters fail before I/O on both transports. Optional `session: session_ref` requires
   membership in that exact session; it does not select a captured link index.
   `timeout` defaults to 5000ms. See `LibTmux.Action` for transport and outcomes.
+
+      alias LibTmux.Window
 
       Window.rename(control, window_ref, "editor")
   """
@@ -290,6 +294,8 @@ defmodule LibTmux.Pane do
   when a new observation is needed. See `LibTmux.Action` for outcomes and the
   one-shot identity check/use limitation.
 
+      alias LibTmux.Pane
+
       {:ok, %{outcome: :completed, value: %{ref: created}}} =
         Pane.split(control, pane_ref, axis: :horizontal, size: {:percent, 30})
       Pane.send_text(control, created, "hello")
@@ -312,6 +318,8 @@ defmodule LibTmux.Pane do
   The terminal's line discipline, active mode and application still determine
   how input is handled; acknowledgement does not prove program consumption.
   Options and outcomes follow `LibTmux.Action`. For named keys use `send_keys/4`.
+
+      alias LibTmux.Pane
 
       Pane.send_text(control, pane_ref, "printf 'hello'")
   """
@@ -339,6 +347,8 @@ defmodule LibTmux.Pane do
   printable ASCII character. Unsupported combinations such as S-a and C-Enter
   fail before admission; tmux could otherwise type their spelling as text.
   Options and outcomes follow `LibTmux.Action`.
+
+      alias LibTmux.Pane
 
       Pane.send_keys(control, pane_ref, ["Enter", "C-c"])
   """
@@ -369,6 +379,8 @@ defmodule LibTmux.Pane do
 
   A Control argument returns `unsupported_transport`: arbitrary screen bytes
   are not qualified for shared control framing. No fallback occurs.
+
+      alias LibTmux.Pane
 
       Pane.capture(server, pane_ref, start_line: -100, max_bytes: 131_072)
   """
