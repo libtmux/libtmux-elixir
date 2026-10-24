@@ -141,6 +141,7 @@ defmodule LibTmux.MixProject do
         ],
         Execute: [
           LibTmux.Action,
+          LibTmux.Action.CompletionError,
           LibTmux.Control,
           LibTmux.Control.Request,
           LibTmux.Operation,
