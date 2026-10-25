@@ -19,7 +19,7 @@ defmodule LibTmux.Session do
         }
 
   @doc """
-  Returns a plain list of captured physical windows in first-link order.
+  Returns a selection of captured physical windows in first-link order.
 
   Repeated links to a window contribute it once. For membership indexes use
   `LibTmux.Snapshot.related/4` with `:window_links`.
@@ -27,11 +27,14 @@ defmodule LibTmux.Session do
   The supplied snapshot owns all returned fields and relationships. Only the
   session's ID and incarnation are used; its other fields may be older.
   Invalid or stale identities and missing source/relationship coverage raise
-  `LibTmux.Error`. A covered empty relation returns `[]`. No I/O occurs.
+  `LibTmux.Error`. A covered empty relation returns an empty selection.
+  No I/O occurs. The selection retains the supplied snapshot for filtering;
+  relationship predicates still validate their whole captured source domain.
+  Use `Enum.to_list/1` when only the list is needed.
 
   ## Examples
 
-      iex> alias LibTmux.{Session, Snapshot}
+      iex> alias LibTmux.{Selection, Session, Snapshot}
       iex> rows = %{session: [%{id: "$0"}], window: [%{id: "@7"}],
       ...>   window_link: [%{session_id: "$0", window_id: "@7", index: 0, active: true},
       ...>     %{session_id: "$0", window_id: "@7", index: 3, active: false}],
@@ -41,7 +44,7 @@ defmodule LibTmux.Session do
       ...>   complete: [:window_link, :pane],
       ...>   fields: %{window_link: [:session_id, :window_id, :active], pane: [:window_id]})
       iex> {:ok, session} = Snapshot.fetch(snapshot, :session, "$0")
-      iex> [window] = Session.windows(snapshot, session)
+      iex> {:ok, window} = Session.windows(snapshot, session) |> Selection.one()
       iex> window.id
       "@7"
       iex> Session.panes(snapshot, session) |> Enum.map(& &1.id)
@@ -49,17 +52,17 @@ defmodule LibTmux.Session do
       iex> Session.active_window(snapshot, session) == window
       true
   """
-  @spec windows(LibTmux.Snapshot.t(), t()) :: [LibTmux.Window.t()]
+  @spec windows(LibTmux.Snapshot.t(), t()) :: LibTmux.Selection.t(LibTmux.Window.t())
   def windows(snapshot, session),
     do: LibTmux.Snapshot.related_observation(snapshot, :session, session, :windows)
 
   @doc """
-  Returns a plain list of captured physical panes in numeric pane-ID order.
+  Returns a selection of captured physical panes in numeric pane-ID order.
 
-  Linked windows contribute their panes once. Identity, coverage, empty-list
+  Linked windows contribute their panes once. Identity, coverage, empty-selection
   and no-I/O behavior follow `windows/2`, which includes a worked example.
   """
-  @spec panes(LibTmux.Snapshot.t(), t()) :: [LibTmux.Pane.t()]
+  @spec panes(LibTmux.Snapshot.t(), t()) :: LibTmux.Selection.t(LibTmux.Pane.t())
   def panes(snapshot, session),
     do: LibTmux.Snapshot.related_observation(snapshot, :session, session, :panes)
 
@@ -128,25 +131,29 @@ defmodule LibTmux.Window do
         }
 
   @doc """
-  Returns a plain list of captured physical panes in numeric pane-ID order.
+  Returns a selection of captured physical panes in numeric pane-ID order.
 
   Uses the supplied snapshot and validates the window's ID and incarnation.
-  Identity, coverage, empty-list and no-I/O behavior follow
+  Identity, coverage, empty-selection and no-I/O behavior follow
   `LibTmux.Session.windows/2`.
 
   ## Examples
 
-      iex> alias LibTmux.{Snapshot, Window}
+      iex> alias LibTmux.{Selection, Snapshot, Window}
       iex> rows = %{window: [%{id: "@0"}], pane: [
       ...>   %{id: "%10", window_id: "@0"}, %{id: "%2", window_id: "@0"}]}
       iex> {:ok, snapshot} = Snapshot.new(rows,
       ...>   server_instance: "example", captured_from: 0, captured_until: 0,
-      ...>   complete: [:pane], fields: %{pane: [:window_id]})
+      ...>   complete: [:pane], fields: %{pane: [:id, :window_id]})
       iex> {:ok, window} = Snapshot.fetch(snapshot, :window, "@0")
       iex> Window.panes(snapshot, window) |> Enum.map(& &1.id)
       ["%2", "%10"]
+      iex> {:ok, pane} = Window.panes(snapshot, window)
+      ...> |> Selection.where(id: "%2") |> Selection.one()
+      iex> pane.id
+      "%2"
   """
-  @spec panes(LibTmux.Snapshot.t(), t()) :: [LibTmux.Pane.t()]
+  @spec panes(LibTmux.Snapshot.t(), t()) :: LibTmux.Selection.t(LibTmux.Pane.t())
   def panes(snapshot, window),
     do: LibTmux.Snapshot.related_observation(snapshot, :window, window, :panes)
 

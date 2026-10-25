@@ -85,7 +85,7 @@ a program started by tmux has finished.
 | Domain bangs such as `LibTmux.Window.rename!/4` | Completed value | Raise the same errors with their evidence |
 | `LibTmux.Control.execute/3` and `LibTmux.Operation.await/2` | `{:ok, canonical_result}`, including failed, skipped and unknown outcomes | Outer errors describe execution context or waiting; their bangs raise those errors and return canonical outcomes unchanged |
 | `LibTmux.Selection.one/2` and `LibTmux.Selection.one_or_nil/2` | `{:ok, item}`, or allowed `{:ok, nil}` | Cardinality errors are tuples; bangs raise them. Predicate and coverage validation can raise in either form |
-| Relationship helpers such as `LibTmux.Session.panes/2` | Ordered list, or observation/nil for to-one relationships; no I/O | Identity, coverage and ambiguity errors raise |
+| Relationship helpers such as `LibTmux.Session.panes/2` | Ordered selection, or observation/nil for to-one relationships; no I/O | Identity, coverage and ambiguity errors raise |
 | `LibTmux.Control.with_connection/2` | `{:ok, callback_value}` after cleanup, even when that value is `{:error, reason}` | Startup errors return errors; callback raise/throw/exit propagates after cleanup. Unproved cleanup returns `LibTmux.Control.ScopeFailure` preserving the primary outcome |
 
 The [recovery example](recovery.md) handles lower-level execution and cleanup

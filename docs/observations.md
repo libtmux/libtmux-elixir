@@ -17,10 +17,13 @@ See [filtering](filtering.md) for local predicates and portable criteria.
 
 For common relationships, pass the snapshot and a session/window observation
 to `Session.windows/2`, `Session.panes/2`, `Session.active_window/2` or
-`Window.panes/2`. The plural helpers return plain lists; `active_window/2`
+`Window.panes/2`. The plural helpers return selections for filtering and
+checked cardinality with `LibTmux.Selection`; `active_window/2`
 returns a window or `nil`. They validate the observation's kind, ID and server
 incarnation, then use the supplied graph's fields and coverage. An older
 observation from the same incarnation is valid; its other fields are ignored.
+Each selection retains the supplied graph. Use `Enum.to_list/1` to obtain a
+plain list without the graph context.
 
 Direct traversal validates the requested source. Looking up one session's
 active window does not fail because another session has ambiguous active

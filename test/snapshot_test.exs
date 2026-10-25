@@ -52,10 +52,25 @@ defmodule LibTmux.SnapshotTest do
     assert {:ok, snapshot} = build(graph())
     session = snapshot.sessions["$2"]
     window = snapshot.windows["@4"]
-    assert Session.windows(snapshot, %{session | name: "older name"}) == [window]
+    windows = Session.windows(snapshot, %{session | name: "older name"})
+    assert Enum.to_list(windows) == [window]
+    assert Selection.size(windows) == 1
 
-    assert Window.panes(snapshot, %{window | name: "older name"}) ==
-             Snapshot.items(snapshot, :pane)
+    assert {:ok, ^window} =
+             windows |> Selection.where(panes: [some: [width: [gte: 100]]]) |> Selection.one()
+
+    assert {:error, %Error{kind: :no_match}} = Selection.one(windows, name: "missing")
+    assert {:ok, nil} = Selection.one_or_nil(windows, name: "missing")
+
+    for panes <- [
+          Window.panes(snapshot, %{window | name: "older name"}),
+          Session.panes(snapshot, session)
+        ] do
+      assert Enum.to_list(panes) == Snapshot.items(snapshot, :pane)
+      assert Selection.size(panes) == 2
+      assert {:ok, %{id: "%2"}} = panes |> Selection.where(width: [gte: 100]) |> Selection.one()
+      assert {:error, %Error{kind: :multiple_matches}} = Selection.one(panes)
+    end
 
     for {call, valid, wrong} <- [
           {&Session.windows/2, session, window},
@@ -165,7 +180,11 @@ defmodule LibTmux.SnapshotTest do
     fields = %{window: [:id], pane: [:id, :window_id]}
     assert {:ok, snapshot} = Snapshot.new(rows, metadata(fields: fields, complete: [:pane]))
     assert Snapshot.related(snapshot, :window, "@4", :panes) == []
-    assert Window.panes(snapshot, snapshot.windows["@4"]) == []
+    panes = Window.panes(snapshot, snapshot.windows["@4"])
+    assert Enum.to_list(panes) == []
+    assert Selection.size(panes) == 0
+    assert {:ok, nil} = Selection.one_or_nil(panes)
+    assert_raise Error, ~r/field_not_loaded/, fn -> Selection.where(panes, width: 80) end
 
     for options <- [
           [fields: fields],
@@ -195,12 +214,28 @@ defmodule LibTmux.SnapshotTest do
                )
              )
 
-    assert Session.windows(empty, empty.sessions["$0"]) == []
-    assert Session.panes(empty, empty.sessions["$0"]) == []
+    assert Enum.to_list(Session.windows(empty, empty.sessions["$0"])) == []
+    assert Enum.to_list(Session.panes(empty, empty.sessions["$0"])) == []
     assert Session.active_window(empty, empty.sessions["$0"]) == nil
 
     assert_raise Error, ~r/entity_not_loaded/, fn ->
       Snapshot.require_complete!(snapshot, :window)
+    end
+
+    rows = %{
+      window: [%{id: "@4"}],
+      pane: [
+        %{id: "%0", window_id: "@4"},
+        %{id: "%1", window_id: "@99"}
+      ]
+    }
+
+    assert {:ok, partial} = Snapshot.new(rows, metadata(fields: fields, complete: [:pane]))
+    panes = Window.panes(partial, partial.windows["@4"])
+    assert {:ok, %{id: "%0"}} = Selection.one(panes)
+
+    assert_raise Error, ~r/relation_not_loaded/, fn ->
+      Selection.where(panes, window: [is: [id: "@4"]])
     end
   end
 
