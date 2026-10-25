@@ -56,6 +56,79 @@ defmodule LibTmux.SelectionFilterTest do
     assert_raise Error, fn -> Selection.where(panes, fn _ -> true end) end
   end
 
+  test "prepared relationship predicates reject inconsistent observations" do
+    build = fn name, command, instance ->
+      {:ok, snapshot} =
+        Snapshot.new(
+          %{
+            window: [%{id: "@0", name: name}],
+            pane: [%{id: "%0", window_id: "@0", current_command: command}]
+          },
+          server_instance: instance,
+          captured_from: 0,
+          captured_until: 1,
+          complete: [:pane],
+          fields: %{window: [:name], pane: [:window_id, :current_command]}
+        )
+
+      snapshot
+    end
+
+    snapshot = build.("other", "nvim", "first")
+    filter = Filter.new!(:window, name: "wanted", panes: [some: [current_command: "nvim"]])
+    predicate = Filter.to_predicate(filter, snapshot: snapshot)
+    refute predicate.(snapshot.windows["@0"])
+
+    for instance <- ["first", "second"] do
+      other = build.("wanted", "bash", instance)
+      refute Filter.to_predicate(filter, snapshot: other).(other.windows["@0"])
+      assert Selection.size(Selection.where(Snapshot.windows(other), filter)) == 0
+
+      error = assert_raise Error, fn -> predicate.(other.windows["@0"]) end
+
+      assert %Error{
+               kind: :observation_mismatch,
+               phase: :evaluation,
+               certainty: :no_write,
+               path: [:window, "@0"]
+             } = error
+    end
+  end
+
+  test "graph input validation includes counts and short-circuited relationships" do
+    snapshot = QueryGraph.snapshot()
+    window = snapshot.windows["@0"]
+
+    for criteria <- [
+          [panes: [count: [equals: 2]]],
+          [or: [[name: "api-main"], [panes: [some: []]]]]
+        ],
+        item <- [%{window | width: 121}, %{window | id: "@99"}] do
+      predicate = Filter.to_predicate(Filter.new!(:window, criteria), snapshot: snapshot)
+      error = assert_raise Error, fn -> predicate.(item) end
+      assert error.kind == :observation_mismatch
+      assert error.path == [:window, item.id]
+    end
+  end
+
+  test "equal inputs keep prepared relationships while scalar predicates remain reusable" do
+    snapshot = QueryGraph.snapshot()
+
+    other =
+      QueryGraph.snapshot(%{
+        pane: [%{id: "%0", window_id: "@0", current_command: "bash"}]
+      })
+
+    assert snapshot.windows["@0"] === other.windows["@0"]
+    filter = Filter.new!(:window, panes: [some: [current_command: "nvim"]])
+    assert Filter.to_predicate(filter, snapshot: snapshot).(other.windows["@0"])
+    refute Filter.to_predicate(filter, snapshot: other).(other.windows["@0"])
+
+    scalar = Filter.to_predicate(Filter.new!(:window, name: "changed"), snapshot: snapshot)
+    refute scalar.(snapshot.windows["@0"])
+    assert scalar.(%{other.windows["@0"] | name: "changed", server_instance: "another"})
+  end
+
   test "cardinality is checked instead of selecting an arbitrary physical target" do
     panes = QueryGraph.snapshot() |> Snapshot.panes()
     assert {:ok, %{id: "%0"}} = Selection.one(panes, current_command: "bash")

@@ -1,10 +1,29 @@
 defmodule LibTmux.Filter.Evaluator do
   @moduledoc false
-  alias LibTmux.{Schema, Snapshot}
+  alias LibTmux.{Error, Schema, Snapshot}
 
   def prepare(filter, %Snapshot{} = snapshot) do
-    {predicate, _relations} = compile(filter.tree, filter.entity, snapshot, %{})
-    predicate
+    {predicate, relations} = compile(filter.tree, filter.entity, snapshot, %{})
+
+    if map_size(relations) == 0 do
+      predicate
+    else
+      entity = filter.entity
+
+      fn item ->
+        case Snapshot.fetch(snapshot, entity, item.id) do
+          {:ok, ^item} ->
+            predicate.(item)
+
+          _ ->
+            raise Error,
+              kind: :observation_mismatch,
+              phase: :evaluation,
+              certainty: :no_write,
+              path: [entity, item.id]
+        end
+      end
+    end
   end
 
   defp compile({:and, children}, entity, snapshot, relations) do

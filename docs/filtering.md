@@ -68,6 +68,7 @@ structured error. Applying that value retains its constructor validation;
 explicit new limits validate the normalized tree without generating extra
 criteria objects. Prepared predicates may contain
 sets and closures; portable filters contain data only.
+For direct predicate reuse, see `LibTmux.Filter.to_predicate/2`.
 
 `Filter.from_json/3` uses built-in JSON and rejects duplicate keys before
 map conversion, trailing data and unknown names. `from_wire/3` accepts an
