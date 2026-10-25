@@ -48,17 +48,19 @@ defmodule LibTmux.Server do
   `LibTmux.WindowLink` preserves a window's membership in one session.
 
   **Changing things.** `LibTmux.Pane.split/3` creates a pane and returns its ID
-  and bound reference in the completed result. `LibTmux.Session.rename/4`
+  in the completed result. A qualified Control connection also supplies a
+  bound reference; one-shot split returns `ref: nil`. `LibTmux.Session.rename/4`
   and `LibTmux.Window.rename/4` change names. `LibTmux.Pane.send_text/4` sends
   literal bytes, while `LibTmux.Pane.send_keys/4` sends named keys such as
   `"Enter"`. These functions take a Server or Control connection followed by
   a reference. Domain bang variants return completed values or raise;
-  nonbang variants return outcomes to inspect. See the
+  nonbang variants return `{:ok, result}` for completed commands and
+  `{:error, error}` otherwise. See the
   [action guide](one-shot-actions.html) and [recovery guide](recovery.html).
 
   **Reading screens, options and formats.** `LibTmux.Pane.capture/3` reads
-  pane screen bytes through one-shot execution, including when given a
-  Control connection. On a control connection, `LibTmux.Control.execute/3`
+  pane screen bytes through one-shot execution and requires a Server.
+  On a control connection, `LibTmux.Control.execute/3`
   runs `LibTmux.Control.Request.field/2` reads and
   `LibTmux.Control.Request.set_user_option/2` server user-option writes.
   Use `LibTmux.Control.submit/3` and `LibTmux.Operation` when the result needs
