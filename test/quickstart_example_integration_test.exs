@@ -19,8 +19,7 @@ defmodule LibTmux.QuickstartExampleIntegrationTest do
     on_exit(fn -> File.rm_rf!(base) end)
 
     # Only the dependency changes: the published pin becomes this checkout.
-    version = Mix.Project.config()[:version]
-    published = ~s|Mix.install([{:libtmux, "== #{version}"}])|
+    published = ~s|Mix.install([{:libtmux, "~> 0.1"}])|
     core = System.get_env("LIBTMUX_QUICKSTART_PACKAGE", @root)
     installed = ~s|Mix.install([{:libtmux, path: #{inspect(core)}}])|
     source = File.read!(Path.join(core, "examples/quickstart.exs"))

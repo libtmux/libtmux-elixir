@@ -42,10 +42,10 @@ captured snapshot; actions contact tmux explicitly.
 
 ## Installation
 
-Add the published alpha to your Mix dependencies:
+Add the package to your Mix dependencies:
 
 ```elixir
-{:libtmux, "== 0.0.1-alpha.4"}
+{:libtmux, "~> 0.1"}
 ```
 
 Fetch dependencies:

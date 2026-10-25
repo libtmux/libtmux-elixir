@@ -4,11 +4,10 @@ defmodule LibTmux.QuickstartExampleTest do
   @example Path.expand("../examples/quickstart.exs", __DIR__)
   @columns 80
 
-  test "pins the package version that mix.exs declares" do
-    version = Mix.Project.config()[:version]
+  test "requires any 0.1.N release" do
     [install | _] = @example |> File.read!() |> String.split("\n")
 
-    assert install == ~s|Mix.install([{:libtmux, "== #{version}"}])|
+    assert install == ~s|Mix.install([{:libtmux, "~> 0.1"}])|
   end
 
   test "fits the 80-column display of published examples" do
