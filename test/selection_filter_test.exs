@@ -148,6 +148,63 @@ defmodule LibTmux.SelectionFilterTest do
     assert Selection.count(panes, current_command: [in: ["nvim", "vim"]]) == 2
   end
 
+  test "reusable scalar predicates validate referenced fields before Boolean evaluation" do
+    snapshot = QueryGraph.snapshot()
+
+    for state <- [:unloaded, :unavailable],
+        {criteria, field} <- [
+          {[width: [gt: 80]], :width},
+          {[width: [not: 80]], :width},
+          {[width: [not_in: [80]]], :width},
+          {[width: 80], :width},
+          {[current_command: [contains: "vim"]], :current_command},
+          {[not: [width: [lt: 80]]], :width},
+          {[or: [[id: "%0"], [width: [gt: 80]]]], :width},
+          {[and: [[id: "%99"], [width: [gt: 80]]]], :width}
+        ] do
+      {:ok, partial} =
+        Snapshot.new(%{pane: [%{id: "%0"}]},
+          server_instance: "partial",
+          captured_from: 0,
+          captured_until: 1,
+          fields: %{pane: [:id]},
+          unavailable: %{pane: if(state == :unavailable, do: [field], else: [])}
+        )
+
+      predicate = Filter.to_predicate(Filter.new!(:pane, criteria), snapshot: snapshot)
+      error = assert_raise Error, fn -> predicate.(partial.panes["%0"]) end
+
+      assert error.kind == if(state == :unloaded, do: :field_not_loaded, else: :field_unavailable)
+      assert error.phase == :evaluation
+      assert error.certainty == :no_write
+      assert error.path == [:pane, field]
+    end
+  end
+
+  test "scalar reuse accepts known values and ignores unreferenced missing fields" do
+    snapshot = QueryGraph.snapshot()
+
+    {:ok, partial} =
+      Snapshot.new(%{pane: [%{id: "%9", width: 125}]},
+        server_instance: "another",
+        captured_from: 0,
+        captured_until: 1,
+        fields: %{pane: [:id, :width]},
+        unavailable: %{pane: [:title]}
+      )
+
+    predicate = Filter.to_predicate(Filter.new!(:pane, width: [gt: 80]), snapshot: snapshot)
+    assert predicate.(partial.panes["%9"]) === true
+
+    for {criteria, expected} <- [{[exit_status: nil], true}, {[exit_status: [gt: 0]], false}] do
+      predicate = Filter.to_predicate(Filter.new!(:pane, criteria), snapshot: snapshot)
+      assert predicate.(snapshot.panes["%0"]) === expected
+    end
+
+    assert Filter.to_predicate(Filter.new!(:pane, []), snapshot: snapshot).(partial.panes["%9"]) ===
+             true
+  end
+
   test "typed field operators retain nil, empty Boolean and Unicode semantics" do
     panes = QueryGraph.snapshot() |> Snapshot.panes()
 
