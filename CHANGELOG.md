@@ -4,8 +4,9 @@
 
 ### Fixed
 
-- Reusing `LibTmux.Filter.to_predicate/2` with missing fields now raises a
-  coverage error before evaluating Boolean branches. (#35)
+- Scalar predicates returned by `LibTmux.Filter.to_predicate/2` now raise a
+  coverage error for missing referenced fields before Boolean evaluation.
+  (#35)
 
 ## libtmux 0.0.1-alpha.4 (2026-10-25)
 
