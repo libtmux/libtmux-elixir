@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## libtmux 0.1.0 (2026-10-25)
+
 ### Added
 
 - Create named detached sessions and windows on an existing server with
