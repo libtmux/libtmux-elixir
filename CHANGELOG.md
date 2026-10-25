@@ -20,6 +20,9 @@
 
 - Reject oversized one-shot action requests before contacting tmux and
   return validation errors callers can inspect. (#23)
+- Reject inconsistent inputs to `LibTmux.Filter.to_predicate/2` when the
+  filter uses relationships. Prepare against each new snapshot or use
+  `LibTmux.Selection.where/2`. (#28)
 
 ### Documentation
 
