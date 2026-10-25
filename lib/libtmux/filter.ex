@@ -111,6 +111,15 @@ defmodule LibTmux.Filter do
   @doc """
   Prepares a local unary predicate after validating captured coverage, including empty domains.
 
+  Relationship and count predicates require each input to equal the
+  observation stored under its ID in `snapshot`. A missing or different
+  observation raises `LibTmux.Error` with kind `:observation_mismatch`.
+  Related values always come from the prepared snapshot; equal inputs from
+  another capture are accepted.
+
+  Scalar-only predicates read the supplied observation. Their snapshot is
+  used only to validate captured coverage.
+
   See the [worked example](api-examples.html#local-graph-and-filtering).
   """
   @spec to_predicate(t(), [{:snapshot, LibTmux.Snapshot.t()}]) ::
