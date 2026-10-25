@@ -13,6 +13,10 @@
 - `Session.windows/2`, `Session.panes/2` and `Window.panes/2` now return
   selections for filtering and checked cardinality. Use `Enum.to_list/1`
   when a list is needed. (#36)
+- Number releases `0.1.N` from `0.1.0`, with no `-alpha` tag unless the
+  maintainer asks for one. Any release may change or remove exported
+  identifiers, and the changelog marks each break, so pin an exact version
+  to avoid one.
 
 ### Fixed
 

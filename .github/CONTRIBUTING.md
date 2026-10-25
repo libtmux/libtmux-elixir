@@ -1,6 +1,6 @@
 # Contributing
 
-The core has an alpha release with domain actions and managed execution.
+The core provides domain actions and managed execution.
 Pure tests, packed public examples and owned real-tmux checks qualify
 implemented behavior. Consumer packages remain planned.
 [WRITING.md](WRITING.md) governs prose, comments, and commits.
@@ -268,6 +268,8 @@ tag must match the root Mix version. The publishing job uses `HEX_API_KEY`
 from the GitHub environment named `hex`, then verifies the public release
 and an installation outside the checkout. Merges and local archive builds
 do not publish. Creating a release tag requires separate authorization.
+Releases are numbered `0.1.N`: `0.1.0`, then `0.1.1`, `0.1.2` and so on, with
+no `-alpha` or other prerelease tag unless the maintainer asks for one.
 
 After upload, verification allows up to 60 seconds for HexDocs readiness,
 with each request limited to five seconds or the remaining wait budget.
