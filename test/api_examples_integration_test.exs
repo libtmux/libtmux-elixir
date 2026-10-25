@@ -37,6 +37,16 @@ defmodule LibTmux.APIExamplesIntegrationTest do
 
     assert [pane.id] == run_example(Server, executable: server.executable, socket: socket)
 
+    assert {:ok, %{value: %{id: session_id, ref: nil}}} =
+             run_example(Server, :new_session, 3, bindings)
+
+    assert {:ok, %{value: %{id: window_id, ref: nil}}} =
+             run_example(Session, :new_window, 4, bindings)
+
+    fresh = Server.snapshot!(server)
+    assert fresh.sessions[session_id].name == "extra-work"
+    assert fresh.windows[window_id].name == "logs"
+
     assert {:ok, %{outcome: :completed}} = run_example(Session, :rename, 4, bindings)
 
     assert {:ok, {:ok, %{outcome: :completed}}} =

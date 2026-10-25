@@ -47,13 +47,17 @@ defmodule LibTmux.Server do
   the supplied snapshot. Plural helpers return selections for further filtering; a
   `LibTmux.WindowLink` preserves a window's membership in one session.
 
-  **Changing things.** `LibTmux.Pane.split/3` creates a pane and returns its ID
-  in the completed result. A qualified Control connection also supplies a
-  bound reference; one-shot split returns `ref: nil`. `LibTmux.Session.rename/4`
-  and `LibTmux.Window.rename/4` change names. `LibTmux.Pane.send_text/4` sends
+  **Changing things.** `new_session/3` and `LibTmux.Session.new_window/4`
+  create detached sessions and windows on an existing server using one-shot
+  execution. They return the created ID with `ref: nil`; capture a fresh
+  observation to obtain a reference. `LibTmux.Pane.split/3` creates a pane
+  and returns its ID in the completed result. A qualified Control connection
+  also supplies a bound reference; one-shot split returns `ref: nil`.
+  `LibTmux.Session.rename/4` and `LibTmux.Window.rename/4` change names.
+  `LibTmux.Pane.send_text/4` sends
   literal bytes, while `LibTmux.Pane.send_keys/4` sends named keys such as
-  `"Enter"`. These functions take a Server or Control connection followed by
-  a reference. Domain bang variants return completed values or raise;
+  `"Enter"`. Split, rename and input take a Server or Control connection
+  followed by a reference. Domain bang variants return completed values or raise;
   nonbang variants return `{:ok, result}` for completed commands and
   `{:error, error}` otherwise. See the
   [action guide](one-shot-actions.html) and [recovery guide](recovery.html).
@@ -68,9 +72,9 @@ defmodule LibTmux.Server do
 
   Other tmux commands are available through `LibTmux.Command.new/2` and
   `run/3`, which runs one command with literal arguments and returns bounded
-  output and exit evidence. Configured server hooks can still run. One-shot
-  actions check the observed server identity before writing, leaving a race
-  if the daemon is replaced between that check and the command. Use a
+  output and exit evidence. Configured server hooks can still run. Targeted
+  one-shot actions check the observed server identity before writing, leaving
+  a race if the daemon is replaced between that check and the command. Use a
   qualified Control connection for mutations bound to one daemon instance.
 
   ## Examples
@@ -144,6 +148,40 @@ defmodule LibTmux.Server do
 
     %__MODULE__{executable: executable, socket: socket, cwd: options[:cwd], env: options[:env]}
   end
+
+  @doc """
+  Creates a named detached session on an existing server through one-shot execution.
+
+  Returns `{:ok, result}` on completion, with `%{id: session_id, ref: nil}`
+  as its value. Capture a fresh observation for a bound reference. There is
+  no observed target to validate; this command acts on the server answering
+  at the descriptor's endpoint. It never starts a missing server. A missing
+  endpoint or duplicate session name returns an error with execution evidence.
+  Control connections are unsupported.
+
+  Names contain 1..1024 UTF-8 bytes without control characters. Format syntax
+  stays literal; tmux's version-dependent name normalization still applies.
+  Options are `timeout` (5000ms), literal `cwd`, and `command`: `:default`,
+  `{:shell, nonempty_bytes}` or `{:argv, [program | arguments]}`. Command forms
+  follow `LibTmux.Pane.split/3`, except `:empty` is unsupported for creation.
+  Acknowledgement does not prove that the program started or finished.
+  See `LibTmux.Action` for completion and failure handling.
+
+      alias LibTmux.Server
+
+      Server.new_session(server, "extra-work", command: {:argv, ["/bin/cat"]})
+  """
+  @spec new_session(t(), binary(), [LibTmux.Action.creation_option()]) ::
+          {:ok, LibTmux.Action.result(LibTmux.Action.creation_value())}
+          | {:error, LibTmux.Action.error()}
+  def new_session(server, name, options \\ []),
+    do: LibTmux.Action.run(:new_session, server, nil, name, options)
+
+  @doc "Returns the created session value when `new_session/3` completes; raises the original error otherwise."
+  @spec new_session!(t(), binary(), [LibTmux.Action.creation_option()]) ::
+          LibTmux.Action.creation_value()
+  def new_session!(server, name, options \\ []),
+    do: server |> new_session(name, options) |> LibTmux.Action.unwrap()
 
   @doc """
   Runs one trusted command without attaching; returns bounded output and exit evidence.

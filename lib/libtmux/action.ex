@@ -4,8 +4,9 @@ defmodule LibTmux.Action do
 
   Pass a `LibTmux.Server` for one-shot execution or a `LibTmux.Control` for
   managed execution in its qualified connection. No action changes transport,
-  replays a mutation or refreshes an observation. One-shot actions check the
-  server incarnation before execution; that check leaves a check/use race.
+  replays a mutation or refreshes an observation. Targeted one-shot actions
+  check the server incarnation before execution; that check leaves a
+  check/use race.
 
   Ordinary actions return `{:ok, result}` only for completed commands.
   Failed, skipped and unknown outcomes return
@@ -24,9 +25,11 @@ defmodule LibTmux.Action do
   Action errors with kind `:invalid_command` include a validation `path` such
   as `[:options, :size]` and a bounded `details.reason` describing accepted
   inputs. The reason appears in the exception message; rejected values are
-  not retained in diagnostic details. One-shot actions validate both complete
-  native process specifications before the identity read. Native byte/count
-  refusals use paths such as `[:process, :argv]` or `[:process, :frame]`.
+  not retained in diagnostic details. Targeted one-shot actions validate both
+  native process specifications before the identity read. Session creation
+  has no observed target; it validates its command and runs without an identity
+  read. Native byte/count refusals use paths such as `[:process, :argv]` or
+  `[:process, :frame]`.
   Preparation does not check filesystem existence or guarantee execution.
 
   A nonzero one-shot client exit reports `:failed` with `:observed` certainty:
@@ -47,6 +50,13 @@ defmodule LibTmux.Action do
   @type connection :: Server.t() | Control.t()
   @typedoc "A 1..600000ms execution budget, default 5000ms; optional exact session context for physical targets."
   @type option :: {:timeout, 1..600_000} | {:session, Ref.t()}
+  @typedoc "Detached creation on an existing server; default command/shell and directory unless supplied."
+  @type creation_option ::
+          {:timeout, 1..600_000}
+          | {:cwd, binary()}
+          | {:command, :default | {:shell, binary()} | {:argv, nonempty_list(binary())}}
+  @typedoc "A created native ID without a bound reference; capture a new observation before another targeted action."
+  @type creation_value :: %{id: String.t(), ref: nil}
   @typedoc """
   A completed action's value and original transport evidence.
 
@@ -82,7 +92,21 @@ defmodule LibTmux.Action do
   @modified_keys ~w(Up Down Left Right Home End PageUp PageDown Insert Delete)
 
   @doc false
-  def run(:capture, %Control{}, _target, _value, _options), do: failure(:unsupported_transport)
+  def run(kind, %Control{}, _target, _value, _options)
+      when kind in [:capture, :new_session, :new_window],
+      do: failure(:unsupported_transport)
+
+  def run(:new_session, %Server{} = server, nil, name, options) do
+    entered_at = System.monotonic_time(:millisecond)
+
+    with {:ok, deadline, options} <- prepare_options(options, entered_at),
+         {:ok, command} <- command(:new_session, nil, name, options, nil, :one_shot),
+         {:ok, _payload} <- Server.prepare_command(server, command) do
+      execute(server, :new_session, command, options, deadline)
+      |> created_value(:new_session, nil)
+      |> require_completion()
+    end
+  end
 
   def run(kind, connection, %Ref{} = target, value, options) do
     entered_at = System.monotonic_time(:millisecond)
@@ -136,7 +160,7 @@ defmodule LibTmux.Action do
   end
 
   @doc false
-  def command(kind, %Ref{} = target, value, options, instance, lane) do
+  def command(kind, target, value, options, instance, lane) do
     options = options!(options, defaults(kind))
 
     with :ok <- target(kind, target, instance),
@@ -149,9 +173,6 @@ defmodule LibTmux.Action do
   rescue
     error in Error -> {:error, error}
   end
-
-  def command(_kind, _target, _value, _options, _instance, _lane),
-    do: failure(:invalid_target)
 
   defp options!(options, defaults \\ nil) do
     unless Keyword.keyword?(options), do: invalid!([:options], "expected a keyword list")
@@ -184,15 +205,21 @@ defmodule LibTmux.Action do
 
   defp defaults(:rename_session), do: []
 
+  defp defaults(kind) when kind in [:new_session, :new_window],
+    do: [cwd: nil, command: :default]
+
   defp defaults(kind) when kind in [:rename_window, :send_text, :send_keys],
     do: [session: nil]
 
   defp defaults(_kind), do: invalid!([:action], "expected a supported domain action")
 
+  defp target(:new_session, nil, _instance), do: :ok
+  defp target(:new_session, _target, _instance), do: failure(:invalid_target)
+
   defp target(kind, %Ref{entity: entity} = target, instance) do
     expected =
       case kind do
-        :rename_session -> :session
+        kind when kind in [:rename_session, :new_window] -> :session
         :rename_window -> :window
         kind when kind in [:split, :send_text, :send_keys, :capture] -> :pane
       end
@@ -200,11 +227,14 @@ defmodule LibTmux.Action do
     if expected == entity, do: Ref.validate(target, instance), else: failure(:invalid_target)
   end
 
+  defp target(_kind, _target, _instance), do: failure(:invalid_target)
+
   defp session(nil, _instance), do: :ok
   defp session(%Ref{entity: :session} = session, instance), do: Ref.validate(session, instance)
   defp session(_session, _instance), do: failure(:invalid_target)
 
-  defp lane(:capture, _value, :control), do: failure(:unsupported_transport)
+  defp lane(kind, _value, :control) when kind in [:capture, :new_session, :new_window],
+    do: failure(:unsupported_transport)
 
   defp lane(_kind, _value, _lane), do: :ok
 
@@ -214,18 +244,38 @@ defmodule LibTmux.Action do
   defp target_string(%Ref{id: id}, nil), do: id
 
   defp build(kind, target, name, options) when kind in [:rename_session, :rename_window] do
-    unless is_binary(name) and byte_size(name) in 1..1024 and String.valid?(name) and
-             not Regex.match?(~r/\p{Cc}/u, name),
-           do: invalid!([:name], "expected 1..1024 UTF-8 bytes without control characters")
-
     command = if kind == :rename_session, do: "rename-session", else: "rename-window"
 
     new_command!(command, [
       "-t",
       target_string(target, options[:session]),
       "--",
-      Format.literal(name)
+      name!(name)
     ])
+  end
+
+  defp build(kind, target, name, options) when kind in [:new_session, :new_window] do
+    name = name!(name)
+
+    unless options[:command] == :default or match?({:shell, _}, options[:command]) or
+             match?({:argv, _}, options[:command]),
+           do:
+             invalid!(
+               [:options, :command],
+               "creation expects :default, {:shell, bytes} or {:argv, arguments}"
+             )
+
+    {command, args, field} =
+      case kind do
+        :new_session -> {"new-session", ["-s", name], "session_id"}
+        :new_window -> {"new-window", ["-t", target.id <> ":", "-n", name], "window_id"}
+      end
+
+    new_command!(
+      command,
+      ["-d", "-P", "-F", "\#{" <> field <> "}" | args] ++
+        cwd_args(options[:cwd]) ++ ["--" | pane_command!(options[:command])]
+    )
   end
 
   defp build(:split, target, _value, options) do
@@ -244,17 +294,12 @@ defmodule LibTmux.Action do
         _ -> invalid!([:options, :size], "expected nil, {:cells, 1..32767} or {:percent, 1..99}")
       end
 
-    cwd =
-      if is_nil(options[:cwd]),
-        do: [],
-        else: ["-c", Format.literal(bytes!(options[:cwd], [:options, :cwd]))]
-
-    argv = split_command!(options[:command])
+    argv = pane_command!(options[:command])
 
     args =
       ["-t", target_string(target, options[:session]), "-P", "-F", ~S"#{pane_id}", axis] ++
         flag(options[:detached], "-d", :detached) ++
-        flag(options[:before], "-b", :before) ++ size ++ cwd ++ ["--" | argv]
+        flag(options[:before], "-b", :before) ++ size ++ cwd_args(options[:cwd]) ++ ["--" | argv]
 
     new_command!("split-window", args)
   end
@@ -303,23 +348,34 @@ defmodule LibTmux.Action do
     new_command!("capture-pane", args)
   end
 
-  defp split_command!(:default), do: []
-  defp split_command!(:empty), do: [""]
+  defp name!(name) do
+    unless is_binary(name) and byte_size(name) in 1..1024 and String.valid?(name) and
+             not Regex.match?(~r/\p{Cc}/u, name),
+           do: invalid!([:name], "expected 1..1024 UTF-8 bytes without control characters")
 
-  defp split_command!({:shell, text}) do
+    Format.literal(name)
+  end
+
+  defp cwd_args(nil), do: []
+  defp cwd_args(cwd), do: ["-c", Format.literal(bytes!(cwd, [:options, :cwd]))]
+
+  defp pane_command!(:default), do: []
+  defp pane_command!(:empty), do: [""]
+
+  defp pane_command!({:shell, text}) do
     bytes!(text, [:options, :command, :shell])
 
     if text == "",
       do:
         invalid!(
           [:options, :command, :shell],
-          "expected a nonempty shell command; use :empty for an empty pane"
+          "expected a nonempty shell command"
         )
 
     [text]
   end
 
-  defp split_command!({:argv, argv}) do
+  defp pane_command!({:argv, argv}) do
     path = [:options, :command, :argv]
 
     case command_arguments!(argv, path) do
@@ -330,7 +386,7 @@ defmodule LibTmux.Action do
     end
   end
 
-  defp split_command!(_command),
+  defp pane_command!(_command),
     do:
       invalid!(
         [:options, :command],
@@ -474,10 +530,10 @@ defmodule LibTmux.Action do
 
   defp decode(:capture, bytes), do: {:ok, bytes}
 
-  defp decode(:split, bytes) do
+  defp decode(kind, bytes) when kind in [:split, :new_session, :new_window] do
     case :binary.split(bytes, "\n") do
       [id, ""] ->
-        case Ref.new(:pane, id, "reply") do
+        case Ref.new(created_entity(kind), id, "reply") do
           {:ok, _ref} -> {:ok, id}
           _ -> invalid_reply()
         end
@@ -503,10 +559,15 @@ defmodule LibTmux.Action do
     {:ok, %{result | value: %{id: id, ref: ref}}}
   end
 
-  defp created_value({:ok, %{outcome: :completed, value: id} = result}, :split, _target),
-    do: {:ok, %{result | value: %{id: id, ref: nil}}}
+  defp created_value({:ok, %{outcome: :completed, value: id} = result}, kind, _target)
+       when kind in [:split, :new_session, :new_window],
+       do: {:ok, %{result | value: %{id: id, ref: nil}}}
 
   defp created_value(result, _kind, _target), do: result
+
+  defp created_entity(:split), do: :pane
+  defp created_entity(:new_session), do: :session
+  defp created_entity(:new_window), do: :window
 
   defp result(result, lane, value),
     do: %{
