@@ -79,11 +79,13 @@ retries. A disappearing read target can retry; invalid encoding and other
 decoding errors remain visible. Two attempts are the default; one to three
 may be requested. All attempts share one deadline and the original budgets.
 
-Defaults are 1024 contextual entity rows, 512 commands, 8 MiB total response
+Defaults are 1024 contextual topology rows, 512 commands, 8 MiB total response
 bytes, 64 KiB per response and 5000 ms. Both stdout and stderr, including
 failed-command output, consume the byte budget. Overload returns an error
 instead of a truncated success. Topology checks and retries also consume
-work. One-shot retirement has the separate allowance documented in
+work. Text listings use the byte and command budgets; an overflowing listing
+can fall back to individual reads as described in [capture rows](encoding.md#capture-rows).
+That work remains charged to the original budgets. One-shot retirement has the separate allowance documented in
 [ownership](ownership.md).
 
 Free-form fields use the qualified versioned encoder. Numeric/ID topology

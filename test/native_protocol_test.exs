@@ -39,6 +39,20 @@ defmodule LibTmux.NativeProtocolTest do
           assert_raise(ArgumentError, fn -> Protocol.process(executable, arguments, options) end)
   end
 
+  test "argv capacity includes the executable without increasing environment capacity" do
+    environment = Map.new(1..256, &{"KEY#{&1}", ""})
+    payload = Protocol.process("/bin/true", List.duplicate("", 2047), cwd: "/", env: environment)
+    assert <<1::16, "/", 2048::16, _::binary>> = payload
+
+    assert_raise ArgumentError, fn ->
+      Protocol.process("/bin/true", List.duplicate("", 2048), cwd: "/", env: %{})
+    end
+
+    assert_raise ArgumentError, fn ->
+      Protocol.process("/bin/true", [], cwd: "/", env: Map.put(environment, "EXTRA", ""))
+    end
+  end
+
   test "duplex command frames bound each grant and acknowledged write fragment" do
     assert Protocol.read_frame(:stdout, 8192) == <<?R, 1, 8192::16>>
     assert Protocol.read_frame(:stderr, 1) == <<?R, 2, 1::16>>

@@ -7,12 +7,14 @@ defmodule LibTmux.Capture do
   defaults to 2 and accepts 1–3. Only inconsistent topology or disappearing
   read targets retry. Decoding and coverage errors remain visible.
 
-  Defaults: 1024 contextual entity rows, 512 commands, 8 MiB total response
-  bytes, 64 KiB per response and 5000 ms. Exceeding a ceiling returns an
-  error, never a partial success. Linked rows count against the work limit.
-  Free-form fields share one encoded response per physical entity, including
-  its framing overhead. One successful attempt uses `10 + S + W + P`
-  commands for S sessions, W physical windows and P panes.
+  Defaults: 1024 topology rows, 512 commands, 8 MiB total response bytes,
+  64 KiB per response and 5000 ms. Exhausted capture-wide budgets return an
+  error, never a partial success. Both topology scans count contextual linked rows.
+  Free-form fields use one encoded listing per entity kind. One successful
+  attempt uses 13 commands when those three listings fit. After a listing
+  exceeds the response ceiling and its client retires, capture reads that
+  kind's physical entities individually. The failed listing still consumes
+  commands, bytes and time. Duplicate linked text rows consume bytes.
   Capture adds no control attachment. Hooks configured on list commands can
   still have effects; retries do not replay application mutations.
   """
@@ -265,43 +267,92 @@ defmodule LibTmux.Capture do
 
   defp text_fields(rows, state) do
     Enum.reduce(@strings, {rows, state}, fn {entity, fields}, {rows, state} ->
-      expression = Row.format(Enum.map(fields, &Schema.field(entity, &1).format))
+      {by_id, state} =
+        try do
+          bulk_text_fields(entity, fields, state)
+        catch
+          {:capture_error,
+           %Error{
+             kind: :resource_limit,
+             phase: :capture,
+             details: %{reason: reason, cleanup: :retired}
+           }, state}
+          when reason in [:stdout_bytes, :total_bytes] ->
+            individual_text_fields(rows[entity], entity, fields, state)
+        end
 
-      {values, state} =
-        rows[entity]
-        |> Enum.uniq_by(& &1.id)
-        |> Enum.map_reduce(state, fn row, state ->
-          {output, state} = read(state, "display-message", ["-p", "-t", row.id, expression])
+      unless MapSet.new(Map.keys(by_id)) == MapSet.new(rows[entity], & &1.id),
+        do: stop(state, :topology_changed)
 
-          case Row.decode(output, length(fields), max_bytes: state.options.max_response_bytes) do
-            {:ok, values} ->
-              row =
-                Enum.zip(fields, values)
-                |> Enum.reduce(row, fn {field, value}, row ->
-                  value =
-                    decode(state, value <> "\n", Schema.field(entity, field), entity, field, :raw)
+      rows =
+        Map.update!(
+          rows,
+          entity,
+          &Enum.map(&1, fn row -> Map.merge(row, Map.fetch!(by_id, row.id)) end)
+        )
 
-                  Map.put(row, field, value)
-                end)
-
-              {row, state}
-
-            {:error, error} ->
-              path =
-                case error.path do
-                  [index] -> [entity, Enum.at(fields, index)]
-                  _ -> [entity]
-                end
-
-              throw({:capture_error, %{error | path: path}, state})
-          end
-        end)
-
-      # Merge free-form fields into every contextual row so physical conflicts remain visible.
-      by_id = Map.new(values, &{&1.id, Map.take(&1, fields)})
-      rows = Map.update!(rows, entity, &Enum.map(&1, fn row -> Map.merge(row, by_id[row.id]) end))
       {rows, state}
     end)
+  end
+
+  defp bulk_text_fields(entity, fields, state) do
+    {command, arguments} =
+      case entity do
+        :session -> {"list-sessions", []}
+        :window -> {"list-windows", ["-a"]}
+        :pane -> {"list-panes", ["-a"]}
+      end
+
+    expression = Row.format(Enum.map([:id | fields], &Schema.field(entity, &1).format))
+    {output, state} = read(state, command, arguments ++ ["-F", expression])
+    unless output == "" or :binary.last(output) == 10, do: stop(state, :codec_error)
+
+    lines =
+      if output == "",
+        do: [],
+        else: output |> binary_part(0, byte_size(output) - 1) |> :binary.split("\n", [:global])
+
+    by_id =
+      Enum.reduce(lines, %{}, fn line, found ->
+        decoded = decode_text_fields(line <> "\n", entity, [:id | fields], state)
+        {id, values} = Map.pop!(decoded, :id)
+        if Map.has_key?(found, id) and found[id] != values, do: stop(state, :conflicting_rows)
+        Map.put(found, id, values)
+      end)
+
+    {by_id, state}
+  end
+
+  defp individual_text_fields(rows, entity, fields, state) do
+    expression = Row.format(Enum.map(fields, &Schema.field(entity, &1).format))
+
+    {values, state} =
+      rows
+      |> Enum.uniq_by(& &1.id)
+      |> Enum.map_reduce(state, fn row, state ->
+        {output, state} = read(state, "display-message", ["-p", "-t", row.id, expression])
+        {{row.id, decode_text_fields(output, entity, fields, state)}, state}
+      end)
+
+    {Map.new(values), state}
+  end
+
+  defp decode_text_fields(output, entity, fields, state) do
+    case Row.decode(output, length(fields), max_bytes: state.options.max_response_bytes) do
+      {:ok, values} ->
+        Map.new(Enum.zip(fields, values), fn {field, value} ->
+          {field, decode(state, value <> "\n", Schema.field(entity, field), entity, field, :raw)}
+        end)
+
+      {:error, error} ->
+        path =
+          case error.path do
+            [index] -> [entity, Enum.at(fields, index)]
+            _ -> [entity]
+          end
+
+        throw({:capture_error, %{error | path: path}, state})
+    end
   end
 
   defp signature(rows) do

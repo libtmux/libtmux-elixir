@@ -311,7 +311,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", created])
           assert :ok = OwnedTmux.await_exit(watch)
 
-          assert {:ok, %{outcome: :failed}} =
+          assert {:error, %LibTmux.Action.CompletionError{result: %{outcome: :failed}}} =
                    Pane.send_text(connection, dead, "must not retarget")
 
           assert {:error, %{kind: :invalid_command, certainty: :no_write}} =
@@ -321,6 +321,9 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           if lane == :control, do: assert({:ok, %{phase: :ready}} = Control.status(connection))
 
           if lane == :one_shot do
+            assert {:error, %LibTmux.Action.CompletionError{result: %{outcome: :failed}}} =
+                     Pane.capture(connection, dead)
+
             assert {_, 0} =
                      OwnedTmux.command(fixture, [
                        "set-hook",
@@ -345,6 +348,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
     end
 
     @tag lane: lane
+    @tag :input_bytes
     test "literal bytes and named keys reach a raw pane through #{lane}", %{lane: lane} do
       fixture = start_supervised!({OwnedTmux, []})
       info = OwnedTmux.info(fixture)
@@ -383,6 +387,20 @@ defmodule LibTmux.DomainActionsIntegrationTest do
           bytes = ~S"Enter C-c #{pid}; $HOME" <> <<92, 0, 255, 9, 10, 13>> <> "λ"
           assert :ok = Pane.send_text!(connection, target, bytes)
           assert {:ok, ^bytes} = :socket.recv(peer, byte_size(bytes), 750)
+
+          for size <- [246, 247, 995] do
+            bytes = binary_part(:binary.copy(<<0, 255, 97, 10>>, 255), 0, size)
+
+            assert {:ok, %{outcome: :completed, value: :ok}} =
+                     Pane.send_text(connection, target, bytes)
+
+            assert {:ok, ^bytes} = :socket.recv(peer, size, 750)
+          end
+
+          for size <- [996, 1020, 1021] do
+            assert {:error, %{kind: :invalid_command, path: [:text], certainty: :no_write}} =
+                     Pane.send_text(connection, target, :binary.copy("x", size))
+          end
 
           assert :ok =
                    Pane.send_keys!(connection, target, [

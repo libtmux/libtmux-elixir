@@ -73,7 +73,7 @@ jobs:
             "https://hex.pm/api/packages/libtmux/releases/$RELEASE_VERSION" | \
             jq --exit-status --arg version "$RELEASE_VERSION" \
               '.version == $version and .requirements == {}'
-          curl --fail --silent --show-error --location --output /dev/null \
+          bash scripts/wait_for_hexdocs.sh \
             "https://hexdocs.pm/libtmux/$RELEASE_VERSION/"
       - name: Install and execute the public core outside the checkout
         env:

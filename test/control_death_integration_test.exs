@@ -105,6 +105,10 @@ defmodule LibTmux.ControlDeathIntegrationTest do
     end
 
     phase = Lifetime.status(control.lifetime)
+
+    if victim == :guardian,
+      do: assert({:ok, %{phase: :unknown, terminal: :unavailable}} = Control.status(control))
+
     assert phase.generation == endpoint.generation
     assert phase.phase == if(victim == :router, do: :retired, else: :unknown)
     assert remaining(deadline) > 0

@@ -91,6 +91,8 @@ defmodule LibTmux.Control.Manager do
       reason: nil
     }
 
+    state = put_terminal(state, nil)
+
     state =
       if generation == 0 and phase == :retired do
         begin_start(state, state.deadline, true)
@@ -192,6 +194,8 @@ defmodule LibTmux.Control.Manager do
             monitors: %{},
             dead: MapSet.new()
         }
+
+        state = put_terminal(state, nil)
 
         if Lifetime.shutting_down?(state.lifetime),
           do: close(state, :connection_closed),
@@ -335,6 +339,15 @@ defmodule LibTmux.Control.Manager do
 
   defp actor_event(state, {:guardian, epoch, guardian, {:retired, proof}})
        when epoch == state.epoch and guardian == state.actors.guardian do
+    stderr = binary_part(proof.stderr, 0, min(byte_size(proof.stderr), 8192))
+
+    state =
+      put_terminal(state, %{
+        reason: proof.reason.kind,
+        phase: proof.reason.phase,
+        stderr: :binary.copy(stderr)
+      })
+
     state = close(state, :disconnected)
 
     if proof.cleanup == :retired and not is_nil(proof.proof),
@@ -752,6 +765,11 @@ defmodule LibTmux.Control.Manager do
         router: state.actors.router,
         waiter_inbox: state.waiters.inbox
       })
+
+  defp put_terminal(state, diagnostic) do
+    :ets.insert(state.view, {:terminal, state.epoch, state.generation, diagnostic})
+    state
+  end
 
   defp publish(state) do
     state = guard_metadata(state)

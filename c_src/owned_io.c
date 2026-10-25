@@ -18,7 +18,8 @@
 #define CHUNK_MAX 8192
 #define OUT_SLOTS 8
 #define OUT_MAX (CHUNK_MAX + 4)
-#define ARGC_MAX 256
+#define ARGC_MAX 2048
+#define ENVC_MAX 256
 
 struct packet { unsigned char bytes[OUT_MAX]; size_t size, sent; };
 struct state {
@@ -126,7 +127,7 @@ static char *take_string(const unsigned char **at, size_t *left) {
 }
 
 static void launch(struct state *s, const unsigned char *body, size_t size) {
-    char *cwd = NULL, *args[ARGC_MAX + 1] = {0}, *environment[ARGC_MAX + 1] = {0};
+    char *cwd = NULL, *args[ARGC_MAX + 1] = {0}, *environment[ENVC_MAX + 1] = {0};
     int pipes[4][2] = {{-1,-1},{-1,-1},{-1,-1},{-1,-1}};
     int error = EINVAL;
     if (size < 11 || body[0] != 'O' || body[1] != 3 || body[2] > 1) goto bad;
@@ -146,7 +147,7 @@ static void launch(struct state *s, const unsigned char *body, size_t size) {
     }
     if (left < 2 || args[0][0] != '/') goto bad;
     unsigned env_count = get16(at); at += 2; left -= 2;
-    if (env_count > ARGC_MAX) goto bad;
+    if (env_count > ENVC_MAX) goto bad;
     for (unsigned i = 0; i < env_count; i++) {
         environment[i] = take_string(&at, &left);
         if (!environment[i]) goto bad;
@@ -196,7 +197,8 @@ bad:
     fail(s, 1, error);
 out:
     free(cwd);
-    for (unsigned i = 0; i < ARGC_MAX; i++) { free(args[i]); free(environment[i]); }
+    for (unsigned i = 0; i < ARGC_MAX; i++) free(args[i]);
+    for (unsigned i = 0; i < ENVC_MAX; i++) free(environment[i]);
     for (int i = 0; i < 4; i++) for (int j = 0; j < 2; j++) close_fd(&pipes[i][j]);
 }
 

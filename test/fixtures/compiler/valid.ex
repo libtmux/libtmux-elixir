@@ -19,8 +19,8 @@ defmodule LibTmux.CompilerExamples.Valid do
 
   def created_pane_id(connection, pane) do
     case Pane.split(connection, pane) do
-      {:ok, %{outcome: :completed, value: %{id: id}}} when is_binary(id) -> {:ok, id}
-      {:ok, outcome} -> {:error, outcome}
+      {:ok, %{value: %{id: id}}} when is_binary(id) -> {:ok, id}
+      {:error, %LibTmux.Action.CompletionError{result: result}} -> {:error, result}
       {:error, error} -> {:error, error}
     end
   end

@@ -51,8 +51,12 @@ jobs:
         run: time mix format --check-formatted
       - name: Check executable documentation drift
         run: time python3 scripts/check_example_docs.py
+      - name: Check publication readiness handling
+        run: time python3 test/hexdocs_readiness_test.py
       - name: Compile core
         run: time mix compile --warnings-as-errors
+      - name: Check generated schema reference
+        run: time mix run scripts/generate_schema.exs --check
       - name: Run pure units
         run: time mix test
       - name: Check public specs and typedocs

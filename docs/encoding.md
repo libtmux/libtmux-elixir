@@ -41,25 +41,36 @@ enforce a range; Boolean parsing accepts only `0` or `1`.
 
 ## Capture rows
 
-Snapshot capture batches each physical entity's free-form fields in one
-response. A row starts with `r1:N`, followed by N tab-separated `v1:` fields
-and one final newline. Each field uses the same conservative encoder above:
-tabs and newlines inside values become escapes, so they cannot become row
-delimiters. The decoder requires the expected version and field count,
-rejects malformed or truncated data, then validates each decoded field
-against its schema. Invalid UTF-8 remains an error for text fields.
+Snapshot capture reads free-form fields with one listing each for sessions,
+windows and panes. Each row starts with `r1:N`, followed by N tab-separated
+`v1:` fields and one final newline. The first field identifies the entity.
+Each field uses the conservative encoder above: tabs and newlines inside
+values become escapes, so they cannot become row delimiters. The decoder
+checks the version, field count and schema. Invalid UTF-8 remains an error
+for text fields. Missing identities or conflicting linked rows trigger the
+existing finite reconciliation retry.
 
-The response ceiling applies to the complete encoded row, including markers
-and separators. Multiple fields that each fit the ceiling individually can
-exceed it together; capture returns a resource-limit error, with no partial
-graph or alternate decoder. The default ceiling remains 64 KiB per response.
+The default response ceiling remains 64 KiB, including markers and separators.
+If a combined listing exceeds it and the client has retired, capture reuses
+individual reads for that entity kind. Each individual row contains its text
+fields without the extra ID column. A row that still exceeds the ceiling
+fails; no partial graph is returned. Timeout, decoding, stderr-limit and
+uncertain-cleanup failures do not trigger this fallback.
 
-One successful attempt uses `10 + S + W + P` commands, where S, W and P are
-the physical session, window and pane counts. Each command still launches
-one owned helper and one tmux client. Linked windows share their text read.
-The two topology scans, incarnation checks, contextual-row accounting and
-capture-wide deadline and byte budgets remain in force. This encoding does
-not qualify arbitrary pane output or hook output for a shared control lane.
+A successful attempt uses 13 commands when all three text listings fit.
+Fallback adds one command per physical entity of the overflowing kind.
+Every command launches one owned helper and one tmux client. Linked text rows
+can repeat in a listing; identical values are deduplicated after decoding.
+Both topology scans count contextual rows against `max_entities`. Text
+responses are bounded by the command and byte budgets.
+
+All reads, including an overflowing listing, consume the same command, byte
+and deadline budgets. Compared with earlier alpha captures, callers using
+tightly sized budgets may need more allowance for ID framing, duplicated
+linked text or fallback work. The individually accepted row size is unchanged.
+Reuse a snapshot for several local queries and capture again when fresh state
+is needed. This encoding does not qualify arbitrary pane output or hook output
+for a shared control lane.
 
 ## Bounded framing
 

@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### Added
+
+- Inspect control-connection failures with `LibTmux.Control.status/1`,
+  including the close reason and captured stderr. (#23)
+
+### Changed
+
+- Nonbang domain actions now report success only for completed commands.
+  Match failures as errors; their execution evidence remains available. (#23)
+- Send up to 995 literal bytes through either transport. This fixes one-shot
+  input above 246 bytes and replaces the documented 1,020-byte limit. (#23)
+- Capture full snapshots with fewer tmux processes. Tight byte and command
+  budgets may need adjustment. (#23)
+
+### Fixed
+
+- Reject oversized one-shot action requests before contacting tmux and
+  return validation errors callers can inspect. (#23)
+
+### Documentation
+
+- Follow an executable application-supervision recipe for replacement
+  connections and recovery after failure. (#23)
+
+### Development
+
+- Retry transient HexDocs availability failures after successful package
+  publication, before checking an installed consumer. (#23)
+- Detect stale schema reference pages and exercise packaged supervision
+  examples in CI. (#23)
+
 ## libtmux 0.0.1-alpha.3 (2026-10-24)
 
 ### Documentation

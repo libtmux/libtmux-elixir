@@ -111,6 +111,40 @@ defmodule LibTmux.ExampleCheck do
           runner,
           "--run",
           executable,
+          elixir,
+          "-pa",
+          ebin,
+          "-e",
+          code,
+          "--",
+          ebin,
+          Path.expand("../test/support/supervision_cases.exs", __DIR__),
+          Path.join(package, "examples/supervised_control.exs")
+        ],
+        options
+      )
+
+    [normal, faults, cleanup] =
+      stdout |> String.split("\n", trim: true) |> Enum.map(&JSON.decode!/1)
+
+    check("supervised_control", normal)
+
+    %{"supervision_cases" => "ok", "native_exited" => true, "unknown_cleanup_refused" => true} =
+      faults
+
+    check_cleanup(cleanup)
+
+    IO.puts(
+      "PASS: packed supervision recipe; stale handles, explicit recovery and unknown cleanup"
+    )
+
+    {:ok, %{stdout: stdout, stderr: "", exit_status: 0, cleanup: :retired}} =
+      OneShot.run(
+        python,
+        [
+          runner,
+          "--run",
+          executable,
           python,
           Path.expand("../test/support/split_argv_lifetime.py", __DIR__),
           elixir,
@@ -251,6 +285,12 @@ defmodule LibTmux.ExampleCheck do
          "created_pane" => "%1",
          "repeated_reads" => 128,
          "connection_retired" => true
+       }),
+       do: :ok
+
+  defp check("supervised_control", %{
+         "supervised_control" => "completed",
+         "explicit_reconnect" => true
        }),
        do: :ok
 

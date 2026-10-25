@@ -111,8 +111,9 @@ the user separately approves a measured critical exception.
 
 The [conservative codec](encoding.md) uses one free-form field per response,
 with explicit versioned encoding before printing and one framing newline.
-Snapshot capture batches those escaped fields into a versioned row per
-physical entity. Raw mode requires a separately qualified raw source. Restricted ID/numeric
+Snapshot capture batches versioned rows in bounded listings, with individual
+physical-entity reads after a retired response overflow. Raw mode requires a
+separately qualified raw source. Restricted ID/numeric
 fields may share a validated format. US/RS with tmux `q` is not a safe
 delimiter scheme. More efficient encodings must first pass hostile-byte
 round trips at every required release. Never decode quoting by shell evaluation.

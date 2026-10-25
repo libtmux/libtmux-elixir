@@ -61,12 +61,16 @@ defmodule LibTmux.Control do
   @typedoc "Startup options plus a separate cleanup allowance of 1..950ms, default 950ms; callback duration has no library timer."
   @type scope_option :: start_option() | {:cleanup_timeout, 1..950}
 
-  @typedoc "A pinned epoch's current phase and identity; retirement and unknown cleanup are distinct."
+  @typedoc "An observed close reason, its error phase and at most 8192 captured stderr bytes; not proof of effects or complete stderr."
+  @type terminal_diagnostic :: %{reason: atom(), phase: atom(), stderr: binary()}
+
+  @typedoc "A pinned epoch's current phase, identity and terminal evidence; retirement and unknown cleanup are distinct."
   @type connection_status :: %{
           epoch: reference() | nil,
           generation: non_neg_integer(),
           phase: :starting | :ready | :closing | :retired | :unknown,
-          instance: String.t() | nil
+          instance: String.t() | nil,
+          terminal: terminal_diagnostic() | nil | :unavailable
         }
 
   @doc """
@@ -164,7 +168,7 @@ defmodule LibTmux.Control do
   `Supervisor.terminate_child/2` followed by `Supervisor.restart_child/2` for
   fresh info. This does not clear unknown cleanup or authorize replay.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec child_spec([start_option()]) :: Supervisor.child_spec()
   def child_spec(options), do: Start.child_spec(options)
@@ -327,7 +331,19 @@ defmodule LibTmux.Control do
   def submit!(control, request, options \\ []), do: unwrap(submit(control, request, options))
 
   @doc """
-  Reads the pinned epoch's current phase and identity without contacting tmux.
+  Reads the pinned epoch's phase, identity and terminal diagnostics without I/O.
+
+  `terminal` is `nil` before a terminal report, or `:unavailable` when the
+  report is missing or an ended epoch has no report. A report contains `reason`, its error
+  `phase` and at most 8192 raw `stderr` bytes. Empty stderr means no bytes were
+  captured; the buffer may be incomplete and need not be UTF-8. It can contain
+  application data and is never logged automatically.
+
+  A terminal report can coexist with `:closing` or unknown cleanup. Its reason
+  is an observed cause, not necessarily the original cause, and does not alter
+  operation outcomes. Status fields are separate observations, not an atomic
+  snapshot. A replacement epoch starts without the old report; old handles
+  remain stale. Losing the status owner returns the existing context error.
 
   See the [worked example](advanced-execution.html).
   """
@@ -338,13 +354,16 @@ defmodule LibTmux.Control do
         %{generation: generation, phase: phase} = Lifetime.status(control.lifetime)
 
         if generation == endpoint.generation do
-          {:ok,
-           %{
-             epoch: endpoint.epoch,
-             generation: generation,
-             phase: phase,
-             instance: endpoint.instance
-           }}
+          with {:ok, terminal} <- terminal(control, endpoint, phase) do
+            {:ok,
+             %{
+               epoch: endpoint.epoch,
+               generation: generation,
+               phase: phase,
+               instance: endpoint.instance,
+               terminal: terminal
+             }}
+          end
         else
           failure(:stale_connection)
         end
@@ -371,7 +390,7 @@ defmodule LibTmux.Control do
   `:ok`. Success is a request or previously known retirement, not a cleanup
   acknowledgement. A replacement Manager or epoch is never followed.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec request_close(t()) :: :ok | {:error, Error.t()}
   def request_close(%__MODULE__{} = control) do
@@ -398,7 +417,7 @@ defmodule LibTmux.Control do
   @doc """
   Requests epoch closure or raises the same structured error.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec request_close!(t()) :: :ok
   def request_close!(control), do: unwrap(request_close(control))
@@ -454,7 +473,7 @@ defmodule LibTmux.Control do
   Errors report unknown certainty about existing effects. Attachment counts
   include the control client; reconnect can attach one replacement client.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec reconnect(t(), [call_option()]) :: {:ok, t()} | {:error, Error.t()}
   def reconnect(%__MODULE__{} = control, options \\ []) do
@@ -473,7 +492,7 @@ defmodule LibTmux.Control do
   @doc """
   Obtains the ready epoch or raises the same structured error.
 
-  See the [worked example](api-examples.html#supervised-control).
+  See the [worked example](supervised-control.html).
   """
   @spec reconnect!(t(), [call_option()]) :: t()
   def reconnect!(control, options \\ []), do: unwrap(reconnect(control, options))
@@ -540,6 +559,26 @@ defmodule LibTmux.Control do
 
       _ ->
         failure(:wrong_connection)
+    end
+  rescue
+    ArgumentError -> failure(:connection_lost)
+  end
+
+  defp terminal(control, endpoint, phase) do
+    case :ets.lookup(control.view, :terminal) do
+      [{:terminal, epoch, generation, diagnostic}]
+      when epoch == endpoint.epoch and generation == endpoint.generation ->
+        {:ok,
+         if(is_nil(diagnostic) and phase in [:retired, :unknown],
+           do: :unavailable,
+           else: diagnostic
+         )}
+
+      [] ->
+        {:ok, :unavailable}
+
+      _ ->
+        failure(:stale_connection)
     end
   rescue
     ArgumentError -> failure(:connection_lost)

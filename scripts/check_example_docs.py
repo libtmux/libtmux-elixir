@@ -2,6 +2,7 @@
 from pathlib import Path
 import argparse
 import re
+import textwrap
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--write", action="store_true")
@@ -14,10 +15,10 @@ for guide in [Path("README.md"), *sorted(Path("docs").glob("*.md"))]:
         expected = source.read_text()
         if match[3]:
             region = re.escape(match[3])
-            snippets = re.findall(rf"^# docs:begin {region}\n(.*?)^# docs:end {region}$", expected, re.M | re.S)
+            snippets = re.findall(rf"^[ \t]*# docs:begin {region}\n(.*?)^[ \t]*# docs:end {region}$", expected, re.M | re.S)
             if len(snippets) != 1:
                 raise SystemExit(f"{source}: expected one example region {match[3]}")
-            expected = snippets[0]
+            expected = textwrap.dedent(snippets[0])
         checked.add(source)
         if match[4] != expected and not options.write:
             raise SystemExit(f"{guide}: {source} drifted; run python3 scripts/check_example_docs.py --write")

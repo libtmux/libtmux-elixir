@@ -7,8 +7,10 @@ defmodule LibTmux.Action do
   replays a mutation or refreshes an observation. One-shot actions check the
   server incarnation before execution; that check leaves a check/use race.
 
-  Ordinary actions return completed, failed, skipped and unknown outcomes.
-  `value` is populated only for a completed command; `details` retains the
+  Ordinary actions return `{:ok, result}` only for completed commands.
+  Failed, skipped and unknown outcomes return
+  `{:error, %LibTmux.Action.CompletionError{result: original_result}}`.
+  `value` holds the completed command's value; `details` retains the
   transport's original bounded evidence. Domain bang functions return the
   completed value or raise `LibTmux.Action.CompletionError` with the original
   unsuccessful result. Acknowledgement does not prove that a program
@@ -22,7 +24,10 @@ defmodule LibTmux.Action do
   Action errors with kind `:invalid_command` include a validation `path` such
   as `[:options, :size]` and a bounded `details.reason` describing accepted
   inputs. The reason appears in the exception message; rejected values are
-  not retained in diagnostic details.
+  not retained in diagnostic details. One-shot actions validate both complete
+  native process specifications before the identity read. Native byte/count
+  refusals use paths such as `[:process, :argv]` or `[:process, :frame]`.
+  Preparation does not check filesystem existence or guarantee execution.
 
   A nonzero one-shot client exit reports `:failed` with `:observed` certainty:
   its exit status is observed, not an authenticated tmux command reply or
@@ -43,10 +48,9 @@ defmodule LibTmux.Action do
   @typedoc "A 1..600000ms execution budget, default 5000ms; optional exact session context for physical targets."
   @type option :: {:timeout, 1..600_000} | {:session, Ref.t()}
   @typedoc """
-  Canonical action outcome and original transport evidence.
+  A completed action's value and original transport evidence.
 
-  A completed outcome carries the action's value; failed, skipped and unknown
-  outcomes carry `nil`. Match the outcome before using the value. Command
+  Only completed results appear in an action's `{:ok, result}` tuple. Command
   acknowledgement remains distinct from external program completion.
 
   A completed split carries `t:LibTmux.Pane.split_value/0`. See
@@ -61,16 +65,18 @@ defmodule LibTmux.Action do
             value: value,
             details: map()
           }
-          | %{
-              outcome: :failed | :skipped | :unknown,
-              certainty: Error.certainty(),
-              evidence: atom(),
-              transport: :one_shot | :control,
-              value: nil,
-              details: map()
-            }
-  @typedoc "An API refusal or a managed execution error retaining its recovery context."
-  @type error :: Error.t() | LibTmux.Control.ExecutionError.t()
+  @typedoc "A failed, skipped or unknown action outcome retained inside CompletionError."
+  @type unsuccessful_result :: %{
+          outcome: :failed | :skipped | :unknown,
+          certainty: Error.certainty(),
+          evidence: atom(),
+          transport: :one_shot | :control,
+          value: nil,
+          details: map()
+        }
+  @typedoc "An API refusal, unsuccessful outcome or managed execution error retaining recovery context."
+  @type error ::
+          Error.t() | LibTmux.Action.CompletionError.t() | LibTmux.Control.ExecutionError.t()
 
   @keys ~w(Enter Space Tab BTab BSpace Escape Up Down Left Right Home End PageUp PageDown Insert Delete)
   @modified_keys ~w(Up Down Left Right Home End PageUp PageDown Insert Delete)
@@ -92,11 +98,14 @@ defmodule LibTmux.Action do
                do: {:ok, result(result, :control, action_value(kind, result))}
 
         %Server{} ->
-          with :ok <- identify(connection, target, deadline) do
+          with {:ok, _payload} <- Server.prepare_command(connection, command),
+               {:ok, _payload} <- Server.prepare_command(connection, identity_command()),
+               :ok <- identify(connection, target, deadline) do
             execute(connection, kind, command, options, deadline)
           end
       end
       |> created_value(kind, target)
+      |> require_completion()
     end
   end
 
@@ -104,8 +113,15 @@ defmodule LibTmux.Action do
 
   @doc false
   def unwrap({:ok, %{outcome: :completed, value: value}}), do: value
-  def unwrap({:ok, result}), do: raise(LibTmux.Action.CompletionError, result: result)
   def unwrap({:error, error}), do: raise(error)
+
+  defp require_completion({:ok, %{outcome: :completed}} = result), do: result
+
+  defp require_completion({:ok, %{outcome: outcome} = result})
+       when outcome in [:failed, :skipped, :unknown],
+       do: {:error, %LibTmux.Action.CompletionError{result: result}}
+
+  defp require_completion({:error, _error} = error), do: error
 
   defp prepare_options(options, entered_at) do
     options = options!(options)
@@ -244,8 +260,9 @@ defmodule LibTmux.Action do
   end
 
   defp build(:send_text, target, bytes, options) do
-    unless is_binary(bytes) and byte_size(bytes) <= 1020,
-      do: invalid!([:text], "expected at most 1020 bytes")
+    # tmux 3.8 permits 1000 command argv entries: five fixed plus the input bytes.
+    unless is_binary(bytes) and byte_size(bytes) <= 995,
+      do: invalid!([:text], "expected at most 995 bytes")
 
     # Hex keys preserve individual bytes, including NUL and invalid UTF-8.
     encoded = for <<byte <- bytes>>, do: Integer.to_string(byte, 16)
@@ -399,9 +416,11 @@ defmodule LibTmux.Action do
 
   defp key?(_key), do: false
 
+  defp identity_command, do: Command.new("display-message", ["-p", ~S"#{pid}"])
+
   defp identify(server, target, deadline) do
     with {:ok, output} <-
-           Server.run(server, Command.new("display-message", ["-p", ~S"#{pid}"]),
+           Server.run(server, identity_command(),
              deadline: deadline,
              max_stdout_bytes: 64
            ),

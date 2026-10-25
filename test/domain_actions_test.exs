@@ -117,6 +117,45 @@ defmodule LibTmux.DomainActionsTest do
     assert reason =~ "max_bytes"
   end
 
+  test "complete native specifications are refused before server identity I/O" do
+    server = Server.new(executable: "/not-a-tmux", socket: "/not-a-socket", env: %{})
+    {:ok, pane} = Ref.new(:pane, "%0", "instance")
+
+    cases = [
+      {server, [command: {:shell, String.duplicate("x", 32_001)}], [:process, :argv]},
+      {server, [command: {:argv, List.duplicate(String.duplicate("x", 16_380), 2)}],
+       [:process, :frame]},
+      {%{server | executable: "/" <> String.duplicate("x", 32_000)}, [], [:process, :executable]},
+      {%{server | cwd: "/" <> String.duplicate("x", 32_000)}, [], [:process, :cwd]},
+      {%{server | socket: "/" <> String.duplicate("x", 32_000)}, [], [:process, :argv]},
+      {%{server | env: %{"PAD" => String.duplicate("x", 32_001)}}, [], [:process, :env]},
+      {%{server | env: Map.new(1..257, &{"KEY#{&1}", ""})}, [], [:process, :env]},
+      {%{
+         server
+         | env: %{"A" => String.duplicate("x", 16_380), "B" => String.duplicate("y", 16_380)}
+       }, [], [:process, :frame]}
+    ]
+
+    for {descriptor, options, path} <- cases do
+      assert {:error, error} = Pane.split(descriptor, pane, options)
+      assert %{kind: :invalid_command, phase: :validation, certainty: :no_write} = error
+      assert error.path == path
+      assert byte_size(error.details.reason) in 1..256
+      assert :erlang.external_size(error) < 512
+    end
+  end
+
+  test "text above the shared tmux argument limit fails before either transport" do
+    server = Server.new(executable: "/not-a-tmux", socket: "/not-a-socket", env: %{})
+    control = %Control{owner: self(), view: make_ref(), lifetime: nil, endpoint: %{}}
+    {:ok, pane} = Ref.new(:pane, "%0", "instance")
+
+    for connection <- [server, control], size <- [996, 1020, 1021] do
+      assert {:error, %{kind: :invalid_command, path: [:text], certainty: :no_write}} =
+               Pane.send_text(connection, pane, :binary.copy("x", size))
+    end
+  end
+
   test "modifier spellings with native literal fallback are rejected before admission" do
     {:ok, pane} = Ref.new(:pane, "%0", "instance")
 

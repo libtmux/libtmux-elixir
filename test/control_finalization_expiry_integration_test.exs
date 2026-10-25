@@ -72,7 +72,14 @@ defmodule LibTmux.ControlFinalizationExpiryIntegrationTest do
       assert_receive {^token, expiry_notice, ^cutoff}, Deadline.remaining(deadline)
       assert expiry_notice == :expired
       exited(original, deadline)
-      assert {:ok, %{phase: :unknown, generation: generation}} = Control.status(control)
+
+      assert {:ok,
+              %{
+                phase: :unknown,
+                generation: generation,
+                terminal: %{reason: :closure_requested, phase: :transport, stderr: ""}
+              }} = Control.status(control)
+
       assert generation == endpoint.generation
       assert {:ok, ^result} = Operation.result(operation)
 

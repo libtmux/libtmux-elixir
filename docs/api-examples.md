@@ -134,11 +134,9 @@ IO.puts(JSON.encode!(%{encoding_values: "ok"}))
 ## Supervised control
 
 Use `LibTmux.Control.child_spec/1` when the connection belongs to an application
-supervisor. It performs no attachment while building the spec. Pass the same
-explicit server/session/lane options as in the [advanced program](advanced-execution.md).
-`Supervisor.start_child/2` returns `{:ok, root, control}`; retain that control
-handle. An automatic restart cannot silently reconnect or make an old handle
-current. See `LibTmux.Control.child_spec/1` for obtaining replacement info.
+supervisor. The [executable supervision recipe](supervised-control.md) shows
+an application owner, caller access, replacement handles and explicit recovery
+after known retirement. Unknown cleanup leaves the connection unavailable.
 
 `LibTmux.Control.reconnect/2` returns a ready replacement only after the old
 epoch is proven retired. A ready handle returns itself. It never replays

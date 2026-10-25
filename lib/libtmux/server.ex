@@ -150,10 +150,9 @@ defmodule LibTmux.Server do
   """
   @spec run(t(), Command.t(), [OneShot.option()]) :: {:ok, OneShot.result()} | {:error, Error.t()}
   def run(%__MODULE__{} = server, %Command{} = command, options \\ []) do
-    arguments = ["-N", "-u", "-S", server.socket | Command.argv(command)]
     options = Keyword.merge([cwd: server.cwd, env: server.env], options)
 
-    case OneShot.run(server.executable, arguments, options) do
+    case OneShot.run(server.executable, arguments(server, command), options) do
       {:ok, %{exit_status: 0} = result} ->
         {:ok, result}
 
@@ -170,6 +169,19 @@ defmodule LibTmux.Server do
         error
     end
   end
+
+  @doc false
+  def prepare_command(%__MODULE__{} = server, %Command{} = command) do
+    LibTmux.Transport.Native.Protocol.prepare_process(
+      server.executable,
+      arguments(server, command),
+      cwd: server.cwd,
+      env: server.env
+    )
+  end
+
+  defp arguments(server, command),
+    do: ["-N", "-u", "-S", server.socket | Command.argv(command)]
 
   @doc """
   Captures a new graph explicitly, with bounded work and read retries.

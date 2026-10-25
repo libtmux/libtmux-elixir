@@ -21,8 +21,8 @@ Byte limits may be 0–16 MiB per stream; chunk limits may be 1–65,536.
 `max_total_bytes` limits both streams together to 0–32 MiB; its default is
 the sum of the stream limits. The retained prefix obeys both ceilings.
 Encoded cwd, argv and environment together fit a 32 KiB initialization
-payload. Argv and environment each have at most 256 entries, including
-argv's executable. Target environment values preserve empty strings and
+payload. Argv has at most 2,048 entries including its executable; environment
+has at most 256 entries. Target environment values preserve empty strings and
 non-NUL bytes; inherited tmux context is removed. Requested variables apply
 to child `execve`; the helper inherits the trusted host environment.
 

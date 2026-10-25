@@ -88,11 +88,12 @@ control_id =
 
     {:ok, %{phase: :ready}} = Control.status(control)
     {:ok, %{result: %{outcome: :completed}}} = Operation.status(operation)
-    {:ok, %{outcome: :completed}} = Operation.result(operation)
 
     {:ok, id} = Codec.decode_field(line <> "\n", :string, encoding: :escaped_v1)
     true = id == pane.id
     :ok = Control.close(control, timeout: 800)
+    {:ok, %{phase: :retired, terminal: %{reason: :closure_requested}}} = Control.status(control)
+    {:ok, %{outcome: :completed}} = Operation.result(operation)
     :ok = Operation.forget(operation, timeout: 800)
     id
   after
@@ -127,6 +128,12 @@ The result contains the observed session, window and pane IDs. Both replies
 must identify the selected pane, and `connectionRetired` is true only after
 connection close and supervisor exit succeed. The harness checks that the
 borrowed server and pane survived the program, then tears down its own fixture.
+
+After closure, `LibTmux.Control.status/1` retains the observed close reason
+and bounded captured stderr until epoch replacement or context loss. Inspect
+a report before reconnecting or shutting its owner down. The example checks requested closure and
+the unchanged completed operation; an unexpected close can have a different
+reason or unavailable evidence. Captured stderr can contain application data.
 
 ## What each step establishes
 

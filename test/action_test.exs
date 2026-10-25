@@ -35,7 +35,8 @@ defmodule LibTmux.ActionTest do
         extra_evidence: make_ref()
       }
 
-      error = assert_raise CompletionError, fn -> Action.unwrap({:ok, result}) end
+      error = %CompletionError{result: result}
+      assert assert_raise(CompletionError, fn -> Action.unwrap({:error, error}) end) === error
       assert error.result === result
       message = Exception.message(error)
       assert message =~ inspect(outcome)
