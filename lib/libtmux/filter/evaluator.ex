@@ -6,7 +6,28 @@ defmodule LibTmux.Filter.Evaluator do
     {predicate, relations} = compile(filter.tree, filter.entity, snapshot, %{})
 
     if map_size(relations) == 0 do
-      predicate
+      fields = filter.tree |> scalar_fields() |> Enum.uniq()
+      entity = filter.entity
+
+      fn item ->
+        Enum.each(fields, fn field ->
+          case Map.fetch!(item, field) do
+            state when state in [:unloaded, :unavailable] ->
+              kind = if state == :unloaded, do: :field_not_loaded, else: :field_unavailable
+
+              raise Error,
+                kind: kind,
+                phase: :evaluation,
+                certainty: :no_write,
+                path: [entity, field]
+
+            _value ->
+              :ok
+          end
+        end)
+
+        predicate.(item)
+      end
     else
       entity = filter.entity
 
@@ -25,6 +46,12 @@ defmodule LibTmux.Filter.Evaluator do
       end
     end
   end
+
+  defp scalar_fields({:field, field, _op, _value}), do: [field]
+  defp scalar_fields({:not, child}), do: scalar_fields(child)
+
+  defp scalar_fields({boolean, children}) when boolean in [:and, :or],
+    do: Enum.flat_map(children, &scalar_fields/1)
 
   defp compile({:and, children}, entity, snapshot, relations) do
     {predicates, relations} =

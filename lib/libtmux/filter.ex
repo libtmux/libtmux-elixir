@@ -117,8 +117,12 @@ defmodule LibTmux.Filter do
   Related values always come from the prepared snapshot; equal inputs from
   another capture are accepted.
 
-  Scalar-only predicates read the supplied observation. Their snapshot is
-  used only to validate captured coverage.
+  Scalar-only predicates read the supplied observation and may be reused
+  across captures. Each referenced field must be loaded: `:unloaded` raises
+  `:field_not_loaded` and `:unavailable` raises `:field_unavailable` before
+  Boolean evaluation. Known nullable values keep their comparison semantics;
+  unreferenced fields need not be loaded. The snapshot validates coverage
+  when preparing the predicate.
 
   See the [worked example](api-examples.html#local-graph-and-filtering).
   """
