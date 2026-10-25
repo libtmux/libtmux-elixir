@@ -8,7 +8,7 @@ defmodule LibTmux.MixProject do
   def project do
     [
       app: :libtmux,
-      version: "0.0.1-alpha.3",
+      version: "0.0.1-alpha.4",
       elixir: ">= 1.20.4 and < 2.0.0",
       elixirc_paths: elixirc_paths(Mix.env()),
       test_ignore_filters: [&String.starts_with?(&1, "test/fixtures/compiler/")],

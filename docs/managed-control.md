@@ -1,6 +1,6 @@
 # Run repeated work with managed control
 
-Managed execution and scoped connections are available in `0.0.1-alpha.3`.
+Managed execution and scoped connections are available in `0.0.1-alpha.4`.
 Use the [owned-server recipe](owned-server.md) to run the example from a
 packed copy of the library.
 

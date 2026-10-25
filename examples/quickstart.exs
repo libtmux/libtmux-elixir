@@ -1,4 +1,4 @@
-Mix.install([{:libtmux, "== 0.0.1-alpha.3"}])
+Mix.install([{:libtmux, "== 0.0.1-alpha.4"}])
 
 alias LibTmux.{Command, Selection, Server, Snapshot}
 

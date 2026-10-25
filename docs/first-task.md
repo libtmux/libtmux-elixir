@@ -1,7 +1,7 @@
 # Capture and filter an existing server
 
 Capture once, then query the immutable result without more tmux commands.
-This example works with the published `0.0.1-alpha.3` package. Install it in
+This example works with the published `0.0.1-alpha.4` package. Install it in
 an Elixir project as shown in the [README](../README.md#installation).
 
 Save this program as `capture_and_filter.exs` in your application:

@@ -1,6 +1,6 @@
 # Run the standalone alpha demo
 
-This self-contained example installs the published `0.0.1-alpha.3` package,
+This self-contained example installs the published `0.0.1-alpha.4` package,
 creates a private server, adds a pane and window, then prints
 `demo: 2 windows, 3 panes`. It uses the alpha's explicit command API.
 The [first task](first-task.md) shows how to observe an existing server;
@@ -13,7 +13,7 @@ Its first run needs network access to install the package.
 <!-- example: examples/quickstart.exs -->
 
 ```elixir
-Mix.install([{:libtmux, "== 0.0.1-alpha.3"}])
+Mix.install([{:libtmux, "== 0.0.1-alpha.4"}])
 
 alias LibTmux.{Command, Selection, Server, Snapshot}
 

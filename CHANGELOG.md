@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## libtmux 0.0.1-alpha.4 (2026-10-25)
+
 ### Added
 
 - Inspect control-connection failures with `LibTmux.Control.status/1`,
