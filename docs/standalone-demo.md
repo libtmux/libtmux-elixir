@@ -1,8 +1,8 @@
-# Run the standalone alpha demo
+# Run the standalone demo
 
 This self-contained example installs the published `0.0.1-alpha.4` package,
 creates a private server, adds a pane and window, then prints
-`demo: 2 windows, 3 panes`. It uses the alpha's explicit command API.
+`demo: 2 windows, 3 panes`. It uses the explicit command API.
 The [first task](first-task.md) shows how to observe an existing server;
 [one-shot actions](one-shot-actions.md) introduces the domain helpers.
 
