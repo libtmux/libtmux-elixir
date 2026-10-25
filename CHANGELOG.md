@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Changed
+
+- `Session.windows/2`, `Session.panes/2` and `Window.panes/2` now return
+  selections for filtering and checked cardinality. Use `Enum.to_list/1`
+  when a list is needed. (#36)
+
 ### Fixed
 
 - Scalar predicates returned by `LibTmux.Filter.to_predicate/2` now raise a
