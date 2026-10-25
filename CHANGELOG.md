@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Reusing `LibTmux.Filter.to_predicate/2` with missing fields now raises a
+  coverage error before evaluating Boolean branches. (#35)
+
 ## libtmux 0.0.1-alpha.4 (2026-10-25)
 
 ### Added
