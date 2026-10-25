@@ -2,7 +2,7 @@
 
 This page records the selected implementation boundaries. The implemented core
 includes capture/filtering, bounded one-shot execution, persistent retained
-and managed control, scoped connections and split/rename/input/capture actions.
+and managed control, scoped connections and create/split/rename/input/capture actions.
 Query, Batch/Group/Plan, Observation/Tracker, the owned program runner, workspace
 and MCP remain planned. Their rows below are contracts for future work. See [design](design.md)
 for the observation and execution model.
@@ -59,7 +59,8 @@ required cell; they cannot become successful skips.
 | `MCP` | STDIO discovery and bounded retained operations under host authority. Models choose allowlisted server IDs and exact returned references. |
 
 Future server/session/window/pane/client operations extend to options, hooks
-and formats. The current domain surface covers split, rename, separate literal
+and formats. The current domain surface covers detached session/window creation
+on existing servers, split, rename, separate literal
 and named input, and bounded one-shot screen capture. Preserve server/session/window scope and local/inherited/effective
 option distinctions. Literal text and named keys are different operations.
 Configured hooks and aliases are part of lane qualification; never disable

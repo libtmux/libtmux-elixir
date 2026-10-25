@@ -19,6 +19,67 @@ defmodule LibTmux.DomainActionsIntegrationTest do
   @moduletag :integration
   @moduletag reason: "Qualifies literal input, exact membership and domain actions on owned tmux"
 
+  @tag :creation
+  test "named detached creation preserves command intent, names and no-start behavior" do
+    fixture = start_supervised!({OwnedTmux, []})
+    info = OwnedTmux.info(fixture)
+    server = server(info)
+    cwd = Path.join(Path.dirname(info.socket), ~S"working #{pid}")
+    File.mkdir!(cwd)
+    name = ~S"work #{pid}"
+
+    try do
+      assert {:ok, %{outcome: :completed, value: %{id: session_id, ref: nil}}} =
+               Server.new_session(server, name, cwd: cwd, command: {:argv, ["/bin/cat"]})
+
+      snapshot = Server.snapshot!(server)
+      assert snapshot.sessions[session_id].name == name
+      assert snapshot.sessions[session_id].attached_count == 0
+      assert {:ok, session} = Ref.from_observation(snapshot.sessions[session_id])
+      assert field(fixture, session_id, "pane_start_path") == cwd
+      assert field(fixture, session_id, "pane_start_command") =~ "--exec-one /bin/cat"
+      original_window = Session.active_window(snapshot, snapshot.sessions[session_id]).id
+
+      assert {:error,
+              %LibTmux.Action.CompletionError{result: %{outcome: :failed, certainty: :observed}}} =
+               Server.new_session(server, name, command: {:argv, ["/bin/cat"]})
+
+      window_name = ~S"logs #{pid}"
+
+      assert %{id: window_id, ref: nil} =
+               Session.new_window!(server, session, window_name,
+                 cwd: cwd,
+                 command: {:shell, "exec /bin/cat"}
+               )
+
+      assert field(fixture, window_id, "pane_start_path") == cwd
+      assert field(fixture, window_id, "pane_start_command") =~ "exec /bin/cat"
+
+      assert %{id: second_id, ref: nil} =
+               Session.new_window!(server, session, window_name, command: {:argv, ["/bin/cat"]})
+
+      assert second_id != window_id
+
+      fresh = Server.snapshot!(server)
+      assert fresh.windows[window_id].name == window_name
+      assert fresh.windows[second_id].name == window_name
+      assert Session.active_window(fresh, fresh.sessions[session_id]).id == original_window
+      refute Map.has_key?(snapshot.windows, window_id)
+
+      missing = %{server | socket: info.socket <> "-missing"}
+
+      assert {:error, %LibTmux.Action.CompletionError{result: %{outcome: :failed}}} =
+               Server.new_session(missing, "absent")
+
+      assert {:error, %{kind: :command_error, certainty: :no_write}} =
+               Session.new_window(missing, session, "absent")
+
+      refute File.exists?(missing.socket)
+    after
+      close_fixture(fixture, info)
+    end
+  end
+
   for lane <- [:one_shot, :control] do
     @tag lane: lane
     @tag :command_intent

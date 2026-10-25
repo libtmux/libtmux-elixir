@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Create named detached sessions and windows on an existing server with
+  `Server.new_session/3` and `Session.new_window/4`. These one-shot actions
+  return the created ID; capture again for a bound reference. (#37)
+
 ### Changed
 
 - `Session.windows/2`, `Session.panes/2` and `Window.panes/2` now return

@@ -1,14 +1,22 @@
-# Split, rename, send input and capture
+# Create, split, rename, send input and capture
 
-Split panes, rename sessions and windows, send input and capture screen
-contents with the domain helpers in `0.0.1-alpha.4`. Run the packaged example
-with the [owned-server recipe](owned-server.md).
+Create sessions and windows on an existing server, split panes, rename,
+send input and capture screen contents with the domain helpers. Run the
+packaged example with the [owned-server recipe](owned-server.md).
 
-Pass a `LibTmux.Server` to choose one-shot execution. Each action checks the
-captured server incarnation before issuing its command. That check leaves a
-check/use race; use [qualified control](managed-control.md) when the mutation
-must remain bound to a live connection. No action changes transport or
+Pass a `LibTmux.Server` to choose one-shot execution. Actions taking a target
+reference check its captured server incarnation before issuing the command.
+That check leaves a check/use race; use [qualified control](managed-control.md)
+when a supported mutation must remain bound to a live connection. No action changes transport or
 retries with a positional target.
+
+`LibTmux.Server.new_session/3` creates a named detached session on an existing
+server. `LibTmux.Session.new_window/4` creates a named detached window in a
+referenced session. Both use one-shot execution and return the created ID
+with `ref: nil`; capture again to obtain a reference. Neither starts a missing
+daemon. Session creation has no observed target and does not read an identity
+before dispatch. These functions accept `timeout`, literal `cwd` and the
+command forms below, except `:empty`.
 
 This complete program renames a session and window, splits a pane, sends
 literal text and a named key, then captures bounded screen bytes. It receives
@@ -77,6 +85,7 @@ byte count without claiming that `hello` has already appeared.
 
 | Task | Options and result |
 | --- | --- |
+| Create | `Server.new_session/3` or `Session.new_window/4`; named, detached creation on an existing server. Duplicate session names fail; duplicate window names are allowed. |
 | Rename | `Session.rename/4` or `Window.rename/4`; 1..1024 UTF-8 bytes without Unicode control characters. tmux's name normalization remains version-dependent. |
 | Split | `Pane.split/3`; vertical, half size and detached by default. Horizontal places panes side by side. Percent sizes use `-l N%`, including on tmux 3.4. `value` contains the pane `id` and `ref: nil`. |
 | Literal input | `Pane.send_text/4`; 0..995 bytes, including NUL and invalid UTF-8. It never parses key names. |
@@ -113,12 +122,12 @@ prove that no side effect occurred. See `LibTmux.Action` and
 
 ## Command forms
 
-Use explicit intent when a split command is assembled dynamically:
+Use explicit intent when a pane command is assembled dynamically:
 
 | `command` | Meaning |
 | --- | --- |
 | `:default` or omitted | Use the session default command/shell. |
-| `:empty` | Create a pane without a shell or program. |
+| `:empty` | Split only: create a pane without a shell or program. |
 | `{:shell, "program \| another_program"}` | Interpret nonempty text through the session's configured shell. |
 | `{:argv, ["/path/to/program"]}` | Execute with exactly one argv entry. |
 | `{:argv, ["program", "argument with spaces"]}` | Preserve each argv entry; use tmux's PATH lookup. |

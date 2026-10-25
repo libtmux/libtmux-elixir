@@ -78,6 +78,39 @@ defmodule LibTmux.Session do
     do: LibTmux.Snapshot.related_observation(snapshot, :session, session, :active_window)
 
   @doc """
+  Creates a named detached window in an exact session through one-shot execution.
+
+  Returns `{:ok, result}` on completion, with `%{id: window_id, ref: nil}`
+  as its value. Capture a fresh observation for a bound reference. The session
+  reference is checked against the answering server before dispatch, with
+  the usual one-shot check/use race. Missing servers are not started.
+  Control connections are unsupported. tmux permits duplicate window names.
+
+  Names, `timeout`, `cwd` and explicit `command` forms follow
+  `LibTmux.Server.new_session/3`. The new window uses tmux's next available
+  index in this session. Existing observations remain unchanged.
+
+      alias LibTmux.Session
+
+      Session.new_window(server, session_ref, "logs", command: {:argv, ["/bin/cat"]})
+  """
+  @spec new_window(LibTmux.Server.t(), LibTmux.Ref.t(), binary(), [
+          LibTmux.Action.creation_option()
+        ]) ::
+          {:ok, LibTmux.Action.result(LibTmux.Action.creation_value())}
+          | {:error, LibTmux.Action.error()}
+  def new_window(server, ref, name, options \\ []),
+    do: LibTmux.Action.run(:new_window, server, ref, name, options)
+
+  @doc "Returns the created window value when `new_window/4` completes; raises the original error otherwise."
+  @spec new_window!(LibTmux.Server.t(), LibTmux.Ref.t(), binary(), [
+          LibTmux.Action.creation_option()
+        ]) ::
+          LibTmux.Action.creation_value()
+  def new_window!(server, ref, name, options \\ []),
+    do: server |> new_window(ref, name, options) |> LibTmux.Action.unwrap()
+
+  @doc """
   Renames an exact session; returns `{:ok, result}` on command completion.
 
   Names contain 1..1024 UTF-8 bytes without Unicode control characters (Cc).

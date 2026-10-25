@@ -3,6 +3,51 @@ defmodule LibTmux.DomainActionsTest do
   alias LibTmux.{Control, Pane, Ref, Server, Session, Window}
   alias LibTmux.Control.Request
 
+  test "creation rejects unsupported forms and invalid process specifications before I/O" do
+    server = Server.new(executable: "/not-a-tmux", socket: "/not-a-socket", env: %{})
+    {:ok, session} = Ref.new(:session, "$0", "instance")
+
+    for create <- [
+          &Server.new_session(server, &1, &2),
+          &Session.new_window(server, session, &1, &2)
+        ] do
+      for {name, options, path} <- [
+            {"", [], [:name]},
+            {"bad\nname", [], [:name]},
+            {"work", [detached: false], [:options, :detached]},
+            {"work", [timeout: 0], [:options, :timeout]},
+            {"work", [cwd: <<0>>], [:options, :cwd]},
+            {"work", [command: :empty], [:options, :command]},
+            {"work", [command: []], [:options, :command]},
+            {"work", [command: {:shell, ""}], [:options, :command, :shell]},
+            {"work", [command: {:argv, []}], [:options, :command, :argv]},
+            {"work", [command: {:shell, String.duplicate("x", 32_001)}], [:process, :argv]}
+          ] do
+        assert {:error, %{kind: :invalid_command, path: ^path, certainty: :no_write}} =
+                 create.(name, options)
+      end
+    end
+
+    oversized = %{server | env: Map.new(1..257, &{"KEY#{&1}", ""})}
+
+    assert {:error, %{kind: :invalid_command, path: [:process, :env], certainty: :no_write}} =
+             Server.new_session(oversized, "work")
+
+    control = %Control{owner: self(), view: make_ref(), lifetime: nil, endpoint: %{}}
+
+    for result <- [
+          Server.new_session(control, "work"),
+          Session.new_window(control, session, "logs")
+        ] do
+      assert {:error, %{kind: :unsupported_transport, certainty: :no_write}} = result
+    end
+
+    {:ok, pane} = Ref.new(:pane, "%0", "instance")
+
+    assert {:error, %{kind: :invalid_target, certainty: :no_write}} =
+             Session.new_window(server, pane, "logs")
+  end
+
   test "action refusals locate invalid inputs and retain bounded reasons" do
     server = Server.new(executable: "/not-a-tmux", socket: "/not-a-socket")
     control = %Control{owner: self(), view: make_ref(), lifetime: nil, endpoint: %{}}
