@@ -44,7 +44,7 @@ defmodule LibTmux.Server do
   captured graph with `LibTmux.Session.windows/2`, `LibTmux.Session.panes/2`,
   `LibTmux.Session.active_window/2` and `LibTmux.Window.panes/2`, or use
   `LibTmux.Snapshot.related/4` for other relationships. These functions use
-  the supplied snapshot. Plural relationship helpers return lists; a
+  the supplied snapshot. Plural helpers return selections for further filtering; a
   `LibTmux.WindowLink` preserves a window's membership in one session.
 
   **Changing things.** `LibTmux.Pane.split/3` creates a pane and returns its ID

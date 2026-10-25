@@ -303,7 +303,20 @@ defmodule LibTmux.Snapshot do
   def related_observation(%__MODULE__{} = snapshot, entity, observation, relation) do
     with {:ok, %Ref{entity: ^entity} = ref} <- Ref.from_observation(observation),
          :ok <- Ref.validate(ref, snapshot.server_instance) do
-      related(snapshot, entity, ref.id, relation)
+      items = related(snapshot, entity, ref.id, relation)
+
+      case Schema.relations(entity)[relation] do
+        {:many, target} ->
+          %LibTmux.Selection{
+            entity: Schema.module(target),
+            items: items,
+            count: length(items),
+            snapshot: snapshot
+          }
+
+        {:one, _target} ->
+          items
+      end
     else
       {:ok, _wrong_kind} -> raise_error(:invalid_target, [:target])
       {:error, error} -> raise %{error | phase: :evaluation}
