@@ -18,6 +18,11 @@
   <a href="https://libtmux.org/en/elixir/">Documentation</a>
 </p>
 
+[![Core checks](https://github.com/libtmux/libtmux-elixir/actions/workflows/scaffold.yml/badge.svg)](https://github.com/libtmux/libtmux-elixir/actions/workflows/scaffold.yml)
+[![libtmux](https://img.shields.io/hexpm/v/libtmux?label=libtmux)](https://hex.pm/packages/libtmux)
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/elixir/)
+[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/libtmux/libtmux-elixir/blob/main/LICENSE)
+
 </div>
 
 Read tmux sessions, windows and panes from Elixir. Filter a snapshot, rename
