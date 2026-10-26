@@ -11,6 +11,8 @@
 
 # libtmux workspace for Elixir
 
+[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/elixir/)
+
 </div>
 
 This package will provide the versioned JSON workspace loader, planner,
