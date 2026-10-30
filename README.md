@@ -50,7 +50,7 @@ captured snapshot; actions contact tmux explicitly.
 Add the package to your Mix dependencies:
 
 ```elixir
-{:libtmux, "~> 0.1"}
+{:libtmux, "== 0.1.0"}
 ```
 
 Fetch dependencies:
