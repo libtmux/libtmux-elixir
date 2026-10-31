@@ -10,7 +10,7 @@ value stays fixed while live objects continue changing.
 
 | Value | What it represents | I/O boundary |
 | --- | --- | --- |
-| `LibTmux.Server` | Executable, socket and environment for an existing server | Pure descriptor construction |
+| `LibTmux.Server` | Executable, socket choice and environment for an existing server | Pure descriptor construction |
 | `LibTmux.Snapshot` | An indexed graph captured over one interval | `LibTmux.Server.snapshot/2` captures a new value |
 | `LibTmux.Selection` | Ordered items and their originating snapshot | Filtering and enumeration use captured values |
 | `LibTmux.Ref` | An observed exact ID and server instance | Pure identity data; it reserves nothing |
