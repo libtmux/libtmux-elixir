@@ -83,7 +83,13 @@ does not prove that an already-dispatched command had no effect.
 ## Package and validation boundaries
 
 Workspace loading and MCP are separate packages that depend on the core.
-The core does not depend on their parsers, hosting, or configuration. The
+The core does not depend on their parsers, hosting, or configuration.
+
+Socket selection belongs to the core. A caller that names no socket gets
+`LIBTMUX_SOCKET_PATH`, else `LIBTMUX_SOCKET`, else no socket at all, so tmux
+chooses. The workspace loader and the MCP server follow that rule from their
+first release: they pass neither `-L` nor `-S` of their own, and an explicit
+option or flag comes first. The
 [implementation contracts](implementation.md#packages-and-support) select
 the package names and layout; adapter dependency choices still require
 qualification.

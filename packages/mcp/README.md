@@ -19,6 +19,14 @@ This package will provide the bounded STDIO adapter, discovery, retained
 operations and host-authorized tmux tools. It is under implementation and
 has no protocol server or executable yet.
 
+Socket selection will follow the core's rule from the first release. The
+server passes tmux neither `-L` nor `-S` unless a tool argument or startup
+option names a socket, or `LIBTMUX_SOCKET_PATH` (`-S`) or `LIBTMUX_SOCKET`
+(`-L`) is set. An explicit argument wins over both variables, and the path
+variable wins over the name variable. No dedicated socket of the package's
+own is planned. See
+[the design note](../../docs/design.md#package-and-validation-boundaries).
+
 The package consumes `libtmux` and `libtmux_workspace`, sharing workspace
 validation and planning. Published metadata uses version requirements.
 `LIBTMUX_SOURCE_DEPS=1` explicitly selects local development wiring; it is
