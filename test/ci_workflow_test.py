@@ -100,6 +100,12 @@ def problems(scaffold, release):
         if f"{variable}: ${{{{ needs.{job}.result }}}}" not in gate or f'test "${variable}" = success' not in gate:
             found.append(f"required-linux: must require {job} to have succeeded")
 
+    group = re.search(r"(?m)^concurrency:\n  group: (.*)\n  cancel-in-progress: (.*)$", scaffold)
+    if not group or "github.event_name == 'workflow_dispatch' && github.run_id ||" not in group[1]:
+        found.append("a dispatch run must have its own concurrency group")
+    if not group or "|| github.ref" not in group[1] or group[2] != "true":
+        found.append("a push and a pull request must still cancel the run they supersede")
+
     inputs = dispatch_inputs(scaffold)
     if sorted(inputs) != ["elixir", "os", "otp", "scope", "tmux-ref"]:
         found.append("the dispatch inputs are not the plan's")
@@ -168,6 +174,15 @@ MUTATIONS = [
         s, '          test "$NATIVE_RESULT" = success\n'), r), "must require native to have succeeded"),
     ("a job is added that the aggregate does not wait for", lambda s, r: (
         s + "\n  extra:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: 'true'\n", r), "must wait for every other job"),
+    ("a dispatch shares its group with the push", lambda s, r: (replaced(
+        s, "github.event_name == 'workflow_dispatch' && github.run_id || ", ""), r),
+     "a dispatch run must have its own concurrency group"),
+    ("a push no longer cancels its predecessor", lambda s, r: (replaced(
+        s, "cancel-in-progress: true", "cancel-in-progress: false"), r),
+     "must still cancel the run they supersede"),
+    ("a pull request shares one group with every other", lambda s, r: (replaced(
+        s, "github.run_id || github.ref", "github.run_id"), r),
+     "must still cancel the run they supersede"),
     ("an input is dropped from the dispatch", lambda s, r: (replaced(
         s, "      otp:\n", "      other:\n"), r), "the dispatch inputs are not the plan's"),
     ("the scope input defaults to full", lambda s, r: (replaced(
