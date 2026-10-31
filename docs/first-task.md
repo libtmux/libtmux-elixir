@@ -34,12 +34,18 @@ IO.puts(JSON.encode!(%{active_panes: active_ids}))
 
 <!-- /example -->
 
-Set `LIBTMUX_TMUX` to the absolute tmux executable and `LIBTMUX_SOCKET` to
-the absolute socket of the existing server you intend to observe. Run:
+Set `LIBTMUX_TMUX` to the absolute tmux executable and `LIBTMUX_SOCKET_PATH`
+to the absolute socket path of the existing server you intend to observe.
+Run:
 
 ```console
-$ mix run capture_and_filter.exs "$LIBTMUX_TMUX" "$LIBTMUX_SOCKET"
+$ mix run capture_and_filter.exs "$LIBTMUX_TMUX" "$LIBTMUX_SOCKET_PATH"
 ```
+
+The program passes `socket:` itself, so it never reads those variables. When
+`socket:` and `socket_name:` are both left out, `LibTmux.Server.new/1` reads
+`LIBTMUX_SOCKET_PATH`, then `LIBTMUX_SOCKET`, a socket name, and passes tmux
+no socket when neither is set. tmux then uses its default socket.
 
 The JSON result lists active physical pane IDs in numeric order. A pane is
 active within its physical window; this is not a choice of one session's

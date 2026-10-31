@@ -1,9 +1,11 @@
 # Captured tmux state
 
 `LibTmux.Server.new/1` constructs a descriptor with an explicit executable
-and socket. It performs no I/O. `LibTmux.Server.snapshot/2` observes that
-existing server and returns an immutable `LibTmux.Snapshot`. Neither call
-attaches a control client or starts a missing server. Configured tmux hooks
+and a socket choice: a path, a name, one of the `LIBTMUX_SOCKET_PATH` and
+`LIBTMUX_SOCKET` variables, or none, which leaves the choice to tmux. It
+performs no I/O. `LibTmux.Server.snapshot/2` observes that existing server
+and returns an immutable `LibTmux.Snapshot`. Neither call attaches a control
+client or starts a missing server. Configured tmux hooks
 remain environmental effects of commands, including list commands.
 
 ## Read one captured graph

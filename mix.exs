@@ -53,7 +53,8 @@ defmodule LibTmux.MixProject do
       "README.md" => [{"examples/readme.exs", blob <> "examples/readme.exs"}],
       ".github/CONTRIBUTING.md" => [
         {"../.tool-versions", blob <> ".tool-versions"},
-        {"../mix.exs", blob <> "mix.exs"}
+        {"../mix.exs", blob <> "mix.exs"},
+        {"../test/test_helper.exs", blob <> "test/test_helper.exs"}
       ],
       "AGENTS.md" => [{"mix.exs", blob <> "mix.exs"}],
       "docs/implementation.md" => [

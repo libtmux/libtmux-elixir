@@ -44,7 +44,7 @@ required cell; they cannot become successful skips.
 
 | Surface | Contract and critical proof |
 | --- | --- |
-| `Server` | Explicit executable/socket/environment and transport. Connect does not create a server. Close releases owned clients without killing borrowed sessions. |
+| `Server` | Explicit executable and environment, a socket by path, by name or left to tmux, and transport. Connect does not create a server. Close releases owned clients without killing borrowed sessions. |
 | `Session`, `Window`, `WindowLink`, `Pane`, `Client` | Typed immutable observations with exact IDs. Link context belongs to WindowLink. Preserve counts and reject conflicting repeated physical rows. |
 | `Snapshot` | Indexed graph, incarnation, capture interval and scoped coverage. Differentiate unloaded, unavailable, known nil, empty and invalid data. Capture validates references with bounded retry. |
 | `Selection` | Ordered materialized Enumerable, cached size, ordinary element equality, no I/O. Data filtering and native predicates have separate entrypoints. Checked cardinality stops at the second match. |

@@ -50,10 +50,12 @@ defmodule LibTmux.Control.Start do
     server = options[:server]
     {:existing, session} = options[:session]
 
-    unless is_binary(server.socket) and Path.type(server.socket) == :absolute and
-             byte_size(server.socket) in 1..32_000 and
-             :binary.match(server.socket, <<0>>) == :nomatch,
-           do: raise(ArgumentError, "control requires an absolute bounded NUL-free socket")
+    unless Server.valid_socket?(server),
+      do:
+        raise(
+          ArgumentError,
+          "control requires no socket, one socket name, or one bounded absolute NUL-free socket path"
+        )
 
     timeout = options[:timeout]
     deadline(timeout, System.monotonic_time(:millisecond))
@@ -61,7 +63,8 @@ defmodule LibTmux.Control.Start do
     payload =
       Protocol.process(server.executable, Bootstrap.arguments(server, session),
         cwd: server.cwd,
-        env: server.env
+        env: server.env,
+        keep_tmux_context: Server.follows_tmux?(server)
       )
 
     settings =

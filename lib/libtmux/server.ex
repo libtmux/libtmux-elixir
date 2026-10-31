@@ -2,14 +2,44 @@ defmodule LibTmux.Server do
   @moduledoc """
   Describes a local tmux server for capturing state and running commands.
 
-  `new/1` takes an absolute `:executable` path and an absolute `:socket` path,
-  which selects tmux's socket file with `-S`. Use `System.find_executable/1`
-  to resolve a name such as `"tmux"` through PATH before construction. The
-  optional `:cwd` and `:env` default to the caller's working directory and
-  environment. Construction validates the path forms without checking that
-  the executable or socket exists. A Server is an immutable value with
-  nothing to close; constructing one neither connects to tmux nor starts it.
-  Commands use `-N`, so a missing daemon is never started implicitly.
+  `new/1` takes an absolute `:executable` path. Use
+  `System.find_executable/1` to resolve a name such as `"tmux"` through PATH
+  before construction. The optional `:cwd` and `:env` default to the caller's
+  working directory and environment. Construction validates the path forms
+  without checking that the executable or socket exists. A Server is an
+  immutable value with nothing to close; constructing one neither connects to
+  tmux nor starts it. Commands use `-N`, so a missing daemon is never started
+  implicitly.
+
+  ## Choosing the server
+
+  `new/1` picks the socket in this order, and the first rule that applies
+  wins:
+
+  1. `:socket`, an absolute socket path, passes `-S`.
+  2. `:socket_name`, a socket name, passes `-L`. Pass at most one of
+     `:socket` and `:socket_name`.
+  3. The `LIBTMUX_SOCKET_PATH` variable passes `-S` with its path.
+  4. The `LIBTMUX_SOCKET` variable passes `-L` with its name.
+  5. Otherwise no socket is passed, and tmux chooses. It follows the server
+     that `TMUX` names when `:env` has one, and otherwise uses its default
+     socket: `default` in the `tmux-UID` directory of `TMUX_TMPDIR`, or of
+     `/tmp`.
+
+  An explicit option ignores both variables, even an invalid one. When both
+  variables are set, the path wins, as `-S` does over `-L` in tmux. A variable
+  that is empty counts as unset, each one alone. The variables come from the
+  `:env` option, which defaults to the caller's environment, so a Server built
+  with its own `:env` ignores the caller's variables. A set variable with an
+  invalid value raises `ArgumentError` that names the variable and never
+  repeats its value.
+
+  The choice is made once, in `new/1`, and `t:t/0` records it. A Server that
+  chose a socket removes `TMUX` and `TMUX_PANE` from the environment it gives
+  tmux, so a surrounding tmux session cannot redirect it. A Server that chose
+  none keeps both, for one-shot execution and for control connections alike,
+  so a program run inside tmux reaches the server it runs in. Leave `TMUX` out
+  of `:env` to send a Server with no socket to tmux's default socket instead.
 
   ## What is on here
 
@@ -80,8 +110,10 @@ defmodule LibTmux.Server do
   ## Examples
 
   Set `executable` to the absolute tmux executable and `socket` to the
-  absolute socket path of the running server you want to inspect. This
-  example captures once and lists each physical window's active pane:
+  absolute socket path of the running server you want to inspect. Leave out
+  `socket` to follow `LIBTMUX_SOCKET_PATH`, `LIBTMUX_SOCKET` or tmux's default
+  socket. This example captures once and lists each physical window's active
+  pane:
 
       alias LibTmux.{Selection, Server, Snapshot}
 
@@ -107,47 +139,119 @@ defmodule LibTmux.Server do
 
   alias LibTmux.{Capture, Command, Error}
   alias LibTmux.Transport.OneShot
-  @enforce_keys [:executable, :socket, :cwd, :env]
-  @derive {Inspect, only: []}
-  defstruct [:executable, :socket, :cwd, :env]
 
-  @typedoc "An explicit local server descriptor; constructing it neither connects nor reserves server identity."
+  @invalid_paths "server executable, socket and cwd must be absolute NUL-free paths"
+  @invalid_name "one file name with no slash or NUL byte, and not a dot directory entry"
+
+  @enforce_keys [:executable, :cwd, :env]
+  @derive {Inspect, only: []}
+  defstruct [:executable, :socket, :socket_name, :cwd, :env]
+
+  @typedoc """
+  A local server descriptor; constructing it neither connects nor reserves server identity.
+
+  At most one of `:socket` and `:socket_name` is set. Both are `nil` when tmux
+  chooses its default socket.
+  """
   @type t :: %__MODULE__{
           executable: String.t(),
-          socket: String.t(),
+          socket: String.t() | nil,
+          socket_name: String.t() | nil,
           cwd: String.t(),
           env: %{optional(binary()) => binary()}
         }
-  @typedoc "Descriptor inputs; executable, socket and cwd are absolute NUL-free paths."
+  @typedoc """
+  Descriptor inputs.
+
+  The executable, `:socket` and cwd are absolute NUL-free paths. `:socket_name`
+  is a single file name without a slash or NUL that is not `.` or `..`.
+  """
   @type option ::
-          {:executable | :socket | :cwd, String.t()}
+          {:executable | :socket | :socket_name | :cwd, String.t()}
           | {:env, %{optional(binary()) => binary()}}
 
   @doc """
   Constructs a descriptor for an existing server without connecting or creating it.
+
+  `:socket` selects the socket by path and `:socket_name` by name; pass at most
+  one. With neither, the descriptor reads `LIBTMUX_SOCKET_PATH`, then
+  `LIBTMUX_SOCKET`, from `:env`, and selects no socket when neither is set, so
+  tmux uses its default. See "Choosing the server" in the module
+  documentation. Raises `ArgumentError` for conflicting or invalid input,
+  naming a variable but never its value.
 
   See the [worked example](first-task.html).
   """
   @spec new([option()]) :: t()
   def new(options) do
     options =
-      Keyword.validate!(options, [:executable, :socket, cwd: File.cwd!(), env: System.get_env()])
+      Keyword.validate!(options, [
+        :executable,
+        :socket,
+        :socket_name,
+        cwd: File.cwd!(),
+        env: System.get_env()
+      ])
 
     executable = Keyword.fetch!(options, :executable)
-    socket = Keyword.fetch!(options, :socket)
 
-    unless Enum.all?([executable, socket, options[:cwd]], fn value ->
-             is_binary(value) and Path.type(value) == :absolute and
-               :binary.match(value, <<0>>) == :nomatch
-           end),
-           do:
-             raise(
-               ArgumentError,
-               "server executable, socket and cwd must be absolute NUL-free paths"
-             )
+    unless path?(executable) and path?(options[:cwd]),
+      do: raise(ArgumentError, @invalid_paths)
 
-    %__MODULE__{executable: executable, socket: socket, cwd: options[:cwd], env: options[:env]}
+    {socket, socket_name} =
+      case Keyword.take(options, [:socket, :socket_name]) do
+        [] -> from_environment(options[:env])
+        [{:socket, socket}] -> {path!(socket, @invalid_paths), nil}
+        [{:socket_name, name}] -> {nil, name!(name, ":socket_name must be #{@invalid_name}")}
+        [_, _] -> raise ArgumentError, "pass at most one of :socket and :socket_name"
+      end
+
+    %__MODULE__{
+      executable: executable,
+      socket: socket,
+      socket_name: socket_name,
+      cwd: options[:cwd],
+      env: options[:env]
+    }
   end
+
+  defp from_environment(env) do
+    cond do
+      path = variable(env, "LIBTMUX_SOCKET_PATH") ->
+        {path!(path, "LIBTMUX_SOCKET_PATH must be an absolute NUL-free path"), nil}
+
+      name = variable(env, "LIBTMUX_SOCKET") ->
+        {nil, name!(name, "LIBTMUX_SOCKET must be #{@invalid_name}")}
+
+      true ->
+        {nil, nil}
+    end
+  end
+
+  defp variable(env, name) when is_map(env) do
+    case Map.get(env, name) do
+      "" -> nil
+      value -> value
+    end
+  end
+
+  defp variable(_env, _name), do: nil
+
+  defp path?(value),
+    do:
+      is_binary(value) and Path.type(value) == :absolute and
+        :binary.match(value, <<0>>) == :nomatch
+
+  defp path!(value, message),
+    do: if(path?(value), do: value, else: raise(ArgumentError, message))
+
+  defp name!(value, message),
+    do: if(name?(value), do: value, else: raise(ArgumentError, message))
+
+  defp name?(value),
+    do:
+      is_binary(value) and value not in ["", ".", ".."] and
+        :binary.match(value, [<<0>>, "/"]) == :nomatch
 
   @doc """
   Creates a named detached session on an existing server through one-shot execution.
@@ -186,11 +290,19 @@ defmodule LibTmux.Server do
   @doc """
   Runs one trusted command without attaching; returns bounded output and exit evidence.
 
+  The options are those of `LibTmux.Transport.OneShot.run/3`, except
+  `:keep_tmux_context`: the Server decides it from its socket, and a value
+  passed here is ignored. Raises `ArgumentError` for a Server built by hand
+  whose `socket` or `socket_name` is not `nil` or a string, or that sets both.
+
   See the [worked example](advanced-execution.html).
   """
   @spec run(t(), Command.t(), [OneShot.option()]) :: {:ok, OneShot.result()} | {:error, Error.t()}
   def run(%__MODULE__{} = server, %Command{} = command, options \\ []) do
-    options = Keyword.merge([cwd: server.cwd, env: server.env], options)
+    options =
+      [cwd: server.cwd, env: server.env]
+      |> Keyword.merge(options)
+      |> Keyword.put(:keep_tmux_context, follows_tmux?(server))
 
     case OneShot.run(server.executable, arguments(server, command), options) do
       {:ok, %{exit_status: 0} = result} ->
@@ -216,12 +328,40 @@ defmodule LibTmux.Server do
       server.executable,
       arguments(server, command),
       cwd: server.cwd,
-      env: server.env
+      env: server.env,
+      keep_tmux_context: follows_tmux?(server)
     )
   end
 
+  @doc false
+  def follows_tmux?(%__MODULE__{socket: nil, socket_name: nil}), do: true
+  def follows_tmux?(%__MODULE__{}), do: false
+
   defp arguments(server, command),
-    do: ["-N", "-u", "-S", server.socket | Command.argv(command)]
+    do: ["-N", "-u" | socket_arguments(server)] ++ Command.argv(command)
+
+  @doc false
+  def socket_arguments(%__MODULE__{socket: nil, socket_name: nil}), do: []
+
+  def socket_arguments(%__MODULE__{socket: socket, socket_name: nil}) when is_binary(socket),
+    do: ["-S", socket]
+
+  def socket_arguments(%__MODULE__{socket: nil, socket_name: name}) when is_binary(name),
+    do: ["-L", name]
+
+  def socket_arguments(%__MODULE__{}),
+    do: raise(ArgumentError, "a server names at most one socket, as a string")
+
+  @doc false
+  def valid_socket?(%__MODULE__{socket: nil, socket_name: nil}), do: true
+
+  def valid_socket?(%__MODULE__{socket: socket, socket_name: nil}),
+    do: path?(socket) and byte_size(socket) <= 32_000
+
+  def valid_socket?(%__MODULE__{socket: nil, socket_name: name}),
+    do: name?(name)
+
+  def valid_socket?(%__MODULE__{}), do: false
 
   @doc """
   Captures a new graph explicitly, with bounded work and read retries.

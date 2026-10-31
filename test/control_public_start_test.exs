@@ -19,7 +19,10 @@ defmodule LibTmux.ControlPublicStartTest do
       Keyword.put(options, :timeout, 18_446_744_073_709_551_615),
       Keyword.put(options, :capacity, 257),
       Keyword.put(options, :server, %{options[:server] | socket: "relative"}),
-      Keyword.put(options, :server, %{options[:server] | socket: "/bad\0socket"})
+      Keyword.put(options, :server, %{options[:server] | socket: "/bad\0socket"}),
+      Keyword.put(options, :server, %{options[:server] | socket_name: "work"}),
+      Keyword.put(options, :server, %{options[:server] | socket: nil, socket_name: "a/b"}),
+      Keyword.put(options, :server, %{options[:server] | socket: nil, socket_name: ""})
     ]
 
     for input <- invalid do
@@ -27,6 +30,16 @@ defmodule LibTmux.ControlPublicStartTest do
     end
 
     assert {:links, ^links} = Process.info(self(), :links)
+  end
+
+  test "startup accepts a socket name or no socket at all" do
+    for server <- [
+          Server.new(executable: "/unused/tmux", socket_name: "work", cwd: "/", env: %{}),
+          Server.new(executable: "/unused/tmux", cwd: "/", env: %{})
+        ] do
+      assert %{start: {_module, :start_link, [_prepared]}} =
+               Control.child_spec(Keyword.put(options(), :server, server))
+    end
   end
 
   test "a prepared factory retains a detached payload rather than the original environment" do
@@ -42,6 +55,25 @@ defmodule LibTmux.ControlPublicStartTest do
     assert :binary.match(payload, "KEEP=") != :nomatch
     assert :binary.match(payload, "ambient") == :nomatch
     refute Map.has_key?(prepared, :server)
+  end
+
+  test "a prepared factory keeps TMUX only for a server that chose no socket" do
+    env = %{"TMUX" => "ambient-tmux", "TMUX_PANE" => "ambient-pane"}
+
+    for {server, kept?} <- [
+          {Server.new(executable: "/unused/tmux", cwd: "/", env: env), true},
+          {Server.new(executable: "/unused/tmux", socket: "/unused/socket", cwd: "/", env: env),
+           false},
+          {Server.new(executable: "/unused/tmux", socket_name: "work", cwd: "/", env: env), false}
+        ] do
+      %{start: {_module, _function, [prepared]}} =
+        Control.child_spec(Keyword.put(options(), :server, server))
+
+      payload = prepared.options[:payload]
+
+      assert :binary.match(payload, "TMUX=ambient-tmux") != :nomatch == kept?
+      assert :binary.match(payload, "TMUX_PANE=ambient-pane") != :nomatch == kept?
+    end
   end
 
   test "a retired factory restart returns inert fresh info without following the old handle" do

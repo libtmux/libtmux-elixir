@@ -77,6 +77,12 @@ leaving your existing tmux sessions alone. The runner needs Python 3.9+.
 Already have a server? Use the [capture-only program](docs/first-task.md),
 which takes its socket explicitly and leaves the server running.
 
+`LibTmux.Server.new/1` takes the socket as `:socket`, a path, or
+`:socket_name`. With neither, it reads `LIBTMUX_SOCKET_PATH`, then
+`LIBTMUX_SOCKET`, and passes tmux no socket when neither is set. tmux then
+follows the server `TMUX` names when the program runs inside tmux, and uses its
+default socket otherwise. A Server with a chosen socket removes `TMUX`.
+
 ## Capture and query
 
 [`Server.snapshot!/2`][snapshot] captures an immutable graph.

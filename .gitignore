@@ -14,3 +14,4 @@ __pycache__/
 /config/*.secret.exs
 .elixir_ls/
 /*.tar
+/.env

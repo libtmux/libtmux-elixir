@@ -65,7 +65,9 @@ ceiling. Ordinary finite descendants are killed and reaped. Uninterruptible
 tasks, helper SIGKILL, hostile escape and host compromise are outside that
 guarantee; incomplete cleanup retains uncertainty and ownership.
 
-Use explicit sockets and `-N` for borrowed tmux servers. Retiring a client
+Use `-N` for borrowed tmux servers, and choose their socket on purpose: a
+descriptor with no socket reaches the server `TMUX` names, or tmux's default
+one outside tmux. Retiring a client
 must not stop a borrowed server. Intentional server creation and server-owned
 jobs need their own ownership boundaries.
 
