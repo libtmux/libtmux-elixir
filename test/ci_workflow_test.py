@@ -52,9 +52,52 @@ def dispatch_inputs(text):
     return {key: "\n".join(value) for key, value in found.items()}
 
 
+# What GitHub reads a value as when YAML 1.1 sees it bare.
+YAML_BOOLEANS = {**dict.fromkeys(("y", "yes", "true", "on"), "true"),
+                 **dict.fromkeys(("n", "no", "false", "off"), "false")}
+
+
 def options(text):
     match = re.search(r"options: \[(.*?)\]", text)
-    return [each.strip() for each in match[1].split(",")] if match else None
+    return [each.strip().strip("'\"") for each in match[1].split(",")] if match else None
+
+
+def bare_boolean(token):
+    """The boolean YAML 1.1 reads `token` as, or None when it is quoted or not one."""
+    token = token.strip()
+    if token[:1] in "'\"":
+        return None
+    return YAML_BOOLEANS.get(token.lower())
+
+
+def dispatch_booleans(text):
+    """Each input default or option that YAML 1.1 reads as a boolean, in a flow or a block list.
+
+    GitHub reads a workflow as YAML 1.1, where a bare off is false. An option list
+    then holds a boolean and the string default is no longer among the choices, so
+    every dispatch that sets nothing is refused. The test job has no YAML 1.1
+    parser, so this reads the lines of each input.
+    """
+    found = []
+    for name, body in dispatch_inputs(text).items():
+        in_options = False
+        for line in body.splitlines():
+            stripped = line.split(" #", 1)[0].rstrip()
+            if not stripped.strip():
+                continue
+            item = re.match(r"\s*-\s+(.+)$", stripped)
+            flow = re.match(r"\s*options:\s*\[(.*)\]$", stripped)
+            if in_options and item:
+                values = [item[1]]
+            elif flow:
+                values, in_options = flow[1].split(","), False
+            else:
+                values, in_options = [], stripped.strip() == "options:"
+            found += [(name, "option", value.strip(), truth) for value in values if (truth := bare_boolean(value))]
+            default = re.match(r"\s*default:\s*(.+)$", stripped)
+            if default and (truth := bare_boolean(default[1])):
+                found.append((name, "default", default[1].strip(), truth))
+    return found
 
 
 def needs_of(job):
@@ -155,6 +198,8 @@ def problems(scaffold, release):
         found.append("a push and a pull request must still cancel the run they supersede")
 
     inputs = dispatch_inputs(scaffold)
+    for name, kind, value, truth in dispatch_booleans(scaffold):
+        found.append(f"the {name} input has a bare {value} as its {kind}, which GitHub reads as the boolean {truth}; quote it")
     if sorted(inputs) != ["elixir", "os", "otp", "scope", "tmate", "tmux-ref"]:
         found.append("the dispatch inputs are not the plan's")
     if options(inputs.get("scope", "")) != list(ci_plan.SCOPES) or "default: edges" not in inputs.get("scope", ""):
@@ -253,7 +298,20 @@ MUTATIONS = [
     ("the job timeout ignores the session", lambda s, r: (s.replace(
         "${{ matrix.tmate == 'off' && 5 || 60 }}", "5"), r), "cap its time"),
     ("the tmate input offers another mode", lambda s, r: (s.replace(
-        "options: [off, before-tests, on-failure]", "options: [off, always]"), r), "plan's modes"),
+        "options: ['off', before-tests, on-failure]", "options: ['off', always]"), r), "plan's modes"),
+    ("the tmate options leave off bare", lambda s, r: (s.replace(
+        "options: ['off', before-tests, on-failure]", "options: [off, before-tests, on-failure]"), r),
+     "bare off as its option"),
+    ("the tmate default leaves off bare", lambda s, r: (s.replace("default: 'off'", "default: off"), r),
+     "bare off as its default"),
+    ("another boolean is bare in any case", lambda s, r: (s.replace("default: 'off'", "default: No"), r),
+     "bare No as its default"),
+    ("a choice leaves an upper case ON bare", lambda s, r: (s.replace(
+        "options: [edges, full, custom]", "options: [edges, full, custom, ON]"), r), "bare ON as its option"),
+    ("the tmate options are a block list with a bare off", lambda s, r: (s.replace(
+        "        options: ['off', before-tests, on-failure]\n",
+        "        options:\n          - off\n          - before-tests\n          - on-failure\n"), r),
+     "bare off as its option"),
     ("the tmate input defaults to a session", lambda s, r: (s.replace(
         "default: 'off'", "default: before-tests"), r), "default to off"),
     ("the plan stops hearing the tmate input", lambda s, r: (s.replace(
@@ -286,6 +344,15 @@ MUTATIONS = [
 class WorkflowFollowsThePlan(unittest.TestCase):
     def test_the_workflows_follow_the_plan(self):
         self.assertEqual(problems(SCAFFOLD, RELEASE), [])
+
+    def test_the_workflow_as_written_has_no_bare_boolean(self):
+        self.assertEqual(dispatch_booleans(SCAFFOLD), [])
+
+    def test_a_quoted_block_list_has_no_bare_boolean(self):
+        block = SCAFFOLD.replace("        options: ['off', before-tests, on-failure]\n",
+                                 "        options:\n          - 'off'\n          - \"before-tests\"\n          - on-failure\n")
+        self.assertNotEqual(block, SCAFFOLD)
+        self.assertEqual(dispatch_booleans(block), [])
 
     def test_the_debugging_session_is_safe(self):
         self.assertEqual(session_problems(SCAFFOLD, RELEASE), [])
