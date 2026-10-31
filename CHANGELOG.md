@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Added
+
+- Select a tmux server by name with the `:socket_name` option of
+  `LibTmux.Server.new/1`, which passes `-L`. Pass it instead of `:socket`,
+  never beside it. (#51)
+
+### Changed
+
+- **Behavior change:** `LibTmux.Server.new/1` no longer requires `:socket`.
+  With neither `:socket` nor `:socket_name`, it reads `LIBTMUX_SOCKET_PATH`
+  (`-S`), then `LIBTMUX_SOCKET` (`-L`), from `:env`, and passes tmux no
+  socket when neither is set. tmux then follows the server `TMUX` names when
+  the program runs inside tmux, and uses its default socket otherwise. A
+  missing `:socket` raised `KeyError` before. An explicit `:socket` or
+  `:socket_name` ignores both variables, an empty variable counts as unset,
+  and an invalid one, such as a name that is `.` or `..`, raises
+  `ArgumentError` that names it. A Server with no socket keeps `TMUX` and
+  `TMUX_PANE` in the environment it gives tmux, for one-shot execution and
+  control connections alike; a Server with a chosen socket still removes both,
+  and no option of `LibTmux.Server.run/3` changes that. Leave `TMUX` out of
+  `:env` to send a Server with no socket to the default socket. Control
+  connections accept a Server with a socket name or no socket. (#51)
+
 ## libtmux 0.1.0 (2026-10-25)
 
 ### Added
