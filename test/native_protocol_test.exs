@@ -3,6 +3,17 @@ defmodule LibTmux.NativeProtocolTest do
   alias LibTmux.Error
   alias LibTmux.Transport.Native.Protocol
 
+  test "process frames drop TMUX and TMUX_PANE unless the caller keeps them" do
+    env = %{"TMUX" => "kept-tmux", "TMUX_PANE" => "kept-pane"}
+
+    stripped = Protocol.process("/bin/cat", [], cwd: "/", env: env)
+    kept = Protocol.process("/bin/cat", [], cwd: "/", env: env, keep_tmux_context: true)
+
+    assert :binary.match(stripped, "TMUX") == :nomatch
+    assert :binary.match(kept, "TMUX=kept-tmux") != :nomatch
+    assert :binary.match(kept, "TMUX_PANE=kept-pane") != :nomatch
+  end
+
   test "process frames preserve argv and target environment bytes under one packet ceiling" do
     payload =
       Protocol.process("/bin/cat", ["", <<255>>, "literal\nargument"],

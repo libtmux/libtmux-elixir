@@ -8,23 +8,20 @@ defmodule LibTmux.Control.Bootstrap do
   def arguments(%Server{} = server, session) do
     case Ref.new(:session, session, "bootstrap") do
       {:ok, _ref} ->
-        [
-          "-N",
-          "-u",
-          "-C",
-          "-S",
-          server.socket,
-          "attach-session",
-          "-E",
-          "-t",
-          session,
-          "-f",
-          "no-output,ignore-size",
-          ";",
-          "display-message",
-          "-p",
-          ~S"#{pid}"
-        ]
+        ["-N", "-u", "-C"] ++
+          Server.socket_arguments(server) ++
+          [
+            "attach-session",
+            "-E",
+            "-t",
+            session,
+            "-f",
+            "no-output,ignore-size",
+            ";",
+            "display-message",
+            "-p",
+            ~S"#{pid}"
+          ]
 
       {:error, _error} ->
         raise ArgumentError, "control attachment requires an exact session ID"

@@ -135,6 +135,16 @@ defmodule LibTmux.OneShotTest do
     assert String.contains?(result.stderr, "LD_PRELOAD")
   end
 
+  test "TMUX and TMUX_PANE are removed from the target unless the caller keeps them" do
+    env = %{"TMUX" => "/run/libtmux-test/followed.sock,1,0", "TMUX_PANE" => "%0"}
+    arrived = ~S(printf '%s|%s' "${TMUX+set}" "${TMUX_PANE+set}")
+
+    assert {:ok, %{stdout: "|"}} = OneShot.run("/bin/sh", ["-c", arrived], env: env)
+
+    assert {:ok, %{stdout: "set|set"}} =
+             OneShot.run("/bin/sh", ["-c", arrived], env: env, keep_tmux_context: true)
+  end
+
   test "an expired admission retains no-write certainty" do
     deadline = LibTmux.Deadline.new(1, now: System.monotonic_time(:millisecond) - 1000)
 

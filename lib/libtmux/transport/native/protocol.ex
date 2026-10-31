@@ -12,7 +12,7 @@ defmodule LibTmux.Transport.Native.Protocol do
   end
 
   def prepare_process(executable, arguments, options) do
-    options = Keyword.validate!(options, [:cwd, :env])
+    options = Keyword.validate!(options, [:cwd, :env, keep_tmux_context: false])
     cwd = Keyword.fetch!(options, :cwd)
     environment = Keyword.fetch!(options, :env)
 
@@ -36,12 +36,17 @@ defmodule LibTmux.Transport.Native.Protocol do
         invalid(:env, "expected named binary environment values")
 
       true ->
-        prepare_environment(executable, arguments, cwd, environment)
+        prepare_environment(executable, arguments, cwd, environment, options[:keep_tmux_context])
     end
   end
 
-  defp prepare_environment(executable, arguments, cwd, environment) do
-    environment = Map.drop(environment, ["TMUX", "TMUX_PANE"])
+  # tmux reads TMUX to choose a server when it is given no socket, so a caller
+  # that passes none keeps both variables; every other process loses them.
+  defp prepare_environment(executable, arguments, cwd, environment, keep_tmux_context) do
+    environment =
+      if keep_tmux_context === true,
+        do: environment,
+        else: Map.drop(environment, ["TMUX", "TMUX_PANE"])
 
     if map_size(environment) <= 256 and
          Enum.all?(environment, fn {key, value} ->

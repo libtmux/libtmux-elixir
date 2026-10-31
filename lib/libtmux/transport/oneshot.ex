@@ -8,7 +8,8 @@ defmodule LibTmux.Transport.OneShot do
   Target environment entries travel as bytes to child `execve`, preserving
   empty values. The helper inherits the trusted host environment; requested
   target variables do not configure the helper. `TMUX` and `TMUX_PANE` are
-  removed from the target environment.
+  removed from the target environment unless `keep_tmux_context: true`, which
+  `LibTmux.Server.run/3` passes only for a Server that chose no socket.
 
   Limits apply per call: stdout defaults to 1 MiB, stderr to 64 KiB, and
   retained chunks to 4096. `max_total_bytes` additionally bounds both streams
@@ -47,6 +48,7 @@ defmodule LibTmux.Transport.OneShot do
           | {:deadline, Deadline.t()}
           | {:cwd, String.t()}
           | {:env, %{optional(binary()) => binary()}}
+          | {:keep_tmux_context, boolean()}
           | {:max_stdout_bytes | :max_stderr_bytes, 0..16_777_216}
           | {:max_total_bytes, nil | 0..33_554_432}
           | {:max_chunks, 1..65_536}
@@ -78,6 +80,7 @@ defmodule LibTmux.Transport.OneShot do
         :env,
         :timeout,
         cwd: File.cwd!(),
+        keep_tmux_context: false,
         max_stdout_bytes: 1_048_576,
         max_stderr_bytes: 65_536,
         max_total_bytes: nil,
@@ -126,7 +129,8 @@ defmodule LibTmux.Transport.OneShot do
     payload =
       NativeProtocol.process(executable, arguments,
         cwd: options[:cwd],
-        env: Keyword.get_lazy(options, :env, &System.get_env/0)
+        env: Keyword.get_lazy(options, :env, &System.get_env/0),
+        keep_tmux_context: options[:keep_tmux_context]
       )
 
     %{
