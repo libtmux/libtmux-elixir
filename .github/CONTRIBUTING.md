@@ -292,6 +292,16 @@ its passing result becomes evidence. Prefer pure ExUnit tests for parsing,
 encoding, and selection; exercise protocol and resource ownership against
 real tmux as well.
 
+`mix test` starts in [test_helper.exs](../test/test_helper.exs), which
+removes `TMUX`, `TMUX_PANE` and every `LIBTMUX_SOCKET*` variable from the
+process, sets `TMUX_TMPDIR` to a fresh owner-only directory short enough for
+a socket, and refuses to run when it cannot. A Server with no socket, or a
+bare `tmux`, therefore reaches no server of yours. A server still answering
+in that directory when the suite ends fails the run and keeps the directory.
+Commands outside `mix test`, such as the packed examples, are not covered:
+give them a socket of your own, for example `LIBTMUX_SOCKET_PATH` in an
+uncommitted `.env` that your shell loads.
+
 Every tmux fixture uses a unique, owned socket and temporary directory.
 Clear inherited `TMUX` and `TMUX_PANE`. Never connect tests to the default
 server, and only stop servers or remove files owned by that run. Use
