@@ -43,7 +43,7 @@ on:
           after a failure. It needs scope custom with a single tmux-ref,
           elixir and otp.
         type: choice
-        options: [off, before-tests, on-failure]
+        options: ['off', before-tests, on-failure]
         default: 'off'
   workflow_call:
     inputs:
