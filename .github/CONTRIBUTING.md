@@ -44,7 +44,13 @@ Elixir/OTP pair from `priv/tmux/support.json`. It also tests the resolved
 `.tool-versions` pair with the newest listed tmux release. Every cell checks
 the actual OTP patch, Elixir version and compiled OTP major before testing.
 Missing prerequisites fail the cell. `Required Linux checks` succeeds only
-when the core checks and every native cell succeed; no macOS job is required.
+when the plan, the core checks and every native cell succeed; no macOS job is
+required.
+
+A push and a pull request plan only the oldest and newest listed tmux release
+(3.3 and 3.8). A release and a dispatch with `scope=full` plan every listed
+release. See "Running CI against any tmux" below for the rest of the dispatch
+inputs.
 
 Hex is required only for package archive checks. Install it separately from
 the check loops if it is missing:
@@ -63,6 +69,59 @@ $ mix deps.get
 tmux is not needed for pure unit or packed-core checks. The
 implementation floor is tmux `3.3`, and support must be proved against that
 version rather than inferred from a newer local binary.
+
+## Running CI against any tmux
+
+A `plan` job runs `scripts/ci_plan.py` on `priv/tmux/support.json` and decides
+the native cells, so the workflow lists no version. The first and last
+`required_linux` entries are the edges. The release workflow runs the full
+scope before it publishes anything.
+
+Run the `Core checks` workflow on any branch, against any tmux version, tag,
+branch or full commit of github.com/tmux/tmux. Put the comma-separated list in
+`tmux-ref`, with `scope=custom`:
+
+```console
+$ gh workflow run scaffold.yml \
+    --ref my-branch \
+    -f scope=custom \
+    -f tmux-ref=3.6b,master
+```
+
+A release the manifest lists is built at its pinned commit and must report
+that version. Any other ref is resolved to a commit by `scripts/tmux_ref.py`
+and built from that commit, whatever version it reports. Each ref runs on the
+reference Elixir/OTP pair.
+
+Name other Elixir or OTP versions with `elixir` and `otp`; they replace the
+reference and tracking pairs, multiply with the refs, and run
+`scripts/check_runtime.exs custom`, which prints the runtime identity and
+asserts nothing. The `os` input picks the Ubuntu image of the native cells.
+
+The `tmate` input opens a [tmate](https://github.com/mxschmitt/action-tmate)
+session on exactly one native cell, before the tests or after a failure. The
+session admits only the GitHub account that dispatched the run and ends after
+30 minutes. The plan refuses it when the run has more than one cell:
+
+```console
+$ gh workflow run scaffold.yml \
+    --ref my-branch \
+    -f scope=custom \
+    -f tmux-ref=master \
+    -f elixir=1.19.5 \
+    -f otp=28.3 \
+    -f tmate=on-failure
+```
+
+Run every cell a release runs, without tagging:
+
+```console
+$ gh workflow run scaffold.yml \
+    --ref my-branch \
+    -f scope=full
+```
+
+Dispatch runs do not cancel one another or the push run of the same branch.
 
 ## Current checks
 

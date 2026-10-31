@@ -5,13 +5,58 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      scope:
+        description: >-
+          edges runs the oldest and newest required tmux, full runs every
+          required tmux, custom runs the refs in tmux-ref. A release is bound
+          to a full run.
+        type: choice
+        options: [edges, full, custom]
+        default: edges
+      tmux-ref:
+        description: >-
+          With scope custom, comma-separated tmux versions, tags, branches or
+          40-hex commit SHAs from github.com/tmux/tmux, such as 3.6b,master.
+        type: string
+        default: ''
+      elixir:
+        description: >-
+          Comma-separated Elixir versions for the native cells, such as
+          1.19.5. Empty means the reference and tracking pairs.
+        type: string
+        default: ''
+      otp:
+        description: >-
+          Comma-separated OTP versions for the native cells, such as 28.3.
+          Empty means the reference and tracking pairs.
+        type: string
+        default: ''
+      os:
+        description: Runner image for the native cells
+        type: choice
+        options: [ubuntu-24.04, ubuntu-latest, ubuntu-22.04]
+        default: ubuntu-24.04
+      tmate:
+        description: >-
+          Open a tmate session on the one native cell, before the tests or
+          after a failure. It needs scope custom with a single tmux-ref,
+          elixir and otp.
+        type: choice
+        options: [off, before-tests, on-failure]
+        default: 'off'
   workflow_call:
+    inputs:
+      scope:
+        description: How much of the table to cover. Publish passes full.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: scaffold-${{ github.workflow }}-${{ github.ref }}
+  group: scaffold-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -53,6 +98,8 @@ jobs:
         run: time python3 scripts/check_example_docs.py
       - name: Check publication readiness handling
         run: time python3 test/hexdocs_readiness_test.py
+      - name: Check the CI plan and workflows
+        run: time python3 -m unittest discover -s test -p 'ci_*_test.py'
       - name: Compile core
         run: time mix compile --warnings-as-errors
       - name: Check generated schema reference
@@ -76,48 +123,66 @@ jobs:
       - name: Consume packed core outside checkout
         run: time mix run scripts/check_package.exs
 
-  native-matrix:
-    name: Resolve native support matrix
+  # What a run covers is decided here from priv/tmux/support.json and the
+  # event, so no job below lists a version. A push and a pull request test the
+  # oldest and newest required tmux; a release and a dispatch with scope full
+  # test every required tmux.
+  plan:
+    name: plan
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
-      matrix: ${{ steps.support.outputs.matrix }}
+      matrix: ${{ steps.plan.outputs.matrix }}
+      os: ${{ steps.plan.outputs.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Read required releases
-        id: support
-        shell: bash
+          sparse-checkout: |
+            scripts
+            priv
+      - name: Plan the run
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          SCOPE: ${{ inputs.scope }}
+          TMUX_REF: ${{ inputs.tmux-ref }}
+          ELIXIR: ${{ inputs.elixir }}
+          OTP: ${{ inputs.otp }}
+          IMAGE: ${{ inputs.os }}
+          TMATE: ${{ inputs.tmate }}
         run: |
-          jq --version
-          matrix=$(jq -ce '
-            . as $support |
-            if .schema_version != 1 or
-               (.required_linux | length) == 0 or
-               ([.required_linux[].tmux] | index($support.tmux_minimum)) == null
-            then error("missing required tmux floor") else . end |
-            {include: (
-              ([.required_linux[] | . + {toolchain: "reference"}]) +
-              ([.required_linux[-1] | . + {toolchain: "tracking"}])
-            )}
-          ' priv/tmux/support.json)
-          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+          python3 scripts/ci_plan.py plan \
+            --event "$EVENT" \
+            --scope "$SCOPE" \
+            --tmux-ref "$TMUX_REF" \
+            --elixir "$ELIXIR" \
+            --otp "$OTP" \
+            --os "$IMAGE" \
+            --tmate "$TMATE" \
+            --github-output "$GITHUB_OUTPUT" \
+            --summary "$GITHUB_STEP_SUMMARY"
 
   native:
-    name: Native tmux ${{ matrix.tmux }} / ${{ matrix.toolchain }}
-    needs: native-matrix
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    name: ${{ matrix.name }}
+    needs: plan
+    runs-on: ${{ needs.plan.outputs.os }}
+    # A tmate session needs longer than a test run does.
+    timeout-minutes: ${{ matrix.tmate == 'off' && 5 || 60 }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.native-matrix.outputs.matrix) }}
+      # The plan chooses the cells and never leaves this empty.
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       MIX_ENV: test
       ERL_FLAGS: +S 2:2
       TMUX_VERSION: ${{ matrix.tmux }}
       TMUX_SOURCE: ${{ matrix.source }}
+      TMUX_REF: ${{ matrix.ref }}
+      TMUX_BUILD: ${{ matrix.build }}
       TOOLCHAIN_PROFILE: ${{ matrix.toolchain }}
+      MATRIX_ELIXIR: ${{ matrix.elixir }}
+      MATRIX_OTP: ${{ matrix.otp }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -129,6 +194,9 @@ jobs:
           if [[ "$TOOLCHAIN_PROFILE" == reference ]]; then
             otp_version=$(jq -er '.reference.otp' priv/tmux/support.json)
             elixir_version=$(jq -er '.reference.elixir' priv/tmux/support.json)
+          elif [[ "$TOOLCHAIN_PROFILE" == custom ]]; then
+            otp_version="$MATRIX_OTP"
+            elixir_version="$MATRIX_ELIXIR"
           else
             otp_version=$(awk '$1 == "erlang" {print $2}' .tool-versions)
             elixir_version=$(awk '$1 == "elixir" {print $2}' .tool-versions)
@@ -151,14 +219,19 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             autoconf automake bison build-essential libevent-dev libncurses-dev pkg-config
-      - name: Build pinned tmux source
+      - name: Build tmux source
         shell: bash
         run: |
-          build="$RUNNER_TEMP/tmux-$TMUX_VERSION"
+          source_commit="$TMUX_SOURCE"
+          if [[ "$TMUX_BUILD" == ref ]]; then
+            source_commit=$(python3 scripts/tmux_ref.py "$TMUX_REF")
+          fi
+          : "${source_commit:?Missing tmux source commit}"
+          build="$RUNNER_TEMP/tmux-$source_commit"
           mkdir -p "$build/source"
           curl --fail --location \
             --output "$build/source.tar.gz" \
-            "https://codeload.github.com/tmux/tmux/tar.gz/$TMUX_SOURCE"
+            "https://codeload.github.com/tmux/tmux/tar.gz/$source_commit"
           sha256sum "$build/source.tar.gz"
           tar --extract --gzip --file "$build/source.tar.gz" \
             --strip-components=1 --directory "$build/source"
@@ -170,27 +243,45 @@ jobs:
             make install
           )
           tmux_binary="$build/install/bin/tmux"
-          test "$("$tmux_binary" -V)" = "tmux $TMUX_VERSION"
+          if [[ "$TMUX_BUILD" == ref ]]; then
+            "$tmux_binary" -V
+          else
+            test "$("$tmux_binary" -V)" = "tmux $TMUX_VERSION"
+          fi
           sha256sum "$tmux_binary"
           printf 'LIBTMUX_TMUX=%s\n' "$tmux_binary" >> "$GITHUB_ENV"
+      - name: Open a tmate session before the tests
+        if: ${{ github.event_name == 'workflow_dispatch' && matrix.tmate == 'before-tests' }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
       - name: Compile native test application
         run: time mix compile --warnings-as-errors
       - name: Run pure and owned native cases
         run: time mix test --include integration --warnings-as-errors --max-cases 2 --seed 624498
       - name: Run packed README and guide examples
         run: time mix run scripts/check_package.exs --examples
+      - name: Open a tmate session after a failure
+        if: ${{ failure() && github.event_name == 'workflow_dispatch' && matrix.tmate == 'on-failure' }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
 
   required-linux:
     name: Required Linux checks
-    needs: [scaffold, native]
+    needs: [plan, scaffold, native]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
+      PLAN_RESULT: ${{ needs.plan.result }}
       CORE_RESULT: ${{ needs.scaffold.result }}
       NATIVE_RESULT: ${{ needs.native.result }}
     steps:
       - name: Require every core and native cell
         run: |
+          test "$PLAN_RESULT" = success
           test "$CORE_RESULT" = success
           test "$NATIVE_RESULT" = success

@@ -14,6 +14,8 @@ concurrency:
 jobs:
   verify:
     uses: ./.github/workflows/scaffold.yml
+    with:
+      scope: full
 
   publish:
     needs: verify

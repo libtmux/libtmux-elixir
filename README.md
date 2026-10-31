@@ -42,7 +42,7 @@ captured snapshot; actions contact tmux explicitly.
 | --- | --- |
 | Elixir / OTP | Elixir 1.20.4 or later 1.20 patch, compiled for OTP 29; OTP 29.1.2 or later 29 patch |
 | Runtime platform | Linux, with a C11 compiler and headers to build the external helper |
-| tmux | 3.3 minimum; tested with 3.3, 3.3a, 3.4 and 3.8 |
+| tmux | 3.3 minimum; tested with 3.3, 3.3a, 3.4 and 3.8; a push tests 3.3 and 3.8 |
 | Dependencies | Zero third-party core runtime packages; no NIF |
 
 ## Installation
