@@ -61,6 +61,54 @@ def needs_of(job):
     return re.findall(r"[A-Za-z0-9_-]+", (field(job, "needs") or "").strip("[]"))
 
 
+TMATE = "mxschmitt/action-tmate"
+
+
+def steps_of(job):
+    """Split a job's text into its steps."""
+    return re.split(r"(?m)^(?=      - )", job)[1:]
+
+
+def step_field(step, key):
+    match = re.search(rf"(?m)^        {re.escape(key)}: (.*)$", step)
+    return match[1].strip() if match else None
+
+
+def session_problems(scaffold, release):
+    """Name what makes a debugging session unsafe or misplaced."""
+    found = []
+    jobs = split_jobs(scaffold)
+    sessions = 0
+    for name, job in jobs.items():
+        for step in steps_of(job):
+            if TMATE not in step:
+                continue
+            sessions += 1
+            if name != "native":
+                found.append(f"{name}: a debugging session belongs only in the native job")
+            if not re.search(rf"uses: {re.escape(TMATE)}@[0-9a-f]{{40}} # v", step):
+                found.append("a debugging session must be pinned to a full commit SHA")
+            if "limit-access-to-actor: true" not in step:
+                found.append("a debugging session must be limited to the actor")
+            if not step_field(step, "timeout-minutes"):
+                found.append("a debugging session needs its own time limit")
+            condition = step_field(step, "if") or ""
+            if "github.event_name == 'workflow_dispatch'" not in condition or "matrix.tmate ==" not in condition:
+                found.append("a debugging session runs only on a dispatch, on the cell the plan chose")
+    if sessions != 2:
+        found.append("the native job must offer a session before the tests and one after a failure")
+    if field(jobs.get("native", ""), "timeout-minutes") != "${{ matrix.tmate == 'off' && 5 || 60 }}":
+        found.append("native: the job must cap its time and give the debugging cell more")
+    inputs = dispatch_inputs(scaffold)
+    if options(inputs.get("tmate", "")) != list(ci_plan.TMATE_MODES) or "default: 'off'" not in inputs.get("tmate", ""):
+        found.append("the tmate input must offer exactly the plan's modes and default to off")
+    if "TMATE: ${{ inputs.tmate }}" not in jobs.get("plan", "") or '--tmate "$TMATE"' not in jobs.get("plan", ""):
+        found.append("plan: must pass the tmate input through env")
+    if TMATE in release:
+        found.append("release: a release never opens a debugging session")
+    return found
+
+
 def problems(scaffold, release):
     """Name each way the workflows stop following the plan."""
     found = []
@@ -107,7 +155,7 @@ def problems(scaffold, release):
         found.append("a push and a pull request must still cancel the run they supersede")
 
     inputs = dispatch_inputs(scaffold)
-    if sorted(inputs) != ["elixir", "os", "otp", "scope", "tmux-ref"]:
+    if sorted(inputs) != ["elixir", "os", "otp", "scope", "tmate", "tmux-ref"]:
         found.append("the dispatch inputs are not the plan's")
     if options(inputs.get("scope", "")) != list(ci_plan.SCOPES) or "default: edges" not in inputs.get("scope", ""):
         found.append("the scope input must offer exactly the plan's scopes and default to edges")
@@ -183,6 +231,33 @@ MUTATIONS = [
     ("a pull request shares one group with every other", lambda s, r: (replaced(
         s, "github.run_id || github.ref", "github.run_id"), r),
      "must still cancel the run they supersede"),
+    ("the session is not pinned to a commit", lambda s, r: (s.replace(
+        "action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24", "action-tmate@v3"), r),
+     "pinned to a full commit SHA"),
+    ("the session is open to every collaborator", lambda s, r: (s.replace(
+        "limit-access-to-actor: true", "limit-access-to-actor: false"), r), "limited to the actor"),
+    ("the session has no time limit of its own", lambda s, r: (s.replace(
+        "        timeout-minutes: 30\n", ""), r), "its own time limit"),
+    ("the session runs on every event", lambda s, r: (s.replace(
+        "github.event_name == 'workflow_dispatch' && matrix.tmate == 'before-tests'", "matrix.tmate == 'before-tests'"), r),
+     "only on a dispatch"),
+    ("the session runs on every cell", lambda s, r: (s.replace(
+        " && matrix.tmate == 'on-failure'", ""), r), "only on a dispatch"),
+    ("a session returns to the release", lambda s, r: (s, r + "      - uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24\n"),
+     "a release never opens a debugging session"),
+    ("the session moves out of the native job", lambda s, r: (s.replace(
+        "      - name: Require every core and native cell\n", "      - uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24\n        timeout-minutes: 5\n        with:\n          limit-access-to-actor: true\n      - name: Require every core and native cell\n"), r),
+     "belongs only in the native job"),
+    ("one session is dropped", lambda s, r: (s[:s.index("      - name: Open a tmate session after a failure")] + s[s.index("\n  required-linux:"):], r),
+     "before the tests and one after a failure"),
+    ("the job timeout ignores the session", lambda s, r: (s.replace(
+        "${{ matrix.tmate == 'off' && 5 || 60 }}", "5"), r), "cap its time"),
+    ("the tmate input offers another mode", lambda s, r: (s.replace(
+        "options: [off, before-tests, on-failure]", "options: [off, always]"), r), "plan's modes"),
+    ("the tmate input defaults to a session", lambda s, r: (s.replace(
+        "default: 'off'", "default: before-tests"), r), "default to off"),
+    ("the plan stops hearing the tmate input", lambda s, r: (s.replace(
+        "          TMATE: ${{ inputs.tmate }}\n", ""), r), "plan: must pass the tmate input"),
     ("an input is dropped from the dispatch", lambda s, r: (replaced(
         s, "      otp:\n", "      other:\n"), r), "the dispatch inputs are not the plan's"),
     ("the scope input defaults to full", lambda s, r: (replaced(
@@ -212,10 +287,19 @@ class WorkflowFollowsThePlan(unittest.TestCase):
     def test_the_workflows_follow_the_plan(self):
         self.assertEqual(problems(SCAFFOLD, RELEASE), [])
 
+    def test_the_debugging_session_is_safe(self):
+        self.assertEqual(session_problems(SCAFFOLD, RELEASE), [])
+
+    def test_no_other_workflow_opens_a_session(self):
+        for path in (ROOT / ".github/workflows").glob("*.yml"):
+            if path.name != "scaffold.yml":
+                self.assertNotIn(TMATE, path.read_text(), path.name)
+
     def test_a_mutation_is_reported(self):
         for description, mutate, message in MUTATIONS:
             with self.subTest(description):
-                reported = problems(*mutate(SCAFFOLD, RELEASE))
+                changed = mutate(SCAFFOLD, RELEASE)
+                reported = [*problems(*changed), *session_problems(*changed)]
                 self.assertTrue([each for each in reported if message in each], (message, reported))
 
     def test_the_cell_names_follow_the_plan(self):

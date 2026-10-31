@@ -37,6 +37,14 @@ on:
         type: choice
         options: [ubuntu-24.04, ubuntu-latest, ubuntu-22.04]
         default: ubuntu-24.04
+      tmate:
+        description: >-
+          Open a tmate session on the one native cell, before the tests or
+          after a failure. It needs scope custom with a single tmux-ref,
+          elixir and otp.
+        type: choice
+        options: [off, before-tests, on-failure]
+        default: 'off'
   workflow_call:
     inputs:
       scope:
@@ -142,6 +150,7 @@ jobs:
           ELIXIR: ${{ inputs.elixir }}
           OTP: ${{ inputs.otp }}
           IMAGE: ${{ inputs.os }}
+          TMATE: ${{ inputs.tmate }}
         run: |
           python3 scripts/ci_plan.py plan \
             --event "$EVENT" \
@@ -150,6 +159,7 @@ jobs:
             --elixir "$ELIXIR" \
             --otp "$OTP" \
             --os "$IMAGE" \
+            --tmate "$TMATE" \
             --github-output "$GITHUB_OUTPUT" \
             --summary "$GITHUB_STEP_SUMMARY"
 
@@ -157,7 +167,8 @@ jobs:
     name: ${{ matrix.name }}
     needs: plan
     runs-on: ${{ needs.plan.outputs.os }}
-    timeout-minutes: 5
+    # A tmate session needs longer than a test run does.
+    timeout-minutes: ${{ matrix.tmate == 'off' && 5 || 60 }}
     strategy:
       fail-fast: false
       # The plan chooses the cells and never leaves this empty.
@@ -239,12 +250,24 @@ jobs:
           fi
           sha256sum "$tmux_binary"
           printf 'LIBTMUX_TMUX=%s\n' "$tmux_binary" >> "$GITHUB_ENV"
+      - name: Open a tmate session before the tests
+        if: ${{ github.event_name == 'workflow_dispatch' && matrix.tmate == 'before-tests' }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
       - name: Compile native test application
         run: time mix compile --warnings-as-errors
       - name: Run pure and owned native cases
         run: time mix test --include integration --warnings-as-errors --max-cases 2 --seed 624498
       - name: Run packed README and guide examples
         run: time mix run scripts/check_package.exs --examples
+      - name: Open a tmate session after a failure
+        if: ${{ failure() && github.event_name == 'workflow_dispatch' && matrix.tmate == 'on-failure' }}
+        uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
+        timeout-minutes: 30
+        with:
+          limit-access-to-actor: true
 
   required-linux:
     name: Required Linux checks
