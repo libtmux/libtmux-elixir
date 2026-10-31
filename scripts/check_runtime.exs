@@ -1,5 +1,7 @@
 [profile] = System.argv()
-unless profile in ["reference", "tracking"], do: raise("expected reference or tracking")
+
+unless profile in ["reference", "tracking", "custom"],
+  do: raise("expected reference, tracking or custom")
 
 support = File.read!("priv/tmux/support.json") |> JSON.decode!()
 major = :erlang.system_info(:otp_release) |> List.to_string()
@@ -7,6 +9,13 @@ otp = Path.join([List.to_string(:code.root_dir()), "releases", major, "OTP_VERSI
 otp = otp |> File.read!() |> String.trim()
 elixir = System.version()
 compiled_otp = System.build_info().otp_release
+
+# A dispatch that names its own Elixir and OTP is debugging outside the
+# supported pairs, so it records the identity and asserts nothing.
+if profile == "custom" do
+  IO.puts(JSON.encode!(%{profile: profile, elixir: elixir, otp: otp, compiled_otp: compiled_otp}))
+  System.halt(0)
+end
 
 unless major == support["otp"]["line"] and compiled_otp == major,
   do: raise("Elixir must be compiled for the supported runtime OTP major")
