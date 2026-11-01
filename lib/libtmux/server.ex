@@ -46,66 +46,89 @@ defmodule LibTmux.Server do
   Server describes the endpoint. In Elixir, observation, selection and action
   functions live in their own modules. Start with these groups:
 
-  **Connecting.** `new/1` describes the server for one-shot commands, which do
-  not attach a client. `LibTmux.Control.with_connection/2` attaches a control
-  client to an existing session for a callback and closes it afterwards.
-  `LibTmux.Control.start_link/1` and `LibTmux.Control.child_spec/1` support
-  application supervision. See the [managed control guide](managed-control.html)
-  for connection setup and the host's hook and command-alias requirements.
+  **Connecting.** Describe the server for one-shot commands, which do not attach
+  a client. Attach a control client to an existing session for the length of a
+  callback; the client closes afterwards. Run a control client under application
+  supervision. See the [managed control guide](managed-control.html) for
+  connection setup and the host's hook and command-alias requirements.
 
-  **Finding one thing.** Capture with `snapshot/2`, then use
-  `LibTmux.Selection.one/2` to require one match or
-  `LibTmux.Selection.one_or_nil/2` to allow no match. Both reject multiple
-  matches. `LibTmux.Ref.from_observation/1` turns the chosen observation into
-  a reference tied to the daemon that supplied it, ready for an action.
+  - Describe: `new/1`
+  - Attach for a callback: `LibTmux.Control.with_connection/2`
+  - Supervise: `LibTmux.Control.start_link/1`, `LibTmux.Control.child_spec/1`
 
-  **Listing everything.** `snapshot/2` captures a `LibTmux.Snapshot` containing
-  sessions, physical windows, window links, panes and attached clients.
-  `LibTmux.Snapshot.sessions/1`, `LibTmux.Snapshot.windows/1`,
-  `LibTmux.Snapshot.window_links/1`, `LibTmux.Snapshot.panes/1` and
-  `LibTmux.Snapshot.clients/1` return selections from that captured graph
-  without contacting tmux again. Capture failures return an error, not an
-  empty server. Capture covers an interval rather than an atomic transaction;
-  take another snapshot when fresh state is needed.
+  **Finding one thing.** Capture a snapshot, then require one match or allow no
+  match. Both reject multiple matches. Turn the chosen observation into a
+  reference tied to the daemon that supplied it, ready for an action.
 
-  **Querying things and getting around.** `LibTmux.Selection.where/2` accepts
-  criteria such as `active: true`; `LibTmux.Selection.filter/2` accepts an
-  Elixir function. Selections work with `Enum` and `Stream`. Navigate the
-  captured graph with `LibTmux.Session.windows/2`, `LibTmux.Session.panes/2`,
-  `LibTmux.Session.active_window/2` and `LibTmux.Window.panes/2`, or use
-  `LibTmux.Snapshot.related/4` for other relationships. These functions use
-  the supplied snapshot. Plural helpers return selections for further filtering; a
-  `LibTmux.WindowLink` preserves a window's membership in one session.
+  - Capture: `snapshot/2`
+  - Require one: `LibTmux.Selection.one/2`
+  - Allow none: `LibTmux.Selection.one_or_nil/2`
+  - Reference: `LibTmux.Ref.from_observation/1`
 
-  **Changing things.** `new_session/3` and `LibTmux.Session.new_window/4`
-  create detached sessions and windows on an existing server using one-shot
-  execution. They return the created ID with `ref: nil`; capture a fresh
-  observation to obtain a reference. `LibTmux.Pane.split/3` creates a pane
-  and returns its ID in the completed result. A qualified Control connection
-  also supplies a bound reference; one-shot split returns `ref: nil`.
-  `LibTmux.Session.rename/4` and `LibTmux.Window.rename/4` change names.
-  `LibTmux.Pane.send_text/4` sends
-  literal bytes, while `LibTmux.Pane.send_keys/4` sends named keys such as
-  `"Enter"`. Split, rename and input take a Server or Control connection
-  followed by a reference. Domain bang variants return completed values or raise;
-  nonbang variants return `{:ok, result}` for completed commands and
-  `{:error, error}` otherwise. See the
-  [action guide](one-shot-actions.html) and [recovery guide](recovery.html).
+  **Listing everything.** Capture sessions, physical windows, window links, panes
+  and attached clients as a `LibTmux.Snapshot`. One accessor per kind returns a
+  selection from that captured graph without contacting tmux again. Capture
+  failures return an error, not an empty server. Capture covers an interval
+  rather than an atomic transaction; take another snapshot when fresh state is
+  needed.
 
-  **Reading screens, options and formats.** `LibTmux.Pane.capture/3` reads
-  pane screen bytes through one-shot execution and requires a Server.
-  On a control connection, `LibTmux.Control.execute/3`
-  runs `LibTmux.Control.Request.field/2` reads and
-  `LibTmux.Control.Request.set_user_option/2` server user-option writes.
-  Use `LibTmux.Control.submit/3` and `LibTmux.Operation` when the result needs
-  to remain available for independent inspection.
+  - Capture: `snapshot/2`
+  - Select: `LibTmux.Snapshot.sessions/1`, `LibTmux.Snapshot.windows/1`,
+    `LibTmux.Snapshot.window_links/1`, `LibTmux.Snapshot.panes/1`,
+    `LibTmux.Snapshot.clients/1`
 
-  Other tmux commands are available through `LibTmux.Command.new/2` and
-  `run/3`, which runs one command with literal arguments and returns bounded
-  output and exit evidence. Configured server hooks can still run. Targeted
-  one-shot actions check the observed server identity before writing, leaving
-  a race if the daemon is replaced between that check and the command. Use a
-  qualified Control connection for mutations bound to one daemon instance.
+  **Querying things and getting around.** Select by criteria such as
+  `active: true`, or by an Elixir function; selections work with `Enum` and
+  `Stream`. Navigation functions use the supplied snapshot. Plural helpers return
+  selections for further filtering; a `LibTmux.WindowLink` preserves a window's
+  membership in one session.
+
+  - By criteria: `LibTmux.Selection.where/2`
+  - By function: `LibTmux.Selection.filter/2`
+  - Down: `LibTmux.Session.windows/2`, `LibTmux.Session.panes/2`,
+    `LibTmux.Window.panes/2`
+  - Focused: `LibTmux.Session.active_window/2`
+  - Other relationships: `LibTmux.Snapshot.related/4`
+
+  **Changing things.** Create detached sessions and windows on an existing server
+  using one-shot execution. Each returns the created ID with `ref: nil`; capture
+  a fresh observation to obtain a reference. Split a pane to create a pane and
+  get its ID in the completed result. A qualified Control connection also
+  supplies a bound reference; one-shot split returns `ref: nil`. Rename a session
+  or a window. Send literal bytes or named keys such as `"Enter"` to a pane.
+  Split, rename and input take a Server or Control connection followed by a
+  reference. Domain bang variants return completed values or raise; nonbang
+  variants return `{:ok, result}` for completed commands and `{:error, error}`
+  otherwise. See the [action guide](one-shot-actions.html) and
+  [recovery guide](recovery.html).
+
+  - Create: `new_session/3`, `LibTmux.Session.new_window/4`
+  - Split: `LibTmux.Pane.split/3`
+  - Rename: `LibTmux.Session.rename/4`, `LibTmux.Window.rename/4`
+  - Send literal bytes: `LibTmux.Pane.send_text/4`
+  - Send named keys: `LibTmux.Pane.send_keys/4`
+
+  **Reading screens, options and formats.** Capture pane screen bytes through
+  one-shot execution, which requires a Server. On a control connection, execute a
+  request that reads a field or writes a server user option. Submit the request
+  and keep the returned `LibTmux.Operation` when the result needs to remain
+  available for independent inspection.
+
+  - Screen: `LibTmux.Pane.capture/3`
+  - Execute: `LibTmux.Control.execute/3`
+  - Read a field: `LibTmux.Control.Request.field/2`
+  - Write a user option: `LibTmux.Control.Request.set_user_option/2`
+  - Submit: `LibTmux.Control.submit/3`
+
+  **Running any other command.** Build a command to run any other tmux command.
+  Running executes one command with literal arguments and returns bounded output
+  and exit evidence. Configured server hooks can still run. Targeted one-shot
+  actions check the observed server identity before writing, leaving a race if
+  the daemon is replaced between that check and the command. Use a qualified
+  Control connection for mutations bound to one daemon instance.
+
+  - Build: `LibTmux.Command.new/2`
+  - Run: `run/3`
 
   ## Examples
 
