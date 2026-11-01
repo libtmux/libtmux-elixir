@@ -29,3 +29,5 @@ name variable. No default socket of the package's own is planned. See
 The package consumes the core `libtmux` package. Published metadata uses
 its version requirement. `LIBTMUX_SOURCE_DEPS=1` explicitly selects local
 core development wiring; it is not installed-consumer evidence.
+
+Changes to this package are listed in its [changelog](CHANGELOG.md).

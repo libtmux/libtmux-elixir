@@ -349,3 +349,11 @@ CI exercises this policy against an owned local HTTP fixture.
 
 Workspace and MCP have no publication jobs. Their eventual releases must
 use real dependency versions and pass their own installed-consumer checks.
+
+Each package under `packages/` and the core keep a `CHANGELOG.md` that the
+package's `files` list ships. `scripts/check_release.exs` refuses a release
+while any of them is missing, opens with another package's name, lacks an
+`## Unreleased` heading or is not matched by `files`, and
+`test/ci_changelog_test.py` runs it against a broken copy of the tree for
+each case. [WRITING.md](WRITING.md#release-notes) says which file an entry
+goes in.
