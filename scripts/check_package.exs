@@ -39,6 +39,7 @@ try do
     ])
 
   true = File.regular?(Path.join(package, "c_src/owned_io.c"))
+  true = File.regular?(Path.join(package, "CHANGELOG.md"))
   false = File.exists?(Path.join(package, "priv/native"))
 
   if :os.type() == {:unix, :linux} do
