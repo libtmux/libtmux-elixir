@@ -216,8 +216,8 @@ jobs:
         run: time elixir scripts/check_runtime.exs "$TOOLCHAIN_PROFILE"
       - name: Install tmux build prerequisites
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends \
+          ./scripts/apt-get.sh update
+          ./scripts/apt-get.sh install --yes --no-install-recommends \
             autoconf automake bison build-essential libevent-dev libncurses-dev pkg-config
       - name: Build tmux source
         shell: bash
