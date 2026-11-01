@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/libtmux/assets",
-  "revision": "c9688d9db25e4c522ff1255d0f3badaf27d780dd",
+  "revision": "4b86a9d9158d7c6d52cd635d59c92a04b48b960f",
   "language": "elixir",
   "primary": "#8847B9",
   "githubLanguageColors": "https://github.com/github-linguist/linguist/blob/538da05f034fa5c83bd81df128d144e208898da3/lib/linguist/languages.yml",
@@ -40,23 +40,23 @@
     },
     {
       "file": "opengraph-dark.png",
-      "bytes": 73122,
-      "sha256": "d397ab6d3400fac2adc43e751a4927e09cc481dd2d3f25e4d48bef5ae8bcba02"
+      "bytes": 70465,
+      "sha256": "7e7acf309e24dc9495511a981c6182d4840fdddc27de64c8d97a3159eedc4f7c"
     },
     {
       "file": "opengraph-light.png",
-      "bytes": 72837,
-      "sha256": "df0a0a07530c8089b04b06f9e92cdae11d28402971ba660bcc5b81c4298623c2"
+      "bytes": 70206,
+      "sha256": "2210139cd4dc8a65be836135db11e9ce5895b192d58054928b2b6ddd4528ab8d"
     },
     {
       "file": "twitter-dark.png",
-      "bytes": 72844,
-      "sha256": "4a62a9046716cd7d0c1144e9fdf9f8bd79230260d7ecba31d6f6e1b95ee2a30e"
+      "bytes": 70227,
+      "sha256": "0a19fd76a6a518566d74f1d99d58b1c5bbc020cc9b2d30a3980f26675fcfc0d5"
     },
     {
       "file": "twitter-light.png",
-      "bytes": 72541,
-      "sha256": "74fe08a1451e1c364913a46eafac563fa938338a58f503174c18c2fce06dcb5f"
+      "bytes": 69961,
+      "sha256": "7fc7259ff0dd22c08b434cc13df3c176ff0ba0d29f9df9969a6edea5e3189260"
     }
   ]
 }
