@@ -1,7 +1,9 @@
 """Prove scaffold.yml takes its cells from the plan and stays bound to the release.
 
 The workflows are read as text, because the job that runs these tests has no
-YAML parser. Each rule has a mutation that has to be reported.
+YAML parser. Each rule has a mutation that has to be reported. A run script
+that calls apt or apt-get directly is reported too: only scripts/apt-get.sh
+bounds a hung mirror.
 """
 from pathlib import Path
 import re
@@ -150,6 +152,71 @@ def session_problems(scaffold, release):
     if TMATE in release:
         found.append("release: a release never opens a debugging session")
     return found
+
+
+# apt or apt-get as a command word: at the start of a line, after a shell
+# separator, or after sudo, timeout and the like with their options.
+RAW_APT = re.compile(
+    r"(?:^|[;&|(!`]|\b(?:sudo|timeout|time|env|exec|xargs|nice|then|do|else))\s*"
+    r"(?:(?:-\S+|\d+|\w+=\S*)\s+)*(apt(?:-get)?)(?![\w./-])"
+)
+
+
+def run_scripts(text):
+    """Each `run:` value as (job, step label, script), read without a YAML parser.
+
+    A value is the text after `run:` plus the lines indented deeper than its key,
+    which covers block scalars and folded plain scalars.
+    """
+    lines = text.splitlines()
+    found, job, in_jobs = [], None, False
+    for number, line in enumerate(lines):
+        if line and not line.startswith((" ", "#")):
+            in_jobs, job = line.startswith("jobs:"), None
+        header = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if in_jobs and header:
+            job = header[1]
+        key = re.match(r"^( *)(- )?run:[ \t]*(.*)$", line)
+        if not key:
+            continue
+        depth = len(key[1]) + (2 if key[2] else 0)
+        value = key[3].strip()
+        body = [] if value[:1] in ("|", ">") else [value.lstrip("'\"")]
+        for rest in lines[number + 1:]:
+            if rest.strip() and len(rest) - len(rest.lstrip()) <= depth:
+                break
+            body.append(rest)
+        start = number
+        while start > 0 and not re.match(rf"^ {{{depth - 2}}}- ", lines[start]):
+            start -= 1
+        name = re.search(rf"(?m)^ {{{depth - 2}}}(?:- |  )name:\s*(.*)$", "\n".join(lines[start:number + 1]))
+        title = name[1].strip().strip("'\"") if name else None
+        found.append((job, f'step "{title}"' if title else f"the step at line {start + 1}", "\n".join(body)))
+    return found
+
+
+def apt_problems(sources):
+    """Name each run script that calls apt or apt-get without scripts/apt-get.sh.
+
+    `sources` maps a path to the text of a workflow or composite action. The
+    wrapper bounds a hung apt-get only while every call uses it
+    (https://github.com/actions/runner-images/issues/15040).
+    """
+    found = []
+    for path, text in sources.items():
+        for job, step, script in run_scripts(text):
+            for line in script.splitlines():
+                call = None if line.lstrip().startswith("#") else RAW_APT.search(line)
+                if call:
+                    where = f"job {job}, {step}" if job else step
+                    found.append(f"{path}: {where}: `{line.strip()}` calls {call[1]} directly; run it through scripts/apt-get.sh")
+    return found
+
+
+def ci_sources():
+    """Map the path of each workflow and composite action to its text."""
+    paths = [*sorted(ROOT.glob(".github/workflows/*.y*ml")), *sorted(ROOT.glob(".github/actions/*/action.y*ml"))]
+    return {str(path.relative_to(ROOT)): path.read_text() for path in paths}
 
 
 def problems(scaffold, release):
@@ -377,6 +444,86 @@ class WorkflowFollowsThePlan(unittest.TestCase):
                                  f"Native tmux {MANIFEST['required_linux'][-1]['tmux']} / tracking"})
         self.assertEqual(field(split_jobs(SCAFFOLD)["scaffold"], "name"), ci_plan.CORE_JOB)
         self.assertEqual(field(split_jobs(SCAFFOLD)["required-linux"], "name"), ci_plan.REQUIRED_JOB)
+
+
+RAW_WORKFLOW = """name: Example
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes jq
+"""
+
+WRAPPED_WORKFLOW = """name: Example
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install prerequisites
+        run: |
+          # sudo apt-get update stalls without the wrapper
+          ./scripts/apt-get.sh update
+          echo "apt-get is wrapped"
+      - run: sudo ./scripts/apt-get.sh install --yes jq
+"""
+
+RAW_ACTION = """name: Setup
+runs:
+  using: composite
+  steps:
+    - run: sudo apt install --yes jq
+      shell: bash
+"""
+
+
+def raw_apt_message(path, where, line, command="apt-get"):
+    return f"{path}: {where}: `{line}` calls {command} directly; run it through scripts/apt-get.sh"
+
+
+class AptGoesThroughTheWrapper(unittest.TestCase):
+    def test_the_workflows_call_apt_only_through_the_wrapper(self):
+        self.assertEqual(apt_problems(ci_sources()), [])
+
+    def test_the_scan_reads_the_real_wrapper_step(self):
+        scripts = [script for _, _, script in run_scripts(SCAFFOLD)]
+        self.assertTrue([each for each in scripts if "./scripts/apt-get.sh update" in each])
+        self.assertIn(".github/workflows/scaffold.yml", ci_sources())
+
+    def test_a_raw_apt_get_is_reported_with_its_fix(self):
+        path = ".github/workflows/example.yml"
+        where = 'job build, step "Install prerequisites"'
+        self.assertEqual(apt_problems({path: RAW_WORKFLOW}), [
+            raw_apt_message(path, where, "sudo apt-get update"),
+            raw_apt_message(path, where, "sudo apt-get install --yes jq"),
+        ])
+
+    def test_a_raw_apt_in_a_composite_action_is_reported(self):
+        path = ".github/actions/setup/action.yml"
+        self.assertEqual(apt_problems({path: RAW_ACTION}), [
+            raw_apt_message(path, "the step at line 5", "sudo apt install --yes jq", "apt")])
+
+    def test_every_spelling_of_a_raw_call_is_reported(self):
+        for command in ("apt-get update", "sudo -E apt-get update", "sudo timeout --kill-after=10 180 apt-get update",
+                        "if ! sudo apt-get update; then exit 1; fi", "time sudo DEBIAN_FRONTEND=noninteractive apt install jq"):
+            with self.subTest(command):
+                text = f"jobs:\n  build:\n    steps:\n      - name: Install\n        run: {command}\n"
+                reported = apt_problems({"w.yml": text})
+                self.assertEqual(len(reported), 1, reported)
+                self.assertIn("run it through scripts/apt-get.sh", reported[0])
+
+    def test_the_wrapper_a_comment_and_other_text_pass(self):
+        self.assertEqual(apt_problems({".github/workflows/example.yml": WRAPPED_WORKFLOW}), [])
+
+    def test_a_raw_call_in_the_real_workflow_is_reported(self):
+        raw = replaced(SCAFFOLD, "./scripts/apt-get.sh update", "sudo apt-get update")
+        self.assertEqual(apt_problems({".github/workflows/scaffold.yml": raw}), [
+            raw_apt_message(".github/workflows/scaffold.yml", 'job native, step "Install tmux build prerequisites"',
+                            "sudo apt-get update")])
 
 
 if __name__ == "__main__":
