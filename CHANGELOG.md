@@ -9,6 +9,8 @@ documentation, CI and release tooling, are listed here.
 
 ## Unreleased
 
+## libtmux 0.1.1 (2026-11-01)
+
 ### Added
 
 - Select a tmux server by name with the `:socket_name` option of
