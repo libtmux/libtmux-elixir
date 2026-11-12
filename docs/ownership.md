@@ -79,9 +79,8 @@ Hex archives and rebuilt during dependency compilation. No third-party
 runtime package or NIF is added.
 
 Packed-core checks must compile and execute outside the checkout.
-Workspace/MCP escript extraction and helper discovery still need their
-installed-consumer checks; the current path expects an unpacked application
-`priv` directory. Other platforms remain unqualified.
+Escript extraction and helper discovery still need installed-consumer
+checks; the current path expects an unpacked application `priv` directory. Other platforms remain unqualified.
 
 ## Persistent connection components
 

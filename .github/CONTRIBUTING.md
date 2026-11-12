@@ -2,7 +2,7 @@
 
 The core provides domain actions and managed execution.
 Pure tests, packed public examples and owned real-tmux checks qualify
-implemented behavior. Consumer packages remain planned.
+implemented behavior.
 [WRITING.md](WRITING.md) governs prose, comments, and commits.
 
 ## Setup
@@ -245,8 +245,7 @@ The [ownership guide](../docs/ownership.md) describes the one-shot helper,
 resource ceilings and remaining distribution gates.
 
 These gates exercise implemented core behavior and fixture ownership. They
-do not establish installed workspace/MCP graphs or compatibility for
-unexercised operations. Do not add empty source or tests to make a command
+do not establish compatibility for unexercised operations. Do not add empty source or tests to make a command
 appear useful. Public task programs are shipped in `examples/`. Check their
 displayed copies with `python3 scripts/check_example_docs.py`, then run
 `MIX_ENV=test mix run scripts/check_package.exs --examples` outside inner/mid
@@ -276,13 +275,6 @@ readiness instead of fixed sleeps. Slow tests need an outer-loop tag and a
 one-line reason. Fix redundant setup, polling, and slow paths before adding
 tests to an over-budget loop. Benchmarks are separate: each run stays under
 10 minutes, and a full sweep stays under one hour.
-
-## Package boundaries
-
-[mix.exs](../mix.exs) owns the core package. The workspace loader and
-MCP server have separate Mix projects that consume the core. Do not add
-adapter dependencies or adapter configuration to the core. The
-[design note](../docs/design.md) records the planned behavioral boundaries.
 
 ## Adding implementation
 
@@ -347,13 +339,9 @@ errors fail promptly. Exhaustion fails verification without republishing.
 The installed-consumer check follows a successful documentation read. Core
 CI exercises this policy against an owned local HTTP fixture.
 
-Workspace and MCP have no publication jobs. Their eventual releases must
-use real dependency versions and pass their own installed-consumer checks.
-
-Each package under `packages/` and the core keep a `CHANGELOG.md` that the
-package's `files` list ships. `scripts/check_release.exs` refuses a release
-while any of them is missing, opens with another package's name, lacks an
-`## Unreleased` heading or is not matched by `files`, and
-`test/ci_changelog_test.py` runs it against a broken copy of the tree for
-each case. [WRITING.md](WRITING.md#release-notes) says which file an entry
+The core keeps a `CHANGELOG.md` that its `files` list ships.
+`scripts/check_release.exs` refuses a release while it is missing, opens with
+another package's name, lacks an `## Unreleased` heading or is not matched by
+`files`, and `test/ci_changelog_test.py` runs it against a broken copy of the
+tree for each case. [WRITING.md](WRITING.md#release-notes) says which file an entry
 goes in.
