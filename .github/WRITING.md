@@ -91,9 +91,5 @@ Release notes state the upgrade benefit, compatibility change, and required
 action. Support claims refer to that release's completed checks. Avoid
 feature totals and narratives of internal cleanup.
 
-Each package keeps its own `CHANGELOG.md`, and an entry goes in the file of the
-package it changes: `CHANGELOG.md` for `libtmux`,
-`packages/workspace/CHANGELOG.md` for `libtmux_workspace` and
-`packages/mcp/CHANGELOG.md` for `libtmux_mcp`. A change that spans packages,
-such as documentation, CI or release tooling, goes in the `libtmux` file. A
-file lists only the releases of its own package.
+An entry goes in `CHANGELOG.md`, the changelog of `libtmux`. A change to
+documentation, CI or release tooling goes there too.

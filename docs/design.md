@@ -3,8 +3,8 @@
 The core implements immutable observations, indexed filters, bounded capture,
 one-shot execution, persistent control and explicit domain actions. This page
 preserves constraints for that implementation and for the remaining Query,
-Tracker, planner, workspace and MCP work; it is not a claim that those planned
-components exist.
+Tracker and planner work; it is not a claim that those planned components
+exist.
 The [implementation contracts](implementation.md) map those responsibilities
 to package boundaries and qualification gates.
 For a runnable introduction, [capture and filter an existing server](first-task.md).
@@ -82,17 +82,9 @@ does not prove that an already-dispatched command had no effect.
 
 ## Package and validation boundaries
 
-Workspace loading and MCP are separate packages that depend on the core.
-The core does not depend on their parsers, hosting, or configuration.
-
 Socket selection belongs to the core. A caller that names no socket gets
 `LIBTMUX_SOCKET_PATH`, else `LIBTMUX_SOCKET`, else no socket at all, so tmux
-chooses. The workspace loader and the MCP server follow that rule from their
-first release: they pass neither `-L` nor `-S` of their own, and an explicit
-option or flag comes first. The
-[implementation contracts](implementation.md#packages-and-support) select
-the package names and layout; adapter dependency choices still require
-qualification.
+chooses. An explicit option comes first.
 
 Implementation must establish parser and quoting behavior, real-tmux
 compatibility, completion and cancellation semantics, bounded resource

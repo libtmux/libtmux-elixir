@@ -4,8 +4,7 @@ This is the Elixir libtmux implementation. Read [mix.exs](mix.exs), the
 current tree and [implementation contracts](docs/implementation.md) before
 editing. The core implements immutable indexed capture/filtering, bounded Linux one-shot
 execution, retained and managed control operations, scoped connections and a
-small domain action surface. Query/Tracker, planners and consumer packages
-remain planned.
+small domain action surface. Query/Tracker and planners remain planned.
 
 ## Which policy applies
 
@@ -23,8 +22,7 @@ Each guide is the single home for its subject. `CLAUDE.md` links here.
 - Use `rg`, `ag`, or `fd` for searches and `jq` for JSON.
 - Reuse existing helpers before adding abstractions. Follow native Elixir
   conventions; sibling ports supply behavioral references, not syntax.
-- Keep core runtime dependencies at zero. Workspace and MCP packages depend
-  on the core; the core must not depend on them.
+- Keep core runtime dependencies at zero.
 - Keep observed values immutable and I/O explicit. Distinguish command
   acknowledgement, operation completion, and cancellation certainty.
 - Run the relevant checks and report their scope, whole-command duration,

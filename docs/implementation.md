@@ -3,26 +3,15 @@
 This page records the selected implementation boundaries. The implemented core
 includes capture/filtering, bounded one-shot execution, persistent retained
 and managed control, scoped connections and create/split/rename/input/capture actions.
-Query, Batch/Group/Plan, Observation/Tracker, the owned program runner, workspace
-and MCP remain planned. Their rows below are contracts for future work. See [design](design.md)
+Query, Batch/Group/Plan, Observation/Tracker and the owned program runner
+remain planned. Their rows below are contracts for future work. See [design](design.md)
 for the observation and execution model.
 
 ## Packages and support
 
 The root project owns the `libtmux` Hex package and `LibTmux` namespace.
-`packages/workspace` owns `libtmux_workspace` and `LibTmux.Workspace`;
-`packages/mcp` owns `libtmux_mcp` and `LibTmux.MCP`. Each is an ordinary Mix
-project. Published consumer metadata uses a real core version requirement.
-Explicit development wiring may select the local core, but installed checks
-must use packed artifacts outside this repository. Core has no third-party
-runtime dependencies and never imports a consumer package.
-MCP also consumes the workspace package for workspace tools; it must not
-duplicate the loader, planner or apply journal.
-
-Workspace and MCP are planned to distribute escripts with Elixir embedded by
-Mix. Running an escript requires the supported OTP runtime, while building
-it requires the supported Elixir toolchain. ERTS is not bundled. A later
-Mix release is an additional choice, subject to installed-consumer checks.
+Installed checks must use packed artifacts outside this repository. Core has
+no third-party runtime dependencies.
 
 The implementation targets Elixir 1.20.4 or newer patches in the 1.20 line,
 OTP releases at or above 29.1.2 and below 30, and tmux 3.3 or newer. These are
@@ -56,8 +45,6 @@ required cell; they cannot become successful skips.
 | `Observation` | Explicit registration before action, bounded retention/demand and cursor/gap semantics. Capture is separate screen state. |
 | `Tracker` | Optional owner of the same Snapshot graph. Retained reads expose status and never refresh or wait for readiness. |
 | Owned runner | Explicit argv/cwd/environment, gated execution and private completion channel; no inferred program exit from interactive pane text. |
-| `Workspace` | Versioned JSON loader and real CLI, read-only planning, exact preconditions, explicit apply and partial journal. |
-| `MCP` | STDIO discovery and bounded retained operations under host authority. Models choose allowlisted server IDs and exact returned references. |
 
 Future server/session/window/pane/client operations extend to options, hooks
 and formats. The current domain surface covers detached session/window creation
