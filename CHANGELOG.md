@@ -2,11 +2,6 @@
 
 Notable changes to `libtmux`.
 
-The other packages in this repository keep their own changelogs:
-[`libtmux_workspace`](packages/workspace/CHANGELOG.md) and
-[`libtmux_mcp`](packages/mcp/CHANGELOG.md). Changes that span packages, such as
-documentation, CI and release tooling, are listed here.
-
 ## Unreleased
 
 ## libtmux 0.1.1 (2026-11-01)
