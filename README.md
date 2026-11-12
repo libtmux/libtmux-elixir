@@ -206,6 +206,13 @@ shows how to inspect the result before deciding what to do next.
 - [Mental model](docs/mental-model.md): snapshots, references and command results.
 - [API reference](https://libtmux.org/en/elixir/latest/reference/): functions and types.
 
+## AI policy
+
+Use these packages with AI tools as you like. When contributing, check what you
+submit and wait for a maintainer's invitation before preparing a pull request.
+See the [AI policy](https://libtmux.org/en/meta/ai-policy/), also kept as
+[AI_POLICY.md](https://github.com/libtmux/.github/blob/HEAD/AI_POLICY.md).
+
 ## Contributing
 
 See [Contributing](.github/CONTRIBUTING.md) for development setup and checks,
