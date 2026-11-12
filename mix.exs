@@ -51,10 +51,6 @@ defmodule LibTmux.MixProject do
     # ExDoc flattens extras; keep repository-relative links in the originals.
     replacements = %{
       "README.md" => [{"examples/readme.exs", blob <> "examples/readme.exs"}],
-      "CHANGELOG.md" => [
-        {"packages/workspace/CHANGELOG.md", blob <> "packages/workspace/CHANGELOG.md"},
-        {"packages/mcp/CHANGELOG.md", blob <> "packages/mcp/CHANGELOG.md"}
-      ],
       ".github/CONTRIBUTING.md" => [
         {"../.tool-versions", blob <> ".tool-versions"},
         {"../mix.exs", blob <> "mix.exs"},
@@ -70,9 +66,7 @@ defmodule LibTmux.MixProject do
       "docs/ownership.md" => [{"../c_src/README.md", blob <> "c_src/README.md"}],
       "docs/branding.md" => [
         {"assets/", tree <> "docs/assets/"},
-        {"assets/source.json", blob <> "docs/assets/source.json"},
-        {"../packages/workspace/assets/", tree <> "packages/workspace/assets/"},
-        {"../packages/mcp/assets/", tree <> "packages/mcp/assets/"}
+        {"assets/source.json", blob <> "docs/assets/source.json"}
       ]
     }
 

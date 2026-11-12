@@ -22,11 +22,11 @@ if "dev" in parsed.pre, do: Mix.raise("development versions cannot be published"
 unless System.argv() == ["v" <> version],
   do: Mix.raise("release tag must match v#{version}")
 
-# Every package keeps its own changelog and ships it, so a release does not go
-# out while a sibling package has lost its file. For the core and each project
-# under packages/, the changelog must exist, open with "Notable changes to" and
-# the package's own name, hold an `## Unreleased` heading outside any code
-# fence, and be matched by the `files` list that puts it in the Hex archive.
+# The core keeps a changelog and ships it, so a release does not go out after
+# it has lost its file. The changelog must exist, open with "Notable changes
+# to" and the package's own name, hold an `## Unreleased` heading outside any
+# code fence, and be matched by the `files` list that puts it in the Hex
+# archive.
 heading? = fn markdown, heading ->
   markdown
   |> String.split("\n")
@@ -73,20 +73,7 @@ ships? = fn directory, package ->
   end
 end
 
-packages =
-  [{".", config[:app], package}] ++
-    for mix_file <- Path.wildcard("packages/*/mix.exs") |> Enum.sort() do
-      directory = Path.dirname(mix_file)
-
-      Mix.Project.in_project(
-        String.to_atom("release_check_" <> Path.basename(directory)),
-        directory,
-        fn _module ->
-          project = Mix.Project.config()
-          {directory, project[:app], Keyword.get(project, :package, [])}
-        end
-      )
-    end
+packages = [{".", config[:app], package}]
 
 changelog_failures =
   Enum.flat_map(packages, fn {directory, app, package} ->
