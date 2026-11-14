@@ -1,5 +1,48 @@
 defmodule LibTmux.Session do
-  @moduledoc "An immutable session observation with explicit actions. Attachment retains tmux's client count."
+  @moduledoc """
+  An immutable session observation with explicit actions. Attachment retains tmux's client count.
+
+  ## What is on here
+
+  A Session is a value captured in a `LibTmux.Snapshot`. Relationship functions
+  read the snapshot you pass; actions take a `LibTmux.Ref` and a Server or
+  Control connection. Start with these groups:
+
+  **Finding the session.** Select sessions from a captured snapshot, or look one
+  up by its exact ID. Neither contacts tmux. An ID that was not captured returns
+  `{:error, error}` with kind `:not_found`. Turn the session into a reference
+  tied to the server incarnation that supplied it, ready for an action.
+
+  - Select: `LibTmux.Snapshot.sessions/1`
+  - By ID: `LibTmux.Snapshot.fetch/3`
+  - Reference: `LibTmux.Ref.from_observation/1`
+
+  **Looking inside a session.** Read windows, panes and the active window from the
+  snapshot, without I/O. A window linked more than once appears once, and a
+  covered empty relation returns an empty selection. An invalid or stale
+  identity, or a relationship the snapshot did not capture, raises
+  `LibTmux.Error`. For per-session window indexes use `LibTmux.Snapshot.related/4`
+  with `:window_links`.
+
+  - Windows: `windows/2`
+  - Panes: `panes/2`
+  - Focused: `active_window/2`
+
+  **Creating a window.** Create a named detached window in the session through
+  one-shot execution. The completed value holds the new ID with `ref: nil`;
+  capture a fresh observation to obtain a reference. A Control connection is
+  unsupported, and a missing server is not started.
+
+  - Create: `new_window/4`
+  - Raise on failure: `new_window!/4`
+
+  **Renaming.** Rename the session through a Server or a Control connection.
+  A name holds 1..1024 UTF-8 bytes with no control characters, and tmux still
+  normalizes it. Observations you already hold keep the old name.
+
+  - Rename: `rename/4`
+  - Raise on failure: `rename!/4`
+  """
   @enforce_keys [:id, :server_instance]
   defstruct [
     :id,
@@ -140,7 +183,40 @@ defmodule LibTmux.Session do
 end
 
 defmodule LibTmux.Window do
-  @moduledoc "An immutable physical window with explicit actions, independent of session membership and index."
+  @moduledoc """
+  An immutable physical window with explicit actions, independent of session membership and index.
+
+  ## What is on here
+
+  A Window is a physical window captured in a `LibTmux.Snapshot`. Its session
+  index and active state belong to a `LibTmux.WindowLink`, so one Window can
+  belong to several sessions. Start with these groups:
+
+  **Finding the window.** Select windows from a captured snapshot, or look one
+  up by its exact ID. Neither contacts tmux. An ID that was not captured returns
+  `{:error, error}` with kind `:not_found`. Turn the window into a reference
+  tied to the server incarnation that supplied it, ready for an action.
+
+  - Select: `LibTmux.Snapshot.windows/1`
+  - By ID: `LibTmux.Snapshot.fetch/3`
+  - Reference: `LibTmux.Ref.from_observation/1`
+
+  **Looking inside a window.** Read its panes from the snapshot, in numeric
+  pane-ID order and without I/O. An invalid or stale identity, or a relationship
+  the snapshot did not capture, raises `LibTmux.Error`. To find the sessions
+  that hold the window, select its links.
+
+  - Panes: `panes/2`
+  - Links: `LibTmux.Snapshot.window_links/1`
+
+  **Renaming.** Rename the window across all its memberships through a Server or
+  a Control connection. A name holds 1..1024 UTF-8 bytes with no control
+  characters, and tmux still normalizes it. The optional `session:` reference
+  requires membership in that session; it does not pick a link index.
+
+  - Rename: `rename/4`
+  - Raise on failure: `rename!/4`
+  """
   @enforce_keys [:id, :server_instance]
   defstruct [
     :id,
@@ -243,7 +319,47 @@ defmodule LibTmux.WindowLink do
 end
 
 defmodule LibTmux.Pane do
-  @moduledoc "An immutable physical pane with explicit actions. It belongs to a window; text may be empty."
+  @moduledoc """
+  An immutable physical pane with explicit actions. It belongs to a window; text may be empty.
+
+  ## What is on here
+
+  A Pane is a value captured in a `LibTmux.Snapshot`. Actions take a
+  `LibTmux.Ref` and a Server or Control connection. Start with these groups:
+
+  **Finding the pane.** Select panes from a captured snapshot, or look one up by
+  its exact ID. Neither contacts tmux. An ID that was not captured returns
+  `{:error, error}` with kind `:not_found`. Turn the pane into a reference tied
+  to the server incarnation that supplied it, ready for an action.
+
+  - Select: `LibTmux.Snapshot.panes/1`
+  - By ID: `LibTmux.Snapshot.fetch/3`
+  - Reference: `LibTmux.Ref.from_observation/1`
+
+  **Splitting.** Split the pane and get the new pane's ID in the completed value.
+  A qualified Control connection also returns a bound reference; one-shot
+  execution returns `ref: nil`. The defaults are a vertical, detached split at
+  half size; options set the axis, size, directory and command.
+
+  - Split: `split/3`
+  - Raise on failure: `split!/3`
+
+  **Sending input.** Send literal bytes, up to 995 of them, without interpreting
+  key names, or send named keys such as `"Enter"` and `"C-c"`. An unknown key
+  name is rejected. Acknowledgement does not prove the program consumed the
+  input.
+
+  - Literal bytes: `send_text/4`, `send_text!/4`
+  - Named keys: `send_keys/4`, `send_keys!/4`
+
+  **Reading the screen.** Capture the rendered screen through one-shot
+  execution; a Control connection returns `unsupported_transport`. Output over
+  the byte limit is an error, never a partial screen. This reads screen state,
+  not the program's original output stream.
+
+  - Capture: `capture/3`
+  - Raise on failure: `capture!/3`
+  """
   @enforce_keys [:id, :server_instance]
   defstruct [
     :id,
