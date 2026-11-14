@@ -27,6 +27,51 @@ Use tables for comparisons and lists for steps or parallel facts. Preserve
 relative repository links; change a packaged copy only when an installed
 consumer check demonstrates that a target breaks.
 
+## README shape
+
+The README is for scanning. A reader should find the call to use at a glance.
+
+- Header: the logo block, a centered title, then a row of badges for CI, the
+  Hex release, libtmux.org docs and the license. Write the whole header in
+  HTML. ExDoc's Earmark does not parse Markdown inside an HTML block, so
+  Markdown there shows as literal text. Add no badge or link for a registry or
+  libtmux.org page that does not return 200; a 302 is fine for a port root.
+- Each `##` section is a task in the reader's words, such as finding
+  sessions, windows and panes.
+- Each `###` heading is an API name linked to its libtmux.org reference page,
+  then a colon and its job in plain words.
+- Under a heading: a line or two naming linked sibling APIs, the example,
+  what it prints, at most one short note and a `More:` link to the guide.
+- No paragraph runs past three lines. A list of facts is a bullet list.
+- No feature inventory. The sections and examples show what exists.
+- Requirements are floors a reader can act on, such as "tmux 3.3 or newer".
+  Leave out patch versions of the toolchain, CI matrix narration and kernel
+  trivia, and link the page that holds them.
+- Cut what a reader assumes or never needs: that examples are tested, how
+  the docs are built, what the checks cover, and "evidence",
+  "qualification" or "contract" boilerplate.
+- Never remove an example, command block, index table or guide table to
+  shorten the README. Shorten the prose and move detail to a guide.
+- Support and status and What it leaves out are short bullets that open with
+  a bold lead.
+- A repository with more than one package lists them under Packages: one
+  heading per package linked to its directory, a one-line description, then
+  links to its API reference, registry page and changelog.
+- Examples start with their imports, so a reader can paste one into a file
+  and run it.
+- Examples start and clean up their own tmux server through the library, not
+  the shell. libtmux has no call that starts a server, so the README examples
+  run under the owned-server runner, `examples/owned_server.py`, and the
+  standalone quickstart starts its server with tmux and stops it with
+  `Server.run/3`. Say so where a step has no library call.
+- Every displayed example comes from a file CI runs.
+  `scripts/check_example_docs.py` keeps each displayed copy equal to its
+  source, and the packed example check runs the source.
+- The README shows the features the port has: queries and filters, and
+  control connections. Show a query planner, command chaining and
+  optimization switches when they exist. Until then, list them under What it
+  leaves out.
+
 ## Markdown and examples
 
 Use CommonMark with blank lines around headings and lists. Wrap repository
