@@ -9,7 +9,7 @@
 
 <div align="center">
 
-# libtmux for Elixir
+<h1>libtmux for Elixir</h1>
 
 <p>
   <a href="https://hex.pm/packages/libtmux">Hex.pm</a> ·
@@ -18,32 +18,27 @@
   <a href="https://libtmux.org/en/elixir/">Documentation</a>
 </p>
 
-[![Core checks](https://github.com/libtmux/libtmux-elixir/actions/workflows/scaffold.yml/badge.svg)](https://github.com/libtmux/libtmux-elixir/actions/workflows/scaffold.yml)
-[![libtmux](https://img.shields.io/hexpm/v/libtmux?label=libtmux)](https://hex.pm/packages/libtmux)
-[![libtmux.org](https://img.shields.io/badge/docs-libtmux.org-0b7285)](https://libtmux.org/en/elixir/)
-[![license](https://img.shields.io/badge/license-MIT-blue)](https://github.com/libtmux/libtmux-elixir/blob/main/LICENSE)
+<p>
+  <a href="https://github.com/libtmux/libtmux-elixir/actions/workflows/scaffold.yml"><img src="https://github.com/libtmux/libtmux-elixir/actions/workflows/scaffold.yml/badge.svg" alt="Core checks"></a>
+  <a href="https://hex.pm/packages/libtmux"><img src="https://img.shields.io/hexpm/v/libtmux?label=libtmux" alt="libtmux"></a>
+  <a href="https://libtmux.org/en/elixir/"><img src="https://img.shields.io/badge/docs-libtmux.org-0b7285" alt="libtmux.org"></a>
+  <a href="https://github.com/libtmux/libtmux-elixir/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="license"></a>
+</p>
 
 </div>
 
-Read tmux sessions, windows and panes from Elixir. Filter a snapshot, rename
-a window, split a pane, send input, or capture its screen. Queries use the
-captured snapshot; actions contact tmux explicitly.
+Drive tmux from Elixir: [capture][snapshot] sessions, windows and panes as an
+immutable snapshot, [filter][where] it with plain data, then rename, split and
+type through [domain actions][scope].
 
-[Capture and query](#capture-and-query) ·
-[Rename a window](#rename-a-window) ·
-[Split and send input](#split-a-pane-and-send-input) ·
-[Guides](https://libtmux.org/en/elixir/latest/guides/)
-
-## Status and requirements
-
-**Warning:** Releases are numbered `0.1.N`, and each release increments `N`. The API is not settled: any release may change or remove exported identifiers, and the [changelog](CHANGELOG.md) marks each break. Pin an exact version to avoid one.
-
-| Requirement | Version or dependency |
-| --- | --- |
-| Elixir / OTP | Elixir 1.20.4 or later 1.20 patch, compiled for OTP 29; OTP 29.1.2 or later 29 patch |
-| Runtime platform | Linux, with a C11 compiler and headers to build the external helper |
-| tmux | 3.3 minimum; tested with 3.3, 3.3a, 3.4 and 3.8; a push tests 3.3 and 3.8 |
-| Dependencies | Zero third-party core runtime packages; no NIF |
+**Contents** — [Installation](#installation) ·
+[Try the examples](#try-the-examples) ·
+[Find things](#find-sessions-windows-and-panes) ·
+[Rename](#rename-a-window) ·
+[Control](#split-a-pane-and-send-input) ·
+[Errors](#errors-and-recovery) ·
+[Guides](#guides) · [Support](#support-and-status) ·
+[Leaves out](#what-it-leaves-out)
 
 ## Installation
 
@@ -59,7 +54,17 @@ Fetch dependencies:
 $ mix deps.get
 ```
 
-## Run the examples
+It needs:
+
+- Elixir 1.20 or newer, on OTP 29 or newer
+- tmux 3.3 or newer
+- Linux and a C compiler, which builds a small helper
+- no third-party runtime packages and no NIF
+
+The exact floors and tested releases are in
+[Packages and support](docs/implementation.md#packages-and-support).
+
+## Try the examples
 
 The snippets below form one [executable program](examples/readme.exs). From
 this checkout, run it on a private tmux server:
@@ -70,24 +75,34 @@ $ python3 examples/owned_server.py \
     mix run examples/readme.exs
 ```
 
-The [runner](docs/owned-server.md) creates a private server and cleans it up
-afterward. It supplies the executable, socket and session ID used below,
-leaving your existing tmux sessions alone. The runner needs Python 3.9+.
+- The [runner](docs/owned-server.md) starts the server, passes in the
+  executable, socket and session ID, and stops the server afterward.
+- Your own tmux sessions are untouched. The runner needs Python 3.9+.
+- Starting and stopping the server is the host's job; the library never starts
+  one.
 
-Already have a server? Use the [capture-only program](docs/first-task.md),
-which takes its socket explicitly and leaves the server running.
+No checkout? The [standalone demo](docs/standalone-demo.md) installs the
+package from Hex. To read an existing server, use the
+[capture-only program](docs/first-task.md).
 
-`LibTmux.Server.new/1` takes the socket as `:socket`, a path, or
-`:socket_name`. With neither, it reads `LIBTMUX_SOCKET_PATH`, then
-`LIBTMUX_SOCKET`, and passes tmux no socket when neither is set. tmux then
-follows the server `TMUX` names when the program runs inside tmux, and uses its
-default socket otherwise. A Server with a chosen socket removes `TMUX`.
+`LibTmux.Server.new/1` picks the socket in this order:
 
-## Capture and query
+- `:socket` (a path) or `:socket_name`
+- `LIBTMUX_SOCKET_PATH`, then `LIBTMUX_SOCKET`
+- neither: tmux's choice, which is the server `TMUX` names inside tmux and
+  the default socket outside it
 
-[`Server.snapshot!/2`][snapshot] captures an immutable graph.
-[`Selection.where/2`][where] accepts predicate data; ordinary `Enum` functions
-work on the selection. These queries make no further tmux calls.
+A Server with a chosen socket removes `TMUX`.
+
+## Find sessions, windows and panes
+
+### [`Server.snapshot!/2`][snapshot]: what tmux has now
+
+One call captures every session, window and pane as an immutable graph.
+[`Snapshot.sessions/1`][snapshot-sessions],
+[`Snapshot.windows/1`][snapshot-windows] and
+[`Snapshot.panes/1`][snapshot-panes] pick a type, and
+[`Selection.where/2`][where] filters it. None of them calls tmux again.
 
 <!-- example: examples/readme.exs#capture -->
 
@@ -115,16 +130,59 @@ active_ids =
 
 <!-- /example -->
 
-The fixture starts with one pane, so `active_ids` is `["%0"]`. To use an
-Elixir function as the predicate, choose [`Selection.filter/2`][filter].
-Capture again explicitly when you need fresh observations.
+`active_ids` is `["%0"]`: the demo server starts with one pane. Capture again
+when you need fresh state.
+
+More: [Captured state](docs/observations.md).
+
+### [`Selection.where/2`][where]: filter by data
+
+Criteria are keywords or maps, and can test related panes.
+[`Filter.from_json/3`][filter-json] reads the same criteria from JSON, so a
+filter can come from a file or a request. [`Selection.filter/2`][filter] takes
+an Elixir function instead.
+
+<!-- example: examples/readme.exs#filter -->
+
+```elixir
+alias LibTmux.{Filter, Pane, Selection, Snapshot}
+
+windows =
+  snapshot
+  |> Snapshot.windows()
+  |> Selection.where(panes: [some: [active: true, current_command: "cat"]])
+  |> Enum.map(& &1.id)
+
+json = """
+{"version":1,"entity":"pane",
+ "where":{"active":true,"currentCommand":{"in":["cat","nvim"]}}}
+"""
+
+{:ok, filter} = Filter.from_json(Pane, json)
+
+pane_ids =
+  snapshot
+  |> Snapshot.panes()
+  |> Selection.where(filter)
+  |> Enum.map(& &1.id)
+
+```
+
+<!-- /example -->
+
+`windows` is `["@0"]` and `pane_ids` is `["%0"]`. One pane must meet both
+conditions inside `some`.
+
+More: [Filtering](docs/filtering.md).
 
 ## Rename a window
 
-Continue with the same [`snapshot`][snapshot-type] and [`server`][server-type].
-[`Selection.one!/2`][one] requires exactly one match, and
-[`Session.active_window/2`][active-window] reads the captured relationship.
-[`Ref.from_observation/1`][ref] carries the observed identity into an action.
+### [`Window.rename!/4`][rename]: change a window's name
+
+Continue with the same [`snapshot`][snapshot-type] and
+[`server`][server-type]. [`Selection.one!/2`][one] needs exactly one match,
+[`Session.active_window/2`][active-window] reads the captured link, and
+[`Ref.from_observation/1`][ref] turns an observation into an action target.
 
 <!-- example: examples/readme.exs#rename -->
 
@@ -141,16 +199,20 @@ Window.rename!(server, window_ref, "editor", session: session_ref)
 
 <!-- /example -->
 
-[`Window.rename!/4`][rename] returns `:ok` when tmux acknowledges completion.
-The `session` option chooses this window's session membership. The original
-snapshot still contains the name captured before the action.
+It returns `:ok` once tmux acknowledges the command. `session:` names the
+session whose link to the window to use. The old snapshot keeps the old name.
+
+More: [One-shot actions](docs/one-shot-actions.md).
 
 ## Split a pane and send input
 
-Continue with that [`window`][window-type] and [`session`][session-type].
-[`Control.with_connection/2`][scope]
-owns connection startup and cleanup around the callback. Its returned value
-is available after connection retirement.
+### [`Control.with_connection/2`][scope]: one connection for many commands
+
+It attaches a control client to an existing session, runs your callback, and
+closes the client. [`Pane.split!/3`][split] returns the new pane's ID and a
+bound reference. [`Pane.send_text!/4`][text] sends literal text and
+[`Pane.send_keys!/4`][keys] sends named keys. [`Pane.capture!/3`][capture]
+reads a screen through one-shot execution.
 
 <!-- example: examples/readme.exs#control -->
 
@@ -177,34 +239,56 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
 
 <!-- /example -->
 
-[`Pane.split!/3`][split] returns the new pane's ID and bound reference on this
-connection. [`Pane.send_text!/4`][text] sends literal text;
-[`Pane.send_keys!/4`][keys] sends named keys. `{:argv, ["/bin/cat"]}` requests
-a program directly; `{:shell, "command"}` requests shell interpretation.
-Acknowledgement does not mean the program has finished processing its input.
+The program prints:
 
-The private runner qualifies this example's `lane: :host_qualified` declaration.
-That option does not configure or qualify an arbitrary server. Read the
-[managed-control guide](docs/managed-control.md) before using another host.
-For one-shot screen reads, use [`Pane.capture!/3`][capture].
+```text
+{"window":"editor","active_panes":["%0"],"created_pane":"%1","connection_retired":true}
+```
 
-The complete program prints the active pane `%0`, the new pane `%1`, and the
-window name `editor`. These examples run in CI. Each snippet shows its aliases;
-they shorten module names and are not inferred.
+- `{:argv, ["/bin/cat"]}` runs a program directly; `{:shell, "command"}` goes
+  through a shell.
+- An acknowledgement does not mean the program has read its input.
+- `lane: :host_qualified` says you control this server's hooks and aliases.
+  The demo runner does. Read the managed-control guide before using another
+  host.
+
+More: [Managed control](docs/managed-control.md).
 
 ## Errors and recovery
 
-The domain actions shown above raise when they cannot complete. If a command
-times out, it may still have taken effect. The [recovery guide](docs/recovery.md)
-shows how to inspect the result before deciding what to do next.
+### [`Action.CompletionError`][completion-error]: what went wrong
 
-## Concepts and reference
+Actions return `{:ok, result}` only when the command completes; the bang forms
+raise instead. A command that times out may still have taken effect, so
+inspect it before you retry.
 
-- [Filtering](docs/filtering.md): predicates, relationships and finding one match.
-- [One-shot actions](docs/one-shot-actions.md): rename, split, input and screen capture.
-- [Managed control](docs/managed-control.md): reuse a connection for multiple commands.
-- [Mental model](docs/mental-model.md): snapshots, references and command results.
-- [API reference](https://libtmux.org/en/elixir/latest/reference/): functions and types.
+More: [Recovery](docs/recovery.md), [Mental model](docs/mental-model.md).
+
+## Guides
+
+- [Filtering](docs/filtering.md): predicates, relations and finding one match.
+- [One-shot actions](docs/one-shot-actions.md): rename, split, input and
+  screen capture.
+- [Managed control](docs/managed-control.md): one connection, many commands.
+- [Mental model](docs/mental-model.md): snapshots, references and results.
+- [API reference](https://libtmux.org/en/elixir/latest/reference/): functions
+  and types.
+
+## Support and status
+
+- **Alpha.** Releases are numbered `0.1.N`. Any release may change or remove
+  exported functions; the [changelog](CHANGELOG.md) marks each break. Pin an
+  exact version to avoid one.
+- **Linux.** The helper that owns tmux processes needs Linux.
+- **tmux.** 3.3 or newer.
+
+## What it leaves out
+
+- **Server lifecycle.** It never starts a server and has no stop call; send
+  `kill-server` through [`Server.run/3`][run].
+- **A query planner.** Selections run locally over a snapshot; `Query`,
+  `Batch` and `Plan` are planned.
+- **Change notifications.** `Observation` and `Tracker` are planned.
 
 ## AI policy
 
@@ -224,11 +308,16 @@ Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
 
 [snapshot]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-snapshot-bang-2/
 [snapshot-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot/
+[snapshot-sessions]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-sessions-1/
+[snapshot-windows]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-windows-1/
+[snapshot-panes]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-panes-1/
+[run]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-run-3/
 [server-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-server/
 [window-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-window/
 [session-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-session/
 [where]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-where-2/
 [filter]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-filter-2/
+[filter-json]: https://libtmux.org/en/elixir/latest/reference/libtmux-filter-from_json-3/
 [one]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-one-bang-2/
 [active-window]: https://libtmux.org/en/elixir/latest/reference/libtmux-session-active_window-2/
 [ref]: https://libtmux.org/en/elixir/latest/reference/libtmux-ref-from_observation-1/
@@ -238,3 +327,4 @@ Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
 [text]: https://libtmux.org/en/elixir/latest/reference/libtmux-pane-send_text-bang-4/
 [keys]: https://libtmux.org/en/elixir/latest/reference/libtmux-pane-send_keys-bang-4/
 [capture]: https://libtmux.org/en/elixir/latest/reference/libtmux-pane-capture-bang-3/
+[completion-error]: https://libtmux.org/en/elixir/latest/reference/libtmux-action-completionerror/

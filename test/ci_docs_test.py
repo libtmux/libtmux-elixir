@@ -1,4 +1,4 @@
-"""The README, the implementation notes and the contributor guide state the support table."""
+"""The README states the tmux floor; the implementation notes and contributor guide state the support table."""
 from pathlib import Path
 import re
 import sys
@@ -23,17 +23,13 @@ def problems(manifest, readme, implementation, contributing):
     found = []
     flat = {"README": " ".join(readme.split()), "implementation notes": " ".join(implementation.split()),
             "contributor guide": " ".join(contributing.split())}
-    if f"tested with {joined(names)};" not in flat["README"]:
-        found.append("the README does not list the manifest's tmux cells")
-    if f"a push tests {joined(edges)}" not in flat["README"]:
-        found.append("the README does not name the edges a push tests")
     if f"Required Linux cells are tmux {joined(names)} on" not in flat["implementation notes"]:
         found.append("the implementation notes do not list the manifest's tmux cells")
     if f"run the oldest and newest, {joined(edges)}," not in flat["implementation notes"]:
         found.append("the implementation notes do not name the edges a push runs")
     if f"oldest and newest listed tmux release ({joined(edges)})" not in flat["contributor guide"]:
         found.append("the contributor guide does not name the edges a push plans")
-    if f"| tmux | {manifest['tmux_minimum']} minimum;" not in flat["README"]:
+    if f"tmux {manifest['tmux_minimum']} or newer" not in flat["README"]:
         found.append("the README does not state the manifest's tmux minimum")
     return found
 
@@ -53,13 +49,11 @@ class Documents(unittest.TestCase):
 
     def test_a_new_release_fails_until_the_documents_move(self):
         manifest = {**MANIFEST, "required_linux": [*MANIFEST["required_linux"], {"tmux": "3.9", "source": "a" * 40}]}
-        self.assertEqual(len(self.check(manifest)), 5)
+        self.assertEqual(len(self.check(manifest)), 3)
 
     def test_a_document_that_drifts_is_reported(self):
         cases = [
-            ("readme", self.readme.replace("3.3, 3.3a, 3.4 and 3.8;", "3.3, 3.4 and 3.8;"), "README does not list"),
-            ("readme", self.readme.replace("a push tests 3.3 and 3.8", "a push tests 3.3 and 3.4"), "README does not name the edges"),
-            ("readme", self.readme.replace("3.3 minimum", "3.3a minimum"), "README does not state the manifest's tmux minimum"),
+            ("readme", self.readme.replace("tmux 3.3 or newer", "tmux 3.3a or newer"), "README does not state the manifest's tmux minimum"),
             ("implementation", self.implementation.replace("3.3, 3.3a,\n3.4 and 3.8 on", "3.3 and 3.8 on"), "implementation notes do not list"),
             ("implementation", self.implementation.replace("3.3 and 3.8, and\na release", "3.3 and 3.4, and\na release"), "implementation notes do not name the edges"),
             ("contributing", self.contributing.replace("(3.3 and 3.8)", "(3.3a and 3.8)"), "contributor guide does not name the edges"),
