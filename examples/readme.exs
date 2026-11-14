@@ -66,7 +66,7 @@ alias LibTmux.{Control, Pane, Ref, Selection, Snapshot}
 pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
 {:ok, pane_ref} = Ref.from_observation(pane)
 
-{:ok, created_id} =
+{:ok, {created_id, created}} =
   Control.with_connection(
     [server: server, session: {:existing, session.id}, lane: :host_qualified],
     fn control ->
@@ -75,11 +75,14 @@ pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, acti
 
       Pane.send_text!(control, created, "hello")
       Pane.send_keys!(control, created, ["Enter"])
-      id
+      {id, created}
     end
   )
 
+screen = Pane.capture!(server, created, max_bytes: 4096)
 # docs:end control
+
+true = is_binary(screen)
 
 fresh = Server.snapshot!(server)
 {:ok, %{name: "editor"}} = Snapshot.fetch(fresh, :window, window.id)
