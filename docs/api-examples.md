@@ -1,16 +1,17 @@
 # Public value and encoding examples
 
-These complete programs exercise the lower-level reference without an
-interactive session. They are run from the packed core outside the checkout.
-For ordinary tasks, begin with [capture and filter](first-task.md).
+These programs exercise the lower-level reference without an interactive
+session. For ordinary tasks, begin with [capture and filter](first-task.md).
 
 ## Local graph and filtering
 
-Constructing a graph is useful for importers and pure application logic.
-`fields` declares what was loaded; `complete` distinguishes a known-empty
-relationship from missing coverage. This example declares one session and
-empty window, link, pane and client domains. Its positive and absent matches
-show cardinality, native predicates and portable filter round trips.
+- Building a graph by hand suits importers and pure application logic.
+- `fields` declares what was loaded. `complete` separates a known-empty
+  relationship from missing coverage.
+- This example declares one session and empty window, link, pane and client
+  domains.
+- Its matches and misses show cardinality, native predicates and portable
+  filter round trips.
 
 <!-- example: examples/query_values.exs -->
 
@@ -79,11 +80,12 @@ IO.puts(JSON.encode!(%{query_values: "ok"}))
 
 ## Encoding and protocol
 
-The deadline uses explicit local clock samples. References here use synthetic
-instance tokens and cannot target a real server. Command/format construction,
-field decoding, parsing and JSON validation perform no I/O. The last two
-calls execute bounded Linux processes to show that a nonzero process exit
-is still a transport result, including with `run!/3`.
+- The deadline uses explicit local clock samples.
+- References use synthetic instance tokens and cannot target a real server.
+- Command and format construction, field decoding, parsing and JSON validation
+  do no I/O.
+- The last two calls run bounded Linux processes, to show that a nonzero
+  process exit is still a transport result, including with `run!/3`.
 
 <!-- example: examples/encoding_values.exs -->
 
@@ -133,19 +135,21 @@ IO.puts(JSON.encode!(%{encoding_values: "ok"}))
 
 ## Supervised control
 
-Use `LibTmux.Control.child_spec/1` when the connection belongs to an application
-supervisor. The [executable supervision recipe](supervised-control.md) shows
-an application owner, caller access, replacement handles and explicit recovery
-after known retirement. Unknown cleanup leaves the connection unavailable.
+Use `LibTmux.Control.child_spec/1` when the connection belongs to an
+application supervisor. The [executable supervision recipe](supervised-control.md)
+shows an application owner, caller access, replacement handles and explicit
+recovery after known retirement.
 
-`LibTmux.Control.reconnect/2` returns a ready replacement only after the old
-epoch is proven retired. A ready handle returns itself. It never replays
-operations. `request_close/1` and `Operation.stop/1` only request epoch closure;
-`close/2` waits for proof. A scope owns its enclosing supervisor too.
-
-The [advanced program](advanced-execution.md) shows local connection/operation
-status, canonical result inspection, close-before-forget and actual supervisor
-exit. Control and Operation bang variants raise the same API error and retain
-canonical failed/skipped/unknown outcomes as values to inspect. Domain bang
-actions require command completion and return the completed value; see
-`LibTmux.Action`.
+- Unknown cleanup leaves the connection unavailable.
+- `LibTmux.Control.reconnect/2` returns a ready replacement only after the old
+  epoch is proven retired. A ready handle returns itself. It never replays
+  operations.
+- `request_close/1` and `Operation.stop/1` only request epoch closure; `close/2`
+  waits for proof. A scope owns its enclosing supervisor too.
+- The [advanced program](advanced-execution.md) shows local connection and
+  operation status, canonical result inspection, close-before-forget and actual
+  supervisor exit.
+- Control and Operation bang variants raise the same API error and keep failed,
+  skipped and unknown outcomes as values to inspect.
+- Domain bang actions require command completion and return the completed
+  value; see `LibTmux.Action`.

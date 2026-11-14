@@ -1,27 +1,39 @@
 # Create, split, rename, send input and capture
 
-Create sessions and windows on an existing server, split panes, rename,
-send input and capture screen contents with the domain helpers. Run the
-packaged example with the [owned-server recipe](owned-server.md).
+Create sessions and windows on an existing server, split panes, rename, send
+input and capture screen contents with the domain helpers.
 
-Pass a `LibTmux.Server` to choose one-shot execution. Actions taking a target
-reference check its captured server incarnation before issuing the command.
-That check leaves a check/use race; use [qualified control](managed-control.md)
-when a supported mutation must remain bound to a live connection. No action changes transport or
-retries with a positional target.
+- Pass a `LibTmux.Server` to choose one-shot execution.
+- An action with a target reference first checks its captured server
+  incarnation. That check leaves a check/use race; use
+  [qualified control](managed-control.md) when a mutation must stay bound to a
+  live connection.
+- No action changes transport or retries with a positional target.
 
-`LibTmux.Server.new_session/3` creates a named detached session on an existing
-server. `LibTmux.Session.new_window/4` creates a named detached window in a
-referenced session. Both use one-shot execution and return the created ID
-with `ref: nil`; capture again to obtain a reference. Neither starts a missing
-daemon. Session creation has no observed target and does not read an identity
-before dispatch. These functions accept `timeout`, literal `cwd` and the
-command forms below, except `:empty`.
+## Create
 
-This complete program renames a session and window, splits a pane, sends
-literal text and a named key, then captures bounded screen bytes. It receives
-the absolute executable, socket and exact session ID as arguments. It creates
-a `cat` pane; the owned runner removes that pane and server after it returns.
+- `LibTmux.Server.new_session/3` creates a named detached session on an
+  existing server. `LibTmux.Session.new_window/4` creates a named detached
+  window in a referenced session.
+- Both return the created ID with `ref: nil`; capture again to get a
+  reference.
+- Neither starts a missing daemon. Session creation reads no identity before
+  dispatch.
+- Both accept `timeout`, a literal `cwd` and the command forms below, except
+  `:empty`.
+
+## Run the example
+
+This program renames a session and window, splits a pane, sends literal text
+and a named key, then captures bounded screen bytes. The
+[owned-server runner](owned-server.md) supplies its arguments and removes the
+`cat` pane and server afterward:
+
+```console
+$ python3 examples/owned_server.py \
+    --run "$(command -v tmux)" \
+    mix run examples/one_shot_actions.exs
+```
 
 <!-- example: examples/one_shot_actions.exs -->
 
@@ -72,53 +84,41 @@ IO.puts(JSON.encode!(%{created_pane: created_id, captured_bytes: byte_size(scree
 
 <!-- /example -->
 
-Ordinary domain actions return `{:ok, result}` only when the command completes.
-Failed, skipped and unknown outcomes return
-`{:error, %LibTmux.Action.CompletionError{result: original_result}}` with the
-full original evidence. Domain bang functions return completed values or
-raise these errors. API and admitted execution errors remain unchanged.
-See [return conventions](mental-model.md#return-conventions) for the
-distinction from lower-level execution and scoped callbacks.
-A command acknowledgement does not prove input consumption, screen
-rendering or program exit. Consequently, the example reports the capture's
-byte count without claiming that `hello` has already appeared.
+- Domain actions return `{:ok, result}` only when the command completes.
+- Failed, skipped and unknown outcomes return
+  `{:error, %LibTmux.Action.CompletionError{result: original_result}}` with the
+  original evidence.
+- Bang functions return the completed value or raise those errors. API and
+  admitted execution errors keep their own types.
+- An acknowledgement does not prove that input was consumed, the screen
+  rendered or the program exited. The example prints the capture's byte
+  count, not its text.
+- [Return conventions](mental-model.md#return-conventions) compares this with
+  `Control` and scoped callbacks.
 
 | Task | Options and result |
 | --- | --- |
 | Create | `Server.new_session/3` or `Session.new_window/4`; named, detached creation on an existing server. Duplicate session names fail; duplicate window names are allowed. |
 | Rename | `Session.rename/4` or `Window.rename/4`; 1..1024 UTF-8 bytes without Unicode control characters. tmux's name normalization remains version-dependent. |
-| Split | `Pane.split/3`; vertical, half size and detached by default. Horizontal places panes side by side. Percent sizes use `-l N%`, including on tmux 3.4. `value` contains the pane `id` and `ref: nil`. |
-| Literal input | `Pane.send_text/4`; 0..995 bytes, including NUL and invalid UTF-8. It never parses key names. |
+| Split | `Pane.split/3`; vertical, half size and detached by default. Horizontal places panes side by side. Percent sizes use `-l N%`. `value` contains the pane `id` and `ref: nil`. |
+| Literal input | `Pane.send_text/4`; 0..995 bytes, including NUL and invalid UTF-8. It never parses key names. More than 995 fails before any I/O. |
 | Named input | `Pane.send_keys/4`; 1..128 supported names. Unsupported spellings fail before dispatch. See the API for modifiers. |
 | Screen capture | `Pane.capture/3`; visible lines by default, 64 KiB stdout, negative history offsets allowed. An overflow is an error. This reads rendered screen state, not original program stdout. |
 
 All actions default to one 5000ms budget.
 
-Migration: earlier alphas put unsuccessful domain outcomes inside `{:ok, result}`.
-Match `{:error, %LibTmux.Action.CompletionError{result: result}}` to inspect them
-now. Ordinary `with {:ok, result} <- action` composition requires command
-completion and still retains successful metadata. Domain bangs and lower-level
-`Control` and `Operation` return conventions have not changed.
-
-The literal-input limit is now 995 bytes on both transports. Earlier alphas
-advertised 1,020, but one-shot native admission rejected more than 246 bytes.
-tmux 3.8's one-shot client limits this encoding to 995 input bytes (1,000
-command arguments). One-shot inputs from 247 through 995 now work. Control
-callers previously sending 996..1020 bytes now receive an `:invalid_command`
-error at `[:text]`, as do all larger inputs on either transport, before I/O.
-The library never splits a call into several mutations.
-Applications sending larger inputs must choose their batching and handle
-partial delivery explicitly.
-
-A physical window can belong to several sessions. Optional `session:` binds
-the action to membership in that exact session; it does not reserve a
-particular `WindowLink` index. Disappeared targets fail. Old snapshots remain
-unchanged, and a returned ID does not silently refresh the graph.
-
-`details` preserves bounded transport evidence. A nonzero one-shot client
-exit is a canonical failed outcome with observed exit status; it does not
-prove that no side effect occurred. See `LibTmux.Action` and
-[the advanced example](advanced-execution.md) for lower-level results.
+- The library never splits a call into several mutations. Send larger input
+  in batches of your own and handle partial delivery.
+- A physical window can belong to several sessions. `session:` binds the
+  action to membership in that session; it does not reserve a `WindowLink`
+  index.
+- A disappeared target fails. Old snapshots stay unchanged, and a returned
+  ID does not refresh the graph.
+- `details` keeps bounded transport evidence. A nonzero one-shot client exit
+  is a failed outcome with its exit status; it does not prove that no side
+  effect occurred.
+- `LibTmux.Action` and the [advanced example](advanced-execution.md) cover
+  lower-level results.
 
 ## Command forms
 
@@ -132,16 +132,18 @@ Use explicit intent when a pane command is assembled dynamically:
 | `{:argv, ["/path/to/program"]}` | Execute with exactly one argv entry. |
 | `{:argv, ["program", "argument with spaces"]}` | Preserve each argv entry; use tmux's PATH lookup. |
 
-Argv follows `execvp`, including its shell fallback for executable text files.
-Empty argv, an empty program, empty explicit shell text and NUL bytes are
-rejected before dispatch. Existing command byte ceilings include any adapter
-overhead. Other arguments may be empty or contain arbitrary non-NUL bytes.
+- Argv follows `execvp`, including its shell fallback for executable text
+  files.
+- Empty argv, an empty program, empty shell text and NUL bytes fail before
+  dispatch.
+- Command byte ceilings include any adapter overhead. Other arguments may be
+  empty or hold any non-NUL bytes.
+- Adding or removing an argument never turns an argv list into shell text.
 
-For singleton argv, the packaged native helper replaces itself with the
-program without forking. tmux records that helper path in `pane_start_command`
-and retains it for commandless respawn. Keep the installation available while
-that respawn behavior is needed; removing or relocating it can break respawn.
-The program runs under tmux ownership, beyond the library caller's lifetime.
-An acknowledged split can still be followed by program startup failure.
+A singleton argv runs through the packaged native helper, which replaces
+itself with the program without forking:
 
-Adding or removing an argument in an argv list never changes it into shell text.
+- tmux records the helper path in `pane_start_command` and reuses it for
+  commandless respawn. Keep the installation in place while you need that.
+- The program runs under tmux ownership, beyond the caller's lifetime.
+- An acknowledged split can still be followed by a startup failure.

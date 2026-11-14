@@ -1,10 +1,10 @@
 # Read values, execute explicitly
 
-Capture once when several decisions should use the same observed graph.
-Keep that snapshot while selecting and filtering. Execute a new command
-explicitly when you need another observation or an effect.
-Capture records an interval; fields can change during it. The resulting
-value stays fixed while live objects continue changing.
+- Capture once when several decisions need the same graph, and keep that
+  snapshot while you select and filter.
+- Run a new command explicitly for another observation or an effect.
+- Capture covers an interval, so fields can change during it. The value you
+  get stays fixed while tmux keeps changing.
 
 ## The values you hold
 
@@ -17,37 +17,42 @@ value stays fixed while live objects continue changing.
 | `LibTmux.Control` | A handle pinned to one connection epoch | Status reads are local; startup explicitly attaches a client |
 | `LibTmux.Operation` | Access to one retained operation record | Result/status reads are local; awaiting registers a separate waiter |
 
-Windows are physical objects. `LibTmux.WindowLink` supplies their membership
-in a session, index and active state. A linked window can appear more than
-once while its panes remain the same physical panes. Choose window links
-when membership matters; choose panes when an action should address each
-physical pane once. See [captured state](observations.md).
+- Windows are physical objects. `LibTmux.WindowLink` gives a window's session
+  membership, index and active state.
+- A linked window can appear more than once, while its panes stay the same
+  physical panes.
+- Choose window links when membership matters. Choose panes when an action
+  should address each physical pane once.
+
+See [captured state](observations.md).
 
 ## Coverage tells you which questions the graph can answer
 
-A loaded field may contain a value, an empty string or a documented `nil`.
-`:unloaded` means this snapshot does not contain the observation.
-`:unavailable` means the capability is absent. Neither means known absence.
+- A loaded field holds a value, an empty string or a documented `nil`.
+- `:unloaded` means this snapshot lacks the observation. `:unavailable` means
+  the capability is absent. Neither means known absence.
+- Relationship predicates need complete captured join domains. A missing pane
+  relation cannot satisfy "no pane matches."
+- Validation raises a structured coverage error before filtering, even for an
+  empty selection.
+- Capture again explicitly for more coverage. Existing selections keep their
+  graph.
 
-Relationship predicates need complete captured join domains. A missing pane
-relation cannot satisfy “no pane matches.” Validation raises a structured
-coverage error before filtering, including an empty selection. Obtain a new
-snapshot explicitly when more coverage is needed. Existing selections retain
-their original graph. See [filtering](filtering.md).
+See [filtering](filtering.md).
 
 ## Server identity and connection epochs have different lifetimes
 
-A server instance identifies one tmux process incarnation. Native object IDs
-can be reused after that process exits. References retain the observed
-instance so qualified control requests can reject known stale targets.
-One-shot commands retain a check/use race; an observed ID reserves nothing.
-
-An epoch identifies one control connection and its owned transport actors.
-`LibTmux.Control.reconnect/2` obtains the ready epoch and returns it unchanged
-when it is already ready. Close first to require a replacement. Replacement
-waits for retirement and returns a new pinned handle. The server instance
-can stay the same while the epoch changes. Old connection handles cannot
-submit into the replacement. Reconnect never replays work.
+- A server instance identifies one tmux process incarnation. Native object
+  IDs can be reused after that process exits.
+- References keep the observed instance, so qualified control requests can
+  reject known stale targets. One-shot commands keep a check/use race; an
+  observed ID reserves nothing.
+- An epoch identifies one control connection and its owned transport actors.
+  The server instance can stay the same while the epoch changes.
+- `LibTmux.Control.reconnect/2` returns the ready epoch, unchanged if it is
+  already ready. Close first to require a replacement.
+- A replacement waits for retirement and returns a new pinned handle. Old
+  handles cannot submit into it, and reconnect never replays work.
 
 ## Waiting, command outcomes and retirement are separate
 
@@ -61,22 +66,23 @@ submit into the replacement. Reconnect never replays work.
 | Operation status reports `wire: :retired` | Reply attribution has retired; the retained record may still occupy capacity |
 | `LibTmux.Control.close/2` returns `:ok` | The pinned connection epoch retired; its enclosing supervisor remains running |
 
-Each await call has its own budget. Timeout or caller death ends that waiter
-without cancelling the operation. For wire-active work,
-`LibTmux.Operation.stop/1` requests closure of the entire pinned epoch and can
-affect siblings. An already retired operation returns `:ok` without closing
-its connection. Use `LibTmux.Control.close/2` to wait for connection retirement.
-Inspect retained results instead of replaying an uncertain mutation.
-
-Once a canonical outcome exists, it stays unchanged. Bang operation APIs
-raise API/context errors and still return canonical failed, skipped and
-unknown outcomes as values. Wire retirement, record expiry and native process
-cleanup each have their own evidence. See [ownership](ownership.md) for
-deadlines, bounds and the remaining qualification limits.
+- Each await call has its own budget. A timeout or the caller's death ends
+  that waiter without cancelling the operation.
+- For wire-active work, `LibTmux.Operation.stop/1` asks to close the whole
+  pinned epoch and can affect siblings. An already retired operation returns
+  `:ok` without closing its connection.
+- `LibTmux.Control.close/2` waits for connection retirement.
+- Inspect retained results instead of replaying an uncertain mutation.
+- A canonical outcome never changes once it exists. Bang operation APIs raise
+  API and context errors, and still return failed, skipped and unknown
+  outcomes as values.
+- Wire retirement, record expiry and native process cleanup each have their
+  own evidence. [Ownership](ownership.md) covers deadlines, bounds and
+  remaining limits.
 
 ## Return conventions
 
-These APIs answer different questions. Command completion does not mean
+These APIs answer different questions. Command completion does not mean that
 a program started by tmux has finished.
 
 | API | Normal return | Failure handling |
@@ -88,6 +94,7 @@ a program started by tmux has finished.
 | Relationship helpers such as `LibTmux.Session.panes/2` | Ordered selection, or observation/nil for to-one relationships; no I/O | Identity, coverage and ambiguity errors raise |
 | `LibTmux.Control.with_connection/2` | `{:ok, callback_value}` after cleanup, even when that value is `{:error, reason}` | Startup errors return errors; callback raise/throw/exit propagates after cleanup. Unproved cleanup returns `LibTmux.Control.ScopeFailure` preserving the primary outcome |
 
-The [recovery example](recovery.md) handles lower-level execution and cleanup
-separately. Option validation may raise; a nonbang name does not promise that
-every malformed call returns an error tuple.
+- The [recovery example](recovery.md) handles lower-level execution and
+  cleanup separately.
+- Option validation may raise. A name without a bang does not promise that
+  every malformed call returns an error tuple.

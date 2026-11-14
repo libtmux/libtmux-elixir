@@ -1,22 +1,28 @@
 # Keep a control connection in an application
 
-Use an application owner when several callers need the current connection
-handle. The owner below stores that handle and serializes explicit replacement.
-Commands still run in the requesting process, so managed execution and recovery
-belong to that caller. For a short task, prefer
-[`Control.with_connection/2`](LibTmux.Control.html#with_connection/2).
+- Use an application owner when several callers need the current connection
+  handle. The owner stores the handle and serializes explicit replacement.
+- Commands still run in the requesting process, so managed execution and
+  recovery belong to that caller.
+- For a short task, prefer
+  [`Control.with_connection/2`](LibTmux.Control.html#with_connection/2).
 
-This complete program is `examples/supervised_control.exs`. Run it with the
-[owned-server recipe](owned-server.md), substituting this filename for the
-managed example. It reads the tmux executable, socket and session ID from
-command-line arguments. The displayed parts omit argument setup, application
-shutdown and the fixture's process-exit checks.
+The program is `examples/supervised_control.exs`. Run it on a private server
+with the [owned-server runner](owned-server.md). The displayed parts omit
+argument setup, application shutdown and the fixture's process-exit checks:
+
+```console
+$ python3 examples/owned_server.py \
+    --run "$(command -v tmux)" \
+    mix run examples/supervised_control.exs
+```
 
 ## Store the handle
 
-`ApplicationConnection` is application code, not a library module. Its separate
-connection supervisor must already be running before owner initialization;
-calling the supervisor that is still starting the owner would deadlock.
+`ApplicationConnection` is application code, not a library module. Its
+separate connection supervisor must already be running when the owner
+initializes. Calling the supervisor that is still starting the owner would
+deadlock.
 
 <!-- example: examples/supervised_control.exs#owner -->
 
@@ -82,17 +88,19 @@ end
 
 <!-- /example -->
 
-`replace/1` asks the supervisor for fresh startup information using its stored
-child specification. It never constructs a new lifetime to bypass uncertain
-cleanup. `reconnect/1` leaves an unknown connection unavailable and returns
-the original error. Do not retry an uncertain mutation after replacement.
+- `replace/1` asks the supervisor for fresh startup information from its
+  stored child specification. It never builds a new lifetime to bypass
+  uncertain cleanup.
+- `reconnect/1` leaves an unknown connection unavailable and returns the
+  original error.
+- Do not retry an uncertain mutation after replacement.
 
 ## Start the application children
 
-Here `application` is an already-started application supervisor, `server` is
-the explicit `LibTmux.Server` descriptor and `session_id` names an existing
-session. The complete file supplies these values. The host must qualify its
-[control lane](managed-control.md) before setting `lane: :host_qualified`.
+Here `application` is a started application supervisor, `server` is the
+`LibTmux.Server` descriptor and `session_id` names an existing session. The
+complete file supplies them. The host must qualify its
+[control lane](managed-control.md) before you set `lane: :host_qualified`.
 
 <!-- example: examples/supervised_control.exs#application -->
 
@@ -123,17 +131,21 @@ options = [
 
 <!-- /example -->
 
-The `execute/2` function obtains a handle with `GenServer.call/2`, then runs
-`Control.execute/3` outside the owner. Its result follows the lower-level
-[return convention](mental-model.md#return-conventions): inspect the canonical
-outcome. Handle access alone cannot guarantee that the connection stays alive.
+- `execute/2` gets a handle with `GenServer.call/2`, then runs
+  `Control.execute/3` outside the owner.
+- Its result follows the lower-level
+  [return convention](mental-model.md#return-conventions): inspect the
+  canonical outcome.
+- Handle access alone cannot keep the connection alive.
 
 ## Replace deliberately, then reconnect
 
-Quiesce application callers before replacing a connection. Replacement can
-interrupt sibling work; this owner does not track or drain in-flight calls.
-For planned replacement, close first. After automatic root restart, an old
-handle instead reports context loss and the replacement remains inert.
+- Quiesce application callers before replacing a connection. Replacement can
+  interrupt sibling work, and this owner does not track or drain in-flight
+  calls.
+- For planned replacement, close first.
+- After an automatic root restart, an old handle reports context loss and the
+  replacement stays inert.
 
 <!-- example: examples/supervised_control.exs#recovery -->
 
@@ -153,17 +165,23 @@ alias LibTmux.Control.Request
 
 <!-- /example -->
 
-After automatic root restart, call `replace/1` directly: `close/2` cannot repair
-the lost handle. If the old connection retired, reconnect can attach. If cleanup
-is unknown, `reconnect/1` returns `{:error, %LibTmux.Error{kind: :cleanup_unknown}}`
-and the owner keeps the unavailable handle. Stop application work and retain
-that evidence; rebuilding the child specification is not recovery. The tests
-exercise both branches with actual root death and verify that a previous
-completed mutation is not replayed.
+After an automatic root restart, call `replace/1` directly. `close/2` cannot
+repair the lost handle.
+
+- If the old connection retired, reconnect can attach.
+- If cleanup is unknown, `reconnect/1` returns
+  `{:error, %LibTmux.Error{kind: :cleanup_unknown}}` and the owner keeps the
+  unavailable handle. Stop application work and keep that evidence; rebuilding
+  the child specification is not recovery.
+- The tests exercise both branches with actual root death, and check that an
+  earlier completed mutation is not replayed.
 
 The owner is temporary. If it exits, the application still owns the connection
-subtree; stop the application to shut that subtree down. This recipe covers
-one connection while the owner and its separate supervisor survive. Owner,
-connection-supervisor and whole-application recovery need application policy.
-For command uncertainty within a live owner, use the
-[execution recovery example](recovery.md).
+subtree; stop the application to shut it down.
+
+- This recipe covers one connection while the owner and its separate
+  supervisor survive.
+- Owner, connection-supervisor and whole-application recovery need your own
+  policy.
+- For command uncertainty inside a live owner, use the
+  [execution recovery example](recovery.md).

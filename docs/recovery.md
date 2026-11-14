@@ -1,11 +1,16 @@
 # Inspect a command that needs recovery
 
 Keep the execution error and inspect its operation before leaving the scope.
-This application example retains execution and cleanup evidence for the
-caller's next decision. Its scope closes the connection when the callback
-finishes, which can affect outstanding work. Run it with the
-[owned-server recipe](owned-server.md), substituting
-`examples/recover_command.exs` for the managed example.
+The example keeps execution and cleanup evidence for the caller's next
+decision. Its scope closes the connection when the callback finishes, which
+can affect outstanding work. Run it on a private server with the
+[owned-server runner](owned-server.md):
+
+```console
+$ python3 examples/owned_server.py \
+    --run "$(command -v tmux)" \
+    mix run examples/recover_command.exs
+```
 
 <!-- example: examples/recover_command.exs -->
 
@@ -85,36 +90,41 @@ end
 
 <!-- /example -->
 
-Call `inspect_execution/1` immediately after execution in the same callback
-and caller, while it still owns recovery.
-`inspect_execution/1` keeps failed, skipped and unknown canonical outcomes
-intact. A pre-admission error means this request was not written. An
-`ExecutionError` means admission occurred; lost context does not establish
-what happened to its effects.
+- Call `inspect_execution/1` right after execution, in the same callback and
+  caller, while it still owns recovery.
+- It keeps failed, skipped and unknown canonical outcomes intact.
+- A pre-admission error means this request was not written. An
+  `ExecutionError` means admission occurred; lost context does not show what
+  happened to its effects.
+- Domain actions such as `LibTmux.Window.rename/4` already return
+  unsuccessful outcomes as `{:error, %LibTmux.Action.CompletionError{}}`.
+  Inspect its `result` for certainty and transport evidence. Their admitted
+  `ExecutionError` values need the operation inspection shown here.
+- The program uses `Control.execute/3`, whose canonical outcomes stay inside
+  `{:ok, result}`. See the [return comparison](mental-model.md#return-conventions).
 
-Domain actions such as `LibTmux.Window.rename/4` already classify unsuccessful
-outcomes as `{:error, %LibTmux.Action.CompletionError{}}`. Inspect that error's
-`result` to retain its certainty and transport evidence. Their admitted
-`ExecutionError` values need the same operation inspection shown here.
-The program above uses `Control.execute/3`, whose canonical outcomes remain
-inside `{:ok, result}`. See the [return comparison](mental-model.md#return-conventions).
+For retained context, one `Operation.status/1` read captures the wire state and
+the current result:
 
-For retained context, one `Operation.status/1` read captures both wire state
-and the current result. The read can already report lost context: `:retained`
-describes an earlier inspection. A known command result can still precede
-wire retirement. The example preserves the original error and the complete
-inspection result in either case.
+- The read can already report lost context; `:retained` describes an earlier
+  inspection.
+- A known command result can precede wire retirement.
+- The example keeps the original error and the whole inspection result either
+  way.
 
-`{:ok, {:error, evidence}}` means the callback recorded an execution problem
-and scoped cleanup succeeded. The outer `:ok` does not make the command
-successful. After successful scoped cleanup, its owner and operation tables
-are gone; the captured status remains evidence, but an escaped handle is not
-a durable recovery channel. For independently retained work, use the
-[advanced execution API](advanced-execution.md).
+After the scope:
 
-A cleanup failure preserves the whole `Control.ScopeFailure`: its `primary`
-contains `{:return, callback_value}` or `{:raise, kind, reason, stacktrace}`,
-and `cleanup` holds separate uncertainty. With proven cleanup, callback
-exceptions, throws and exits propagate unchanged. The scope's closure is an
-explicit application lifecycle choice; a timeout itself does not cancel,
-replay or establish that a mutation was unwritten.
+- `{:ok, {:error, evidence}}` means the callback recorded an execution problem
+  and scoped cleanup succeeded. The outer `:ok` does not make the command
+  successful.
+- The owner and operation tables are gone. The captured status stays as
+  evidence, but an escaped handle is not a durable recovery channel. For
+  independently retained work, use the
+  [advanced execution API](advanced-execution.md).
+- A cleanup failure keeps the whole `Control.ScopeFailure`. Its `primary` holds
+  `{:return, callback_value}` or `{:raise, kind, reason, stacktrace}`, and its
+  `cleanup` holds the separate uncertainty.
+- With proven cleanup, callback exceptions, throws and exits propagate
+  unchanged.
+- Closing the scope is an explicit lifecycle choice. A timeout does not
+  cancel, replay or show that a mutation was unwritten.

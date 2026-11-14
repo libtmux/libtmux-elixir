@@ -1,34 +1,41 @@
 # Advanced: inspect both transports and own a retained operation
 
-From a source checkout, run one complete example against an isolated tmux
-server:
+This example exposes retained operations and manual connection teardown. For
+routine work, start with [capture and filter](first-task.md), then choose
+[one-shot actions](one-shot-actions.md) or [managed control](managed-control.md).
+
+Run it on a private server with the [owned-server runner](owned-server.md):
+
+```console
+$ python3 examples/owned_server.py \
+    --run "$(command -v tmux)" \
+    mix run examples/capture_and_read.exs
+```
+
+To run the whole packed-example check against an isolated tmux server, from a
+source checkout:
 
 ```console
 $ MIX_ENV=test mix run scripts/check_package.exs --examples
 ```
 
-Use the development toolchain and Linux prerequisites in
-[Contributing](../.github/CONTRIBUTING.md#setup), plus Python 3 and tmux 3.3 or
-newer on `PATH`. Set `LIBTMUX_TMUX` to an absolute executable when checking a
-particular tmux build. Hex must already be installed; the check downloads
-nothing.
-
-The check builds and extracts a real package, compiles its core in a fresh
-directory, and executes the packaged example outside the checkout. An owned
-fixture supplies a unique socket, empty configuration and existing session.
-It clears inherited `TMUX` and `TMUX_PANE` and verifies its server, pane,
-clients and helper exit afterward. It never uses the default server.
-
-This example exposes retained operations and manual connection teardown. For
-routine work, start with [capture and filter](first-task.md), then choose
-[one-shot actions](one-shot-actions.md) or [managed control](managed-control.md).
+- It needs the toolchain from [Contributing](../.github/CONTRIBUTING.md#setup),
+  plus Python 3 and tmux 3.3 or newer on `PATH`.
+- Set `LIBTMUX_TMUX` to an absolute executable to check a particular tmux
+  build.
+- Hex must already be installed; the check downloads nothing.
+- It builds and extracts a real package, compiles its core in a fresh
+  directory and runs the packaged example outside the checkout.
+- An owned fixture supplies a unique socket, an empty configuration and an
+  existing session. It clears inherited `TMUX` and `TMUX_PANE`, verifies that
+  its server, pane, clients and helper exited, and never uses the default
+  server.
 
 ## The complete program
 
 [Executable source](../examples/capture_and_read.exs) receives the absolute
-tmux executable, socket and existing session ID from that fixture. All its
-library calls use the public core. The embedded program is checked against
-that source file.
+tmux executable, socket and existing session ID from the fixture. All its
+library calls use the public core.
 
 <!-- example: examples/capture_and_read.exs -->
 
@@ -124,58 +131,54 @@ IO.puts(
 
 <!-- /example -->
 
-The result contains the observed session, window and pane IDs. Both replies
-must identify the selected pane, and `connectionRetired` is true only after
-connection close and supervisor exit succeed. The harness checks that the
-borrowed server and pane survived the program, then tears down its own fixture.
-
-After closure, `LibTmux.Control.status/1` retains the observed close reason
-and bounded captured stderr until epoch replacement or context loss. Inspect
-a report before reconnecting or shutting its owner down. The example checks requested closure and
-the unchanged completed operation; an unexpected close can have a different
-reason or unavailable evidence. Captured stderr can contain application data.
+- The result holds the observed session, window and pane IDs. Both replies
+  must identify the selected pane.
+- `connectionRetired` is true only after the connection closes and its
+  supervisor exits.
+- The harness checks that the borrowed server and pane survived, then tears
+  down its own fixture.
+- After closure, `LibTmux.Control.status/1` keeps the observed close reason and
+  bounded captured stderr until epoch replacement or context loss. Inspect
+  that report before reconnecting or shutting its owner down.
+- The example checks requested closure and the unchanged completed operation.
+  An unexpected close can have a different reason or no evidence.
+- Captured stderr can contain application data.
 
 ## What each step establishes
 
-`LibTmux.Server.snapshot/2` observes a capture interval. `LibTmux.Selection`
-then runs `where`, a native predicate and checked cardinality locally, without
-another tmux command. Relationships resolve against the same graph. Keep
-using that snapshot when several decisions need the same captured values.
-
-The one-shot read uses an exact pane ID and the escaped field codec. Its
-check/use race remains: a captured pane is not reserved. The control request
-also carries a `LibTmux.Ref` bound to the observed server incarnation.
-
-Control startup explicitly attaches a client and can change session state
-and attachment counts. The fixture's empty, controlled configuration is why
-this example can declare `lane: :host_qualified`. A caller using another
-server must qualify its effective hooks, aliases and stream writers before
-using that lane; the option does not perform that qualification.
-
-`LibTmux.Control.submit/3` returns an admitted operation. The example checks
-the result of `LibTmux.Operation.await/2` for both `:completed` and
-`:acknowledged`. A reply acknowledges this tmux command; it does not prove
-that an arbitrary program started by another command has exited.
+- `LibTmux.Server.snapshot/2` observes a capture interval. `LibTmux.Selection`
+  then runs `where`, a native predicate and checked cardinality locally, with
+  no further tmux command, and relationships resolve against the same graph.
+- The one-shot read uses an exact pane ID and the escaped field codec. Its
+  check/use race remains: a captured pane is not reserved.
+- The control request also carries a `LibTmux.Ref` bound to the observed server
+  incarnation.
+- Control startup attaches a client and can change session state and
+  attachment counts. The fixture's empty, controlled configuration is why this
+  example can declare `lane: :host_qualified`. On another server, qualify its
+  effective hooks, aliases and stream writers first.
+- `LibTmux.Control.submit/3` returns an admitted operation. The example checks
+  that `LibTmux.Operation.await/2` reports `:completed` and `:acknowledged`. A
+  reply acknowledges this tmux command; it does not prove that a program
+  started by another command has exited.
 
 ## Failure behavior and cleanup
 
-The program uses assertions so unexpected results make the example fail.
-Capture and transport errors return `{:error, %LibTmux.Error{}}`, with `kind`,
-`phase` and `certainty` describing the failure. A control field read whose
-target disappeared returns an acknowledged `:failed` operation; a present
-empty field remains `:completed`. Raw one-shot commands retain tmux's native
-semantics, so the example also checks the returned pane ID. Neither path
-retries with a positional target.
-`LibTmux.Selection.one!/2` raises `:no_match` or `:multiple_matches` rather
-than selecting arbitrarily.
+- The program uses assertions, so an unexpected result fails the example.
+- Capture and transport errors return `{:error, %LibTmux.Error{}}`, with
+  `kind`, `phase` and `certainty` describing the failure.
+- A control field read whose target disappeared returns an acknowledged
+  `:failed` operation. A present empty field stays `:completed`.
+- Raw one-shot commands keep tmux's native semantics, so the example also
+  checks the returned pane ID. Neither path retries with a positional target.
+- `LibTmux.Selection.one!/2` raises `:no_match` or `:multiple_matches` instead
+  of selecting arbitrarily.
+- An await timeout ends only that waiter. Failed, skipped and unknown outcomes
+  are values, including from bang functions. Inspect the retained operation
+  instead of replaying an uncertain command. This example accepts only an
+  acknowledged completed read.
+- The `after` block closes the connection and stops its enclosing supervisor.
+  The fixture harness runs owned teardown even when the example fails.
 
-An await API timeout ends only that waiter. Canonical failed, skipped and
-unknown operation outcomes are values, including from bang methods. Inspect
-the retained operation instead of replaying an uncertain command. This
-example deliberately accepts only an acknowledged completed read.
-
-The `after` block closes the connection and stops its enclosing supervisor.
-The separate fixture harness runs owned teardown even when the example
-fails. See [the mental model](mental-model.md) and
-[ownership](ownership.md) for the different lifetimes and remaining runtime
-qualification limits.
+See [the mental model](mental-model.md) and [ownership](ownership.md) for the
+different lifetimes and remaining limits.

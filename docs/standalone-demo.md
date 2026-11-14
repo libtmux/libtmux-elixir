@@ -1,14 +1,12 @@
 # Run the standalone demo
 
-This self-contained example installs the published package,
-creates a private server, adds a pane and window, then prints
-`demo: 2 windows, 3 panes`. It uses the explicit command API.
-The [first task](first-task.md) shows how to observe an existing server;
-[one-shot actions](one-shot-actions.md) introduces the domain helpers.
+This self-contained program installs the published package, creates a private
+server, adds a pane and a window, and prints `demo: 2 windows, 3 panes`. It
+uses the explicit command API.
 
-Save the program as `quickstart.exs`. Linux, Elixir 1.20.4 on OTP 29, a C11
-compiler and tmux 3.3 or a later qualified version on `PATH` are required.
-Its first run needs network access to install the package.
+It needs Linux, Elixir 1.20 on OTP 29, a C compiler and tmux 3.3 or newer on
+`PATH`. The first run needs network access to install the package. Save it as
+`quickstart.exs`:
 
 <!-- example: examples/quickstart.exs -->
 
@@ -55,9 +53,15 @@ Run it outside a Mix project:
 $ elixir quickstart.exs
 ```
 
-The program clears inherited tmux context and uses a unique socket directory.
-Its `after` block requests server shutdown and removes that directory on
-normal return or a raised exception. Killing the VM bypasses this block.
-For supervised execution and explicit process-exit evidence, use the
-[owned-server runner](owned-server.md). The standalone demo does not qualify
-an arbitrary server for shared control.
+- The program clears inherited tmux context and uses a unique socket
+  directory.
+- Its `after` block sends `kill-server` through `Server.run/3` and removes the
+  directory, on a normal return or a raised exception. Killing the VM skips
+  it.
+- libtmux never starts a server, so the program starts one with tmux itself.
+- For supervised execution and process-exit evidence, use the
+  [owned-server runner](owned-server.md). The demo does not qualify an
+  arbitrary server for shared control.
+
+Next: [observe an existing server](first-task.md), or the domain helpers in
+[one-shot actions](one-shot-actions.md).
