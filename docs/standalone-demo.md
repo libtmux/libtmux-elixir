@@ -24,13 +24,13 @@ dir = Path.join(System.tmp_dir!(), "libtmux-" <> id)
 socket = Path.join(dir, "tmux.sock")
 File.mkdir!(dir)
 File.chmod!(dir, 0o700)
+server = Server.new(executable: tmux, socket: socket)
 
 try do
   # libtmux works on a running server, so tmux itself starts the private one.
   create = ["new-session", "-d", "-s", "demo", "/bin/cat", "--"]
   {_, 0} = System.cmd(tmux, ["-S", socket, "-f", "/dev/null" | create])
 
-  server = Server.new(executable: tmux, socket: socket)
   split = Command.new("split-window", ["-t", "demo", "/bin/cat", "--"])
   logs = Command.new("new-window", ~w(-t demo -n logs /bin/cat --))
   {:ok, _} = Server.run(server, split)
@@ -42,7 +42,7 @@ try do
   panes = snapshot |> Snapshot.panes() |> Selection.size()
   IO.puts("#{session.name}: #{windows} windows, #{panes} panes")
 after
-  System.cmd(tmux, ["-S", socket, "kill-server"], stderr_to_stdout: true)
+  Server.run(server, Command.new("kill-server", []))
   File.rm_rf(dir)
 end
 ```
