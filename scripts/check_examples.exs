@@ -48,6 +48,7 @@ defmodule LibTmux.ExampleCheck do
 
     for name <- [
           "readme",
+          "filtering",
           "capture_and_filter",
           "one_shot_actions",
           "managed_control",
@@ -269,6 +270,8 @@ defmodule LibTmux.ExampleCheck do
   end
 
   defp check("capture_and_filter", %{"active_panes" => ["%0"]}), do: :ok
+
+  defp check("filtering", %{"filtering" => "ok"}), do: :ok
 
   defp check("readme", %{
          "active_panes" => ["%0"],

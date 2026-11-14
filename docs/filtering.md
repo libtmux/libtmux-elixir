@@ -1,17 +1,39 @@
 # Filter captured values
 
-Obtain one [snapshot](observations.md), then select its observed panes:
+Capture one [snapshot](observations.md), then select from it. Run the
+examples on a private server with the [owned-server runner](owned-server.md):
+
+```console
+$ python3 examples/owned_server.py \
+    --run "$(command -v tmux)" \
+    mix run examples/filtering.exs
+```
+
+<!-- example: examples/filtering.exs#where -->
 
 ```elixir
-alias LibTmux.{Selection, Snapshot}
+alias LibTmux.{Selection, Server, Snapshot}
 
-editors =
+[executable, socket, session_id] = System.argv()
+
+server =
+  Server.new(
+    executable: executable,
+    socket: socket,
+    env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
+  )
+
+snapshot = Server.snapshot!(server)
+
+active =
   snapshot
   |> Snapshot.panes()
-  |> Selection.where(active: true, current_command: [in: ["nvim", "vim"]])
+  |> Selection.where(active: true, current_command: [in: ["cat", "nvim", "vim"]])
 
-Enum.map(editors, & &1.id)
+Enum.map(active, & &1.id)
 ```
+
+<!-- /example -->
 
 Selections retain their immutable graph and order. Enumerable delegates to
 the materialized list, including suspension and early halt. `size/1` uses
@@ -41,13 +63,19 @@ Fields in one object conjoin. Boolean `and` and `or` accept lists of
 criteria; `not` accepts one criteria object. Empty `and` is true and empty
 `or` is false. Normalization never combines separate relation quantifiers:
 
+<!-- example: examples/filtering.exs#relation -->
+
 ```elixir
 alias LibTmux.{Selection, Snapshot}
 
-Selection.where(Snapshot.sessions(snapshot), %{
-  panes: %{some: %{active: true, current_command: "nvim"}}
-})
+with_cat =
+  Selection.where(Snapshot.sessions(snapshot), %{
+    panes: %{some: %{active: true, current_command: "cat"}}
+  })
+
 ```
+
+<!-- /example -->
 
 That predicate requires one pane to satisfy both conditions. Two separate
 `some` clauses can match different panes. `every` and `none` are true for
@@ -75,6 +103,20 @@ map conversion, trailing data and unknown names. `from_wire/3` accepts an
 already decoded map; that map cannot reveal discarded duplicate keys.
 Neither decoder creates atoms from external keys. Encode through
 `Filter.to_wire/1`, then `JSON.encode!/1`.
+
+<!-- example: examples/filtering.exs#wire -->
+
+```elixir
+alias LibTmux.{Filter, Pane}
+
+{:ok, filter} = Filter.new(Pane, active: true, current_command: [in: ["nvim", "vim"]])
+json = filter |> Filter.to_wire() |> JSON.encode!()
+{:ok, ^filter} = Filter.from_json(Pane, json)
+```
+
+<!-- /example -->
+
+The document is:
 
 ```json
 {"version":1,"entity":"pane","where":{"active":true,"currentCommand":{"in":["nvim","vim"]}}}
