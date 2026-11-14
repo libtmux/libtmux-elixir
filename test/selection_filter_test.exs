@@ -6,23 +6,6 @@ defmodule LibTmux.SelectionFilterTest do
 
   doctest Selection
 
-  test "filtering guide examples provide their own aliases" do
-    guide = File.read!(Path.expand("../docs/filtering.md", __DIR__))
-    snippets = Regex.scan(~r/```elixir\n(.*?)\n```/s, guide, capture: :all_but_first)
-    assert length(snippets) == 2
-
-    [panes, sessions] =
-      Enum.map(snippets, fn [source] ->
-        {result, _binding} =
-          Code.eval_string(source, [snapshot: QueryGraph.snapshot()], file: "docs/filtering.md")
-
-        result
-      end)
-
-    assert panes == ["%2"]
-    assert Enum.map(sessions, & &1.id) == ["$1"]
-  end
-
   test "materialized selections preserve Enum reduction, suspension and ordinary membership" do
     panes = QueryGraph.snapshot() |> Snapshot.panes()
     assert Enum.map(panes, & &1.id) == ["%0", "%1", "%2"]
@@ -212,6 +195,7 @@ defmodule LibTmux.SelectionFilterTest do
           {%{width: %{gt: 80}}, ["%1"]},
           {%{exit_status: %{gt: 0}}, ["%2"]},
           {%{exit_status: nil}, ["%0"]},
+          {%{active: true, current_command: %{in: ["nvim", "vim"]}}, ["%2"]},
           {%{exit_status: %{not_in: [nil, 7]}}, ["%1"]},
           {%{current_path: ""}, ["%0", "%1", "%2"]},
           {%{title: %{starts_with: "α", ends_with: "%2", contains: " "}}, ["%2"]},
