@@ -29,7 +29,7 @@
 
 Drive tmux from Elixir: [capture][snapshot] sessions, windows and panes as an
 immutable snapshot, [filter][where] it with plain data, then rename, split and
-type through [domain actions][scope].
+type through domain actions.
 
 **Contents** — [Installation](#installation) ·
 [Try the examples](#try-the-examples) ·
@@ -313,8 +313,6 @@ Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
 [snapshot-panes]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-panes-1/
 [run]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-run-3/
 [server-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-server/
-[window-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-window/
-[session-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-session/
 [where]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-where-2/
 [filter]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-filter-2/
 [filter-json]: https://libtmux.org/en/elixir/latest/reference/libtmux-filter-from_json-3/
