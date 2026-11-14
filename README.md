@@ -35,7 +35,7 @@ type through domain actions.
 [Try the examples](#try-the-examples) ·
 [Find things](#find-sessions-windows-and-panes) ·
 [Rename](#rename-a-window) ·
-[Control](#split-a-pane-and-send-input) ·
+[Control](#split-a-pane-send-input-and-read-the-screen) ·
 [Errors](#errors-and-recovery) ·
 [Guides](#guides) · [Support](#support-and-status) ·
 [Leaves out](#what-it-leaves-out)
@@ -204,15 +204,15 @@ session whose link to the window to use. The old snapshot keeps the old name.
 
 More: [One-shot actions](docs/one-shot-actions.md).
 
-## Split a pane and send input
+## Split a pane, send input and read the screen
 
 ### [`Control.with_connection/2`][scope]: one connection for many commands
 
 It attaches a control client to an existing session, runs your callback, and
 closes the client. [`Pane.split!/3`][split] returns the new pane's ID and a
 bound reference. [`Pane.send_text!/4`][text] sends literal text and
-[`Pane.send_keys!/4`][keys] sends named keys. [`Pane.capture!/3`][capture]
-reads a screen through one-shot execution.
+[`Pane.send_keys!/4`][keys] sends named keys. After the scope closes,
+[`Pane.capture!/3`][capture] reads the new pane's screen through the `server`.
 
 <!-- example: examples/readme.exs#control -->
 
@@ -248,7 +248,10 @@ The program prints:
 
 - `{:argv, ["/bin/cat"]}` runs a program directly; `{:shell, "command"}` goes
   through a shell.
-- An acknowledgement does not mean the program has read its input.
+- An acknowledgement does not mean the program has read its input, so
+  `screen` may not show `hello` yet.
+- `Pane.capture!/3` runs one command through the `server`; a control
+  connection refuses it.
 - `lane: :host_qualified` says you control this server's hooks and aliases.
   The demo runner does. Read the managed-control guide before using another
   host.
