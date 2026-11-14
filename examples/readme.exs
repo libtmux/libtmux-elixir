@@ -22,6 +22,33 @@ active_ids =
 
 # docs:end capture
 
+# docs:begin filter
+alias LibTmux.{Filter, Pane, Selection, Snapshot}
+
+windows =
+  snapshot
+  |> Snapshot.windows()
+  |> Selection.where(panes: [some: [active: true, current_command: "cat"]])
+  |> Enum.map(& &1.id)
+
+json = """
+{"version":1,"entity":"pane",
+ "where":{"active":true,"currentCommand":{"in":["cat","nvim"]}}}
+"""
+
+{:ok, filter} = Filter.from_json(Pane, json)
+
+pane_ids =
+  snapshot
+  |> Snapshot.panes()
+  |> Selection.where(filter)
+  |> Enum.map(& &1.id)
+
+# docs:end filter
+
+["@0"] = windows
+["%0"] = pane_ids
+
 # docs:begin rename
 alias LibTmux.{Ref, Selection, Session, Snapshot, Window}
 
