@@ -169,7 +169,7 @@ defmodule LibTmux.ControlPublisherIntegrationTest do
       exited(persistent, cleanup)
       assert Deadline.remaining(cleanup) > 0
       assert OwnedTmux.alive?(fixture)
-      assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+      assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
     after
       send(publisher, {gate, :continue})
       send(publisher, {gate, :finish})

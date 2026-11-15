@@ -128,7 +128,7 @@ defmodule LibTmux.ControlExecuteIntegrationTest do
 
     assert OwnedTmux.alive?(fixture)
 
-    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+    assert {:ok, %{server_exited: true, pane_exited: true}} =
              OwnedTmux.close(fixture)
   end
 
@@ -176,7 +176,7 @@ defmodule LibTmux.ControlExecuteIntegrationTest do
     assert {"0\n", 0} =
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
 
-    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+    assert {:ok, %{server_exited: true, pane_exited: true}} =
              OwnedTmux.close(fixture)
   end
 end

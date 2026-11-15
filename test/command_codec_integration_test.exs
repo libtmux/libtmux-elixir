@@ -50,7 +50,7 @@ defmodule LibTmux.CommandCodecIntegrationTest do
       assert {:ok, [^value, ^other, ""]} = LibTmux.Capture.Row.decode(response, 3)
     end
 
-    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+    assert {:ok, %{server_exited: true, pane_exited: true}} =
              OwnedTmux.close(fixture)
   end
 

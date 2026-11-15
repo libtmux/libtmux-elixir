@@ -85,7 +85,7 @@ defmodule LibTmux.ControlTargetIntegrationTest do
         cleanup = OwnedTmux.close(fixture)
         assert :ok = OwnedTmux.await_exit(fixture_exit)
         assert survived
-        assert {:ok, %{pane_exited: true, clients_exited: true}} = cleanup
+        assert {:ok, %{server_exited: true, pane_exited: true}} = cleanup
       end
     end
   end

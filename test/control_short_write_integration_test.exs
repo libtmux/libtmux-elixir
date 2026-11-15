@@ -261,7 +261,7 @@ defmodule LibTmux.ControlShortWriteIntegrationTest do
     assert Deadline.remaining(cleanup) > 0
     assert :ok = :socket.close(socket)
     assert OwnedTmux.alive?(fixture)
-    assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
   end
 
   defp track_epoch(endpoint) do

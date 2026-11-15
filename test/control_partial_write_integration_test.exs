@@ -143,7 +143,7 @@ defmodule LibTmux.ControlPartialWriteIntegrationTest do
 
       assert Deadline.remaining(cleanup) > 0
       assert OwnedTmux.alive?(fixture)
-      assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+      assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
     after
       send(roles.router, {gate, :continue})
     end

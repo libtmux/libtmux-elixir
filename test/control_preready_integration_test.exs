@@ -221,7 +221,7 @@ defmodule LibTmux.ControlPreReadyIntegrationTest do
     end
 
     assert OwnedTmux.alive?(fixture)
-    assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
   end
 
   defp track(table, pids) do

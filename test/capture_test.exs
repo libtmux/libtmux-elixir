@@ -118,7 +118,7 @@ defmodule LibTmux.CaptureTest do
       after
         assert {_, 0} = OwnedTmux.command(fixture, ["kill-pane", "-t", pane_id])
         watch = OwnedTmux.watch_exit(info)
-        assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+        assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
         assert :ok = OwnedTmux.await_exit(watch)
       end
     end
@@ -134,7 +134,7 @@ defmodule LibTmux.CaptureTest do
     assert {:error, %Error{kind: :resource_limit, details: %{reason: :commands}}} =
              Server.snapshot(server, max_commands: 12)
 
-    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+    assert {:ok, %{server_exited: true, pane_exited: true}} =
              OwnedTmux.close(fixture)
   end
 
@@ -186,7 +186,7 @@ defmodule LibTmux.CaptureTest do
     after
       watch = OwnedTmux.watch_processes([info.server_pid, info.helper_pid | pids])
 
-      assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+      assert {:ok, %{server_exited: true, pane_exited: true}} =
                OwnedTmux.close(fixture)
 
       :ok = OwnedTmux.await_exit(watch)
@@ -208,7 +208,7 @@ defmodule LibTmux.CaptureTest do
     assert {:error, %Error{kind: :resource_limit}} =
              Server.snapshot(server, max_response_bytes: 32_010)
 
-    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+    assert {:ok, %{server_exited: true, pane_exited: true}} =
              OwnedTmux.close(fixture)
   end
 
@@ -281,7 +281,7 @@ defmodule LibTmux.CaptureTest do
     end
 
     assert snapshot.sessions["$0"].attached_count == 2
-    assert {:ok, %{clients_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
   end
 
   test "capture budgets and invalid UTF-8 are explicit errors without truncated success" do

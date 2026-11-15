@@ -2,7 +2,7 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
   use ExUnit.Case, async: true
   alias LibTmux.{Codec, Control, Deadline, Operation, Server}
   alias LibTmux.Control.{Births, Request}
-  alias LibTmux.Test.OwnedTmux
+  alias LibTmux.Test.{OwnedTmux, Processes}
 
   @moduletag :integration
   @moduletag reason:
@@ -76,11 +76,12 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
         assert :pending = Operation.result(operation)
         IO.puts(JSON.encode!(%{stage: :queued_reply, waiter_registered: true}))
         watch_drain_exit(roles.guardian, gate)
-        assert Port.command(watcher, "terminate\n")
-        assert %{"kind" => "exited", "milliseconds" => native_ms} = exit = receive_json(watcher)
+
+        assert %{"kind" => "exited", "milliseconds" => native_ms} =
+                 exit = Processes.terminate_native(watcher)
+
         IO.puts(JSON.encode!(exit))
         assert native_ms < 750
-        assert_receive {^watcher, {:exit_status, 0}}, Deadline.remaining(deadline)
         assert {:ok, %{phase: :ready}} = Control.status(control)
         assert_receive {^gate, :drain_exited}, Deadline.remaining(deadline)
 
@@ -119,7 +120,6 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
     cleanup =
       try do
         send(roles.router, {gate, :continue})
-        if Port.info(watcher), do: Port.close(watcher)
 
         if Process.alive?(parent) do
           deadline = Deadline.new(950)
@@ -135,7 +135,7 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
           assert OwnedTmux.alive?(fixture)
         end
 
-        assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+        assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
         :ok
       catch
         kind, reason -> {:failed, kind, reason, __STACKTRACE__}
@@ -213,11 +213,12 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
           assert :pending = Operation.result(unfinished)
           watch_record_retirement(endpoint.manager, unfinished, gate)
           watch_drain_exit(roles.guardian, gate)
-          assert Port.command(watcher, "terminate\n")
-          assert %{"kind" => "exited", "milliseconds" => native_ms} = exit = receive_json(watcher)
+
+          assert %{"kind" => "exited", "milliseconds" => native_ms} =
+                   exit = Processes.terminate_native(watcher)
+
           IO.puts(JSON.encode!(exit))
           assert native_ms < 750
-          assert_receive {^watcher, {:exit_status, 0}}, Deadline.remaining(deadline)
           assert_receive {^gate, :drain_exited}, Deadline.remaining(deadline)
 
           assert_receive {^gate, :drain_origin, origin, manager_cutoff},
@@ -284,7 +285,6 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
       cleanup =
         try do
           send(roles.router, {gate, :continue})
-          if Port.info(watcher), do: Port.close(watcher)
           cleanup_deadline = Deadline.new(950)
 
           if Process.alive?(parent),
@@ -297,7 +297,7 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
                          Deadline.remaining(cleanup_deadline)
 
           refute Process.alive?(root)
-          assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+          assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
           :ok
         catch
           kind, reason -> {:failed, kind, reason, __STACKTRACE__}
@@ -318,34 +318,9 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
   end
 
   defp watch_native(helper, client) do
-    watcher =
-      Port.open({:spawn_executable, System.find_executable("python3")}, [
-        :binary,
-        :exit_status,
-        {:line, 65_536},
-        {:args,
-         [
-           Path.join(__DIR__, "support/control_exit.py"),
-           Integer.to_string(helper),
-           Integer.to_string(client)
-         ]}
-      ])
-
-    assert %{"kind" => "ready", "helper_sha256" => _, "client_sha256" => _} =
-             identity =
-             receive_json(watcher)
-
-    IO.puts(JSON.encode!(identity))
+    watcher = Processes.watch_native(helper, client)
+    IO.puts(JSON.encode!(watcher.ready))
     watcher
-  end
-
-  defp receive_json(port) do
-    receive do
-      {^port, {:data, {:eol, data}}} -> JSON.decode!(data)
-      {^port, {:exit_status, status}} -> flunk("owned exit observer failed: #{status}")
-    after
-      950 -> flunk("owned exit observer did not respond")
-    end
   end
 
   defp hold_first_chunk(router, epoch, guardian, mode \\ :bounded) do

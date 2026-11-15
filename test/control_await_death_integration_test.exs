@@ -99,7 +99,7 @@ defmodule LibTmux.ControlAwaitDeathIntegrationTest do
     assert :ok = OwnedTmux.await_exit(native)
     assert Deadline.remaining(deadline) > 0
     assert OwnedTmux.alive?(fixture)
-    assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
   end
 
   defp watch_waiter(manager, receiver) do

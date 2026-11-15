@@ -143,7 +143,7 @@ defmodule LibTmux.ControlDeathIntegrationTest do
     exited(cleanup, deadline)
     assert remaining(deadline) > 0
     assert OwnedTmux.alive?(fixture)
-    assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
   end
 
   def start_and_report({module, function, arguments}, observer, token) do

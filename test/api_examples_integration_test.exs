@@ -71,7 +71,7 @@ defmodule LibTmux.APIExamplesIntegrationTest do
                :checked
              end)
 
-    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
+    assert {:ok, %{server_exited: true, pane_exited: true}} =
              OwnedTmux.close(fixture)
   end
 

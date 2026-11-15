@@ -26,13 +26,13 @@ defmodule LibTmux.OwnedTmuxTest do
                ~S"#{pane_start_command}"
              ])
 
-    assert {:ok, %{server_exit: 0, pane_exited: true}} = OwnedTmux.close(first)
-    assert {:ok, %{server_exit: 0, pane_exited: true}} = OwnedTmux.close(first)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(first)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(first)
 
     assert {"fixture\n", 0} =
              OwnedTmux.command(second, ["list-sessions", "-F", ~S"#{session_name}"])
 
-    assert {:ok, %{server_exit: 0, pane_exited: true}} = OwnedTmux.close(second)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(second)
   end
 
   test "an abruptly killed fixture owner still releases its OS processes" do

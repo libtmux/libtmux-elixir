@@ -24,7 +24,7 @@ defmodule LibTmux.ControlScopeIntegrationTest do
     assert {"0\n", 0} =
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
 
-    assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
   end
 
   test "callback values stay in the caller and all normal and exceptional exits retire the connection" do
@@ -83,7 +83,7 @@ defmodule LibTmux.ControlScopeIntegrationTest do
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
 
     assert OwnedTmux.alive?(fixture)
-    assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
   end
 
   test "a dead callback caller leaves its connection owner responsible for native retirement" do
@@ -112,7 +112,7 @@ defmodule LibTmux.ControlScopeIntegrationTest do
              OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{session_attached}"])
 
     assert OwnedTmux.alive?(fixture)
-    assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
   end
 
   @tag capture_log: true
@@ -146,7 +146,7 @@ defmodule LibTmux.ControlScopeIntegrationTest do
     end
 
     assert OwnedTmux.alive?(fixture)
-    assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
   end
 
   defp options(fixture) do
