@@ -7,9 +7,10 @@ defmodule LibTmux.Server do
   before construction. The optional `:cwd` and `:env` default to the caller's
   working directory and environment. Construction validates the path forms
   without checking that the executable or socket exists. A Server is an
-  immutable value with nothing to close; constructing one neither connects to
-  tmux nor starts it. Commands use `-N`, so a missing daemon is never started
-  implicitly.
+  immutable value; constructing one with `new/1` neither connects to tmux nor
+  starts it. Commands use `-N`, so a missing daemon is never started
+  implicitly. `start/1` and `with_owned/2` start a private server and return
+  a Server that `stop/2` can retire.
 
   ## Choosing the server
 
@@ -55,6 +56,17 @@ defmodule LibTmux.Server do
   - Describe: `new/1`
   - Attach for a callback: `LibTmux.Control.with_connection/2`
   - Supervise: `LibTmux.Control.start_link/1`, `LibTmux.Control.child_spec/1`
+
+  **Owning a private server.** Start a tmux server in a private directory,
+  with no inherited `TMUX` or `TMUX_PANE`, and stop it when you are done.
+  `with_owned/2` does both around a function, so a program needs no shell step
+  to start or clean up tmux. The process that starts the server owns it, and the
+  server stops when that process exits. `stop/2` refuses a Server that
+  `start/1` did not create.
+
+  - Start and stop around a function: `with_owned/2`
+  - Start: `start/1`
+  - Stop: `stop/2`
 
   **Finding one thing.** Capture a snapshot, then require one match or allow no
   match. Both reject multiple matches. Turn the chosen observation into a
@@ -132,8 +144,25 @@ defmodule LibTmux.Server do
 
   ## Examples
 
-  Set `executable` to the absolute tmux executable and `socket` to the
-  absolute socket path of the running server you want to inspect. Leave out
+  Start a private server for the length of a function. This creates a
+  session, lists its panes, and leaves nothing behind:
+
+      alias LibTmux.{Selection, Server, Snapshot}
+
+      tmux = System.find_executable("tmux")
+
+      Server.with_owned([executable: tmux], fn server ->
+        {:ok, _} = Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
+
+        server
+        |> Server.snapshot!()
+        |> Snapshot.panes()
+        |> Enum.map(& &1.id)
+      end)
+
+  The result is `["%0"]`. To inspect a server that already runs, set
+  `executable` to the absolute tmux executable and `socket` to the
+  absolute socket path of that server. Leave out
   `socket` to follow `LIBTMUX_SOCKET_PATH`, `LIBTMUX_SOCKET` or tmux's default
   socket. This example captures once and lists each physical window's active
   pane:
@@ -168,20 +197,22 @@ defmodule LibTmux.Server do
 
   @enforce_keys [:executable, :cwd, :env]
   @derive {Inspect, only: []}
-  defstruct [:executable, :socket, :socket_name, :cwd, :env]
+  defstruct [:executable, :socket, :socket_name, :cwd, :env, :daemon]
 
   @typedoc """
   A local server descriptor; constructing it neither connects nor reserves server identity.
 
   At most one of `:socket` and `:socket_name` is set. Both are `nil` when tmux
-  chooses its default socket.
+  chooses its default socket. `daemon` names the process that owns a server
+  created by `start/1`, and is `nil` for every other Server.
   """
   @type t :: %__MODULE__{
           executable: String.t(),
           socket: String.t() | nil,
           socket_name: String.t() | nil,
           cwd: String.t(),
-          env: %{optional(binary()) => binary()}
+          env: %{optional(binary()) => binary()},
+          daemon: pid() | nil
         }
   @typedoc """
   Descriptor inputs.
@@ -275,6 +306,114 @@ defmodule LibTmux.Server do
     do:
       is_binary(value) and value not in ["", ".", ".."] and
         :binary.match(value, [<<0>>, "/"]) == :nomatch
+
+  @typedoc """
+  Inputs for `start/1`.
+
+  `:executable` is required. `:root` is the directory that holds the private
+  directory and defaults to `System.tmp_dir!/0`. `:config_file` defaults to
+  `"/dev/null"`. `:env` overlays the daemon's environment; `TMUX` and
+  `TMUX_PANE` never reach it. `:timeout` bounds startup, in milliseconds.
+  """
+  @type start_option ::
+          {:executable, String.t()}
+          | {:root, String.t()}
+          | {:config_file, String.t()}
+          | {:env, %{optional(binary()) => binary()}}
+          | {:timeout, 1..600_000}
+
+  @doc """
+  Starts a private tmux server and returns a Server for it.
+
+  The server runs in the foreground under libtmux's native helper, in a
+  directory of its own below `:root`: the directory has mode 700, holds the
+  socket and is `TMUX_TMPDIR` for the daemon and its panes. The daemon never
+  inherits `TMUX` or `TMUX_PANE`, reads `:config_file` (an empty file by
+  default), and stays up with no session. `start/1` returns when the socket
+  answers, or when `:timeout` (5000 ms by default) ends.
+
+  The process that calls `start/1` owns the server. When it exits, the helper
+  retires the daemon and its directory is removed, even if the owner or the VM
+  is killed. Other processes may use the returned Server. Stop it with `stop/2`
+  as soon as the work is done, or use `with_owned/2`.
+
+  Returns `{:error, error}` for an invalid option, a socket path that would
+  exceed the 107 usable bytes of `sun_path`, a daemon that cannot start or
+  exits before it answers, and a timeout. A failed start leaves no directory
+  behind. It starts only on Linux, like the rest of libtmux.
+
+      alias LibTmux.Server
+
+      {:ok, server} = Server.start(executable: System.find_executable("tmux"))
+      {:ok, _} = Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
+      :ok = Server.stop(server)
+  """
+  @spec start([start_option()]) :: {:ok, t()} | {:error, Error.t()}
+  def start(options), do: LibTmux.Server.Daemon.start(options, self())
+
+  @doc """
+  Stops a server that `start/1` created and removes its directory.
+
+  Sends `kill-server`, waits until the native helper proves that the daemon
+  has exited, and removes the directory. Stopping a server
+  that already stopped returns `:ok`. If the daemon still answers when
+  `:timeout` (5000 ms by default) ends, or the directory cannot be removed,
+  it returns `{:error, error}` and keeps the directory; call it again to
+  retry.
+
+  Returns `{:error, error}` with kind `:not_owned` for a Server that `new/1`
+  built or that another process started and already stopped.
+  """
+  @spec stop(t(), [{:timeout, 1..600_000}]) :: :ok | {:error, Error.t()}
+  def stop(server, options \\ []) do
+    timeout = Keyword.get(options, :timeout, 5000)
+
+    unless Keyword.keys(options) -- [:timeout] == [] and is_integer(timeout) and
+             timeout in 1..600_000,
+           do: raise(ArgumentError, "the only stop option is :timeout, in 1..600000 ms")
+
+    LibTmux.Server.Daemon.stop(server, timeout)
+  end
+
+  @doc """
+  Starts a private server, calls `fun` with it and stops it afterwards.
+
+  Takes the options of `start/1`. Returns the value of `fun`. A start failure
+  raises its `LibTmux.Error` before `fun` runs. The server stops when `fun`
+  returns, raises, throws or exits. If `fun` completes and the stop fails,
+  `with_owned/2` raises the stop error; a failing stop never replaces an
+  exception from `fun`.
+
+      alias LibTmux.Server
+
+      Server.with_owned([executable: System.find_executable("tmux")], fn server ->
+        {:ok, _} = Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
+        Server.snapshot!(server)
+      end)
+  """
+  @spec with_owned([start_option()], (t() -> result)) :: result when result: term()
+  def with_owned(options, fun) when is_function(fun, 1) do
+    case start(options) do
+      {:ok, server} ->
+        outcome =
+          try do
+            {:ok, fun.(server)}
+          catch
+            kind, reason -> {kind, reason, __STACKTRACE__}
+          end
+
+        stopped = stop(server)
+
+        case {outcome, stopped} do
+          {{:ok, value}, :ok} -> value
+          {{:ok, _value}, {:error, error}} -> raise error
+          {{kind, reason, stacktrace}, _stopped} -> :erlang.raise(kind, reason, stacktrace)
+        end
+
+      {:error, error} ->
+        raise error
+    end
+  end
 
   @doc """
   Creates a named detached session on an existing server through one-shot execution.
