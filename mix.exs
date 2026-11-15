@@ -31,6 +31,7 @@ defmodule LibTmux.MixProject do
           "AGENTS.md",
           ".github/CONTRIBUTING.md",
           ".github/WRITING.md",
+          ".github/SCRIPTS.md",
           "docs",
           "priv/tmux"
         ]
@@ -94,6 +95,7 @@ defmodule LibTmux.MixProject do
       "AGENTS.md",
       ".github/CONTRIBUTING.md",
       ".github/WRITING.md",
+      ".github/SCRIPTS.md",
       "LICENSE"
     ]
 
@@ -126,7 +128,7 @@ defmodule LibTmux.MixProject do
           ~r/(first-task|standalone-demo|one-shot-actions|managed-control|supervised-control|recovery|owned-server|advanced-execution)/,
         "Concepts and reference": ~r/(mental-model|observations|filtering|schema|api-examples)/,
         "Design and internals": ~r/(ownership|encoding|design|implementation)/,
-        Contributing: ~r/(AGENTS|CONTRIBUTING|WRITING|branding|LICENSE)/
+        Contributing: ~r/(AGENTS|CONTRIBUTING|WRITING|SCRIPTS|branding|LICENSE)/
       ],
       groups_for_modules: [
         "Observe and select": [
