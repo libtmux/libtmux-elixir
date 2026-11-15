@@ -16,10 +16,10 @@ explicitly planned until implementation and checks establish them.
 
 ## README and guides
 
-Teach the task before the API. Keep the README ordered around purpose,
-status and prerequisites, installation, the smallest tested task, defaults
-and failure behavior, package boundaries, and contributor links. Omit an
-installation or usage example when no usable package exists.
+Teach the task before the API. The README opens with purpose and
+installation, then task sections as `## README shape` describes, then
+support, packages and contributor links. Omit an installation or usage
+example when no usable package exists.
 
 Keep API contracts next to their definitions and conceptual explanations in
 one guide. Link to each instead of maintaining duplicate descriptions.
