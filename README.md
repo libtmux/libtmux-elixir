@@ -148,7 +148,7 @@ More: [Own a private server](docs/owned-server.md).
 
 ## Choose the server
 
-### [`Server.new/1`][server-type]: describe a server that already runs
+### [`Server.new/1`][server-new]: describe a server that already runs
 
 It builds a descriptor with no I/O. Pass `:socket` for a path or
 `:socket_name` for a name; with neither, it reads `LIBTMUX_SOCKET_PATH`, then
@@ -415,6 +415,7 @@ Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
 [snapshot-windows]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-windows-1/
 [snapshot-panes]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-panes-1/
 [server-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-server/
+[server-new]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-new-1/
 [where]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-where-2/
 [filter]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-filter-2/
 [filter-json]: https://libtmux.org/en/elixir/latest/reference/libtmux-filter-from_json-3/
