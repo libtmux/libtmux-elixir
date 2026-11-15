@@ -60,13 +60,12 @@ The README is for scanning. A reader should find the call to use at a glance.
 - Examples start with their imports, so a reader can paste one into a file
   and run it.
 - Examples start and clean up their own tmux server through the library, not
-  the shell. libtmux has no call that starts a server, so the README examples
-  run under the owned-server runner, `examples/owned_server.py`, and the
-  standalone quickstart starts its server with tmux and stops it with
-  `Server.run/3`. Say so where a step has no library call.
+  the shell. Wrap the example body in `Server.with_owned/2`, which starts a
+  private server and stops it when the body ends. Say so where a step has no
+  library call.
 - Every displayed example comes from a file CI runs.
-  `scripts/check_example_docs/check_example_docs.exs` keeps each displayed copy equal to its
-  source, and the packed example check runs the source.
+  `scripts/check_example_docs/check_example_docs.exs` keeps each displayed copy
+  equal to its source, and the packed example check runs the source.
 - The README shows the features the port has: queries and filters, and
   control connections. Show a query planner, command chaining and
   optimization switches when they exist. Until then, list them under What it
