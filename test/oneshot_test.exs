@@ -9,11 +9,8 @@ defmodule LibTmux.OneShotTest do
   test "stdout, stderr and process exit remain separate byte evidence" do
     assert {:ok, result} =
              OneShot.run(
-               "/usr/bin/python3",
-               [
-                 "-c",
-                 "import os;os.write(1,b'out\\x00\\xff');os.write(2,b'err');raise SystemExit(7)"
-               ],
+               "/bin/sh",
+               ["-c", ~S(printf 'out\000\377'; printf err >&2; exit 7)],
                max_stdout_bytes: 5,
                max_stderr_bytes: 3,
                max_chunks: 2
@@ -28,8 +25,11 @@ defmodule LibTmux.OneShotTest do
   test "output overload retains a bounded prefix and retires the producer" do
     assert {:error, error} =
              OneShot.run(
-               "/usr/bin/python3",
-               ["-c", "import os\nwhile True:os.write(1,b'x'*8192)"],
+               "/bin/sh",
+               [
+                 "-c",
+                 ~S(exec yes xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
+               ],
                max_stdout_bytes: 64
              )
 
@@ -43,8 +43,8 @@ defmodule LibTmux.OneShotTest do
   test "a combined byte budget bounds stdout and stderr together" do
     assert {:error, error} =
              OneShot.run(
-               "/usr/bin/python3",
-               ["-c", "import os;os.write(1,b'out');os.write(2,b'err')"],
+               "/bin/sh",
+               ["-c", ~S(printf out; printf err >&2)],
                max_total_bytes: 5
              )
 
@@ -117,11 +117,8 @@ defmodule LibTmux.OneShotTest do
   test "target environments preserve empty, Unicode and raw byte values" do
     assert {:ok, result} =
              OneShot.run(
-               "/usr/bin/python3",
-               [
-                 "-c",
-                 ~S"import os;os.write(1,os.environb[b'EMPTY']+b'\0'+os.environb[b'UNICODE']+b'\0'+os.environb[b'RAW'])"
-               ],
+               "/bin/sh",
+               ["-c", ~S(printf '%s\000%s\000%s' "$EMPTY" "$UNICODE" "$RAW")],
                env: %{
                  "EMPTY" => "",
                  "UNICODE" => "é日本語",

@@ -15,7 +15,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
   }
 
   alias LibTmux.Control.Births
-  alias LibTmux.Test.OwnedTmux
+  alias LibTmux.Test.{Fifo, OwnedTmux}
   @moduletag :integration
   @moduletag reason: "Qualifies literal input, exact membership and domain actions on owned tmux"
 
@@ -186,7 +186,6 @@ defmodule LibTmux.DomainActionsIntegrationTest do
               assert Integer.to_string(pid) == field(fixture, created, "pane_pid")
               watch = OwnedTmux.watch_processes([pid])
               assert :ok = :socket.send(peer, <<23>>)
-              assert :ok = :socket.close(peer)
               assert {_, 0} = OwnedTmux.command(fixture, ["wait-for", "argv-died"])
               assert :ok = OwnedTmux.await_exit(watch)
               assert field(fixture, created, "pane_dead_status") == "23"
@@ -417,37 +416,32 @@ defmodule LibTmux.DomainActionsIntegrationTest do
       {:ok, instance} = ProcessIdentity.read(info.server_pid)
       pane = ref(:pane, "%0", instance)
       path = Path.join(Path.dirname(info.socket), "pane-input")
-      {:ok, listener} = :socket.open(:local, :stream, :default)
-      :ok = :socket.bind(listener, %{family: :local, path: path})
-      :ok = :socket.listen(listener)
-      python = System.find_executable("python3")
+      peer = Fifo.open(path)
 
-      program = """
-      import os, socket, sys, tty
-      tty.setraw(0)
-      peer = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-      peer.connect(sys.argv[1])
-      peer.sendall(b'R')
-      os.write(1, b'%begin 9 8 1\\r\\n%end 9 8 1\\r\\n\\x1b[6n')
-      while True:
-          data = os.read(0, 4096)
-          if not data: break
-          peer.sendall(data)
+      # A raw pane: it reports in over the named pipe, asks tmux for the cursor
+      # position and forwards every byte it receives.
+      program = ~S"""
+      stty raw -echo
+      exec 3>"$1"
+      printf R >&3
+      printf '%%begin 9 8 1\r\n%%end 9 8 1\r\n\033[6n'
+      exec cat >&3
       """
 
       try do
         with_lane(lane, server, fn connection ->
           assert {:ok, %{outcome: :completed, value: %{id: id, ref: created_ref}}} =
-                   Pane.split(connection, pane, command: {:argv, [python, "-c", program, path]})
+                   Pane.split(connection, pane,
+                     command: {:argv, ["/bin/sh", "-c", program, "pane", path]}
+                   )
 
-          {:ok, peer} = :socket.accept(listener, 750)
-          assert {:ok, "R"} = :socket.recv(peer, 1, 750)
-          assert {:ok, "\e[3;1R"} = :socket.recv(peer, 6, 750)
+          assert {:ok, "R"} = Fifo.recv(peer, 1, 750)
+          assert {:ok, "\e[3;1R"} = Fifo.recv(peer, 6, 750)
           target = if lane == :control, do: created_ref, else: ref(:pane, id, instance)
           assert :ok = Pane.send_text!(connection, target, "")
           bytes = ~S"Enter C-c #{pid}; $HOME" <> <<92, 0, 255, 9, 10, 13>> <> "λ"
           assert :ok = Pane.send_text!(connection, target, bytes)
-          assert {:ok, ^bytes} = :socket.recv(peer, byte_size(bytes), 750)
+          assert {:ok, ^bytes} = Fifo.recv(peer, byte_size(bytes), 750)
 
           for size <- [246, 247, 995] do
             bytes = binary_part(:binary.copy(<<0, 255, 97, 10>>, 255), 0, size)
@@ -455,7 +449,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
             assert {:ok, %{outcome: :completed, value: :ok}} =
                      Pane.send_text(connection, target, bytes)
 
-            assert {:ok, ^bytes} = :socket.recv(peer, size, 750)
+            assert {:ok, ^bytes} = Fifo.recv(peer, size, 750)
           end
 
           for size <- [996, 1020, 1021] do
@@ -474,8 +468,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                    ])
 
           keys = "\r\x01\ex\e[A\e[1;5D\e[15;2~"
-          assert {:ok, ^keys} = :socket.recv(peer, byte_size(keys), 750)
-          assert :ok = :socket.close(peer)
+          assert {:ok, ^keys} = Fifo.recv(peer, byte_size(keys), 750)
 
           assert {:ok, %{outcome: :completed, value: captured, details: %{cleanup: :retired}}} =
                    Pane.capture(server, target, start_line: 0, end_line: 1)
@@ -488,7 +481,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
               assert({:error, %{kind: :unsupported_transport}} = Pane.capture(connection, target))
         end)
       after
-        :socket.close(listener)
+        Fifo.close(peer)
         close_fixture(fixture, info)
       end
     end
@@ -543,7 +536,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
     assert {text, 0} = OwnedTmux.command(fixture, ["list-panes", "-a", "-F", ~S"#{pane_pid}"])
     pids = text |> String.split() |> Enum.map(&String.to_integer/1)
     watch = OwnedTmux.watch_processes([info.server_pid, info.helper_pid | pids])
-    assert {:ok, %{pane_exited: true, clients_exited: true}} = OwnedTmux.close(fixture)
+    assert {:ok, %{server_exited: true, pane_exited: true}} = OwnedTmux.close(fixture)
     assert :ok = OwnedTmux.await_exit(watch)
   end
 end
