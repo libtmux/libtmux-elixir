@@ -30,15 +30,9 @@ print_pids({Helper, Child, Grandchild}) ->
 open() ->
     Port = open_port({spawn_executable, os:getenv("LIBTMUX_IO_SPIKE")},
                      [binary, exit_status, {packet, 2}]),
-    Code = "import os,signal\n"
-           "if os.fork()==0:\n"
-           " os.setsid()\n"
-           " if os.fork()!=0: os._exit(0)\n"
-           " signal.signal(signal.SIGTERM,signal.SIG_IGN)\n"
-           " os.write(1,(str(os.getpid())+'\\n').encode())\n"
-           " while True: signal.pause()\n"
-           "while True: signal.pause()\n",
-    Args = ["/usr/bin/python3", "-c", Code],
+    %% The shell detaches a grandchild that ignores SIGTERM and prints its pid.
+    Script = "setsid -f sh -c 'trap \"\" TERM; echo $$; exec sleep 1000'; exec sleep 1000",
+    Args = ["/bin/sh", "-c", Script],
     {ok, Cwd} = file:get_cwd(),
     true = port_command(Port, [<<$O,3,0,0:32>>, string(Cwd),
                                <<(length(Args)):16>>, [string(A) || A <- Args], <<0:16>>]),
