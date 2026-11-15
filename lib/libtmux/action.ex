@@ -36,6 +36,11 @@ defmodule LibTmux.Action do
   its exit status is observed, not an authenticated tmux command reply or
   proof that no effects occurred.
 
+  Kill actions run one-shot only: a Control connection returns
+  `unsupported_transport` before any I/O, because it cannot kill what it is
+  attached to. A kill command prints nothing, so a completed result has the
+  value `:ok`.
+
   Optional session context checks physical membership at tmux's command
   resolution. It does not bind a particular WindowLink index when a window
   has multiple links in that session. WindowLink references are rejected.
@@ -93,8 +98,28 @@ defmodule LibTmux.Action do
 
   @doc false
   def run(kind, %Control{}, _target, _value, _options)
-      when kind in [:capture, :new_session, :new_window],
+      when kind in [
+             :capture,
+             :new_session,
+             :new_window,
+             :kill_server,
+             :kill_session,
+             :kill_window,
+             :kill_pane
+           ],
       do: failure(:unsupported_transport)
+
+  def run(:kill_server, %Server{} = server, nil, nil, options) do
+    entered_at = System.monotonic_time(:millisecond)
+
+    with {:ok, deadline, options} <- prepare_options(options, entered_at),
+         {:ok, command} <- command(:kill_server, nil, nil, options, nil, :one_shot),
+         {:ok, _payload} <- Server.prepare_command(server, command) do
+      server
+      |> execute(:kill_server, command, options, deadline)
+      |> require_completion()
+    end
+  end
 
   def run(:new_session, %Server{} = server, nil, name, options) do
     entered_at = System.monotonic_time(:millisecond)
@@ -203,25 +228,28 @@ defmodule LibTmux.Action do
   defp defaults(:capture),
     do: [session: nil, start_line: 0, end_line: :last, join_lines: false, max_bytes: 65_536]
 
-  defp defaults(:rename_session), do: []
+  defp defaults(kind) when kind in [:rename_session, :kill_server, :kill_session], do: []
 
   defp defaults(kind) when kind in [:new_session, :new_window],
     do: [cwd: nil, command: :default]
 
-  defp defaults(kind) when kind in [:rename_window, :send_text, :send_keys],
-    do: [session: nil]
+  defp defaults(kind)
+       when kind in [:rename_window, :send_text, :send_keys, :kill_window, :kill_pane],
+       do: [session: nil]
 
   defp defaults(_kind), do: invalid!([:action], "expected a supported domain action")
 
-  defp target(:new_session, nil, _instance), do: :ok
-  defp target(:new_session, _target, _instance), do: failure(:invalid_target)
+  defp target(kind, nil, _instance) when kind in [:new_session, :kill_server], do: :ok
+
+  defp target(kind, _target, _instance) when kind in [:new_session, :kill_server],
+    do: failure(:invalid_target)
 
   defp target(kind, %Ref{entity: entity} = target, instance) do
     expected =
       case kind do
-        kind when kind in [:rename_session, :new_window] -> :session
-        :rename_window -> :window
-        kind when kind in [:split, :send_text, :send_keys, :capture] -> :pane
+        kind when kind in [:rename_session, :new_window, :kill_session] -> :session
+        kind when kind in [:rename_window, :kill_window] -> :window
+        kind when kind in [:split, :send_text, :send_keys, :capture, :kill_pane] -> :pane
       end
 
     if expected == entity, do: Ref.validate(target, instance), else: failure(:invalid_target)
@@ -233,8 +261,17 @@ defmodule LibTmux.Action do
   defp session(%Ref{entity: :session} = session, instance), do: Ref.validate(session, instance)
   defp session(_session, _instance), do: failure(:invalid_target)
 
-  defp lane(kind, _value, :control) when kind in [:capture, :new_session, :new_window],
-    do: failure(:unsupported_transport)
+  defp lane(kind, _value, :control)
+       when kind in [
+              :capture,
+              :new_session,
+              :new_window,
+              :kill_server,
+              :kill_session,
+              :kill_window,
+              :kill_pane
+            ],
+       do: failure(:unsupported_transport)
 
   defp lane(_kind, _value, _lane), do: :ok
 
@@ -252,6 +289,14 @@ defmodule LibTmux.Action do
       "--",
       name!(name)
     ])
+  end
+
+  defp build(:kill_server, nil, nil, _options), do: new_command!("kill-server", [])
+
+  defp build(kind, target, nil, options)
+       when kind in [:kill_session, :kill_window, :kill_pane] do
+    command = kind |> Atom.to_string() |> String.replace("_", "-")
+    new_command!(command, ["-t", target_string(target, options[:session])])
   end
 
   defp build(kind, target, name, options) when kind in [:new_session, :new_window] do

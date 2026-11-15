@@ -62,11 +62,13 @@ defmodule LibTmux.Server do
   `with_owned/2` does both around a function, so a program needs no shell step
   to start or clean up tmux. The process that starts the server owns it, and the
   server stops when that process exits. `stop/2` refuses a Server that
-  `start/1` did not create.
+  `start/1` did not create; `kill/2` sends `kill-server` to any Server.
 
   - Start and stop around a function: `with_owned/2`
   - Start: `start/1`
   - Stop: `stop/2`
+  - Kill any server: `kill/2`
+  - Raise on failure: `kill!/2`
 
   **Finding one thing.** Capture a snapshot, then require one match or allow no
   match. Both reject multiple matches. Turn the chosen observation into a
@@ -414,6 +416,28 @@ defmodule LibTmux.Server do
         raise error
     end
   end
+
+  @doc """
+  Kills the server with `kill-server`, whoever started it.
+
+  Returns `{:ok, result}` when tmux acknowledges the command and
+  `{:error, error}` otherwise, for example when no server answers. The
+  command ends every session and pane on the server. It does not remove the
+  directory of a server from `start/1`; use `stop/2` for that. The only
+  option is `timeout` (5000 ms by default). See `LibTmux.Action` for outcomes.
+
+      alias LibTmux.Server
+
+      Server.kill(server)
+  """
+  @spec kill(t(), [LibTmux.Action.option()]) ::
+          {:ok, LibTmux.Action.result(:ok)} | {:error, LibTmux.Action.error()}
+  def kill(server, options \\ []),
+    do: LibTmux.Action.run(:kill_server, server, nil, nil, options)
+
+  @doc "Returns `:ok` when `kill/2` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
+  @spec kill!(t(), [LibTmux.Action.option()]) :: :ok
+  def kill!(server, options \\ []), do: server |> kill(options) |> LibTmux.Action.unwrap()
 
   @doc """
   Creates a named detached session on an existing server through one-shot execution.

@@ -42,6 +42,13 @@ defmodule LibTmux.Session do
 
   - Rename: `rename/4`
   - Raise on failure: `rename!/4`
+
+  **Killing.** Kill the session and the windows and panes only it holds,
+  through a Server. A Control connection returns `unsupported_transport`.
+  Killing the last session ends a server that exits when empty.
+
+  - Kill: `kill/3`
+  - Raise on failure: `kill!/3`
   """
   @enforce_keys [:id, :server_instance]
   defstruct [
@@ -180,6 +187,31 @@ defmodule LibTmux.Session do
         ]) :: :ok
   def rename!(connection, ref, name, options \\ []),
     do: connection |> rename(ref, name, options) |> LibTmux.Action.unwrap()
+
+  @doc """
+  Kills an exact session through one-shot execution.
+
+  Returns `{:ok, result}` on command completion. The only option is `timeout`, 5000ms by default. The reference is
+  checked against the answering server before dispatch, with the usual one-shot
+  check/use race. A reference to something that is already gone returns
+  `{:error, %LibTmux.Action.CompletionError{}}` with the original evidence.
+  Control connections return `unsupported_transport` before any I/O: a
+  connection cannot kill what it is attached to. Observations you already hold
+  keep describing the session.
+
+      alias LibTmux.Session
+
+      Session.kill(server, session_ref)
+  """
+  @spec kill(LibTmux.Server.t(), LibTmux.Ref.t(), [LibTmux.Action.option()]) ::
+          {:ok, LibTmux.Action.result(:ok)} | {:error, LibTmux.Action.error()}
+  def kill(connection, ref, options \\ []),
+    do: LibTmux.Action.run(:kill_session, connection, ref, nil, options)
+
+  @doc "Returns `:ok` when `kill/3` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
+  @spec kill!(LibTmux.Server.t(), LibTmux.Ref.t(), [LibTmux.Action.option()]) :: :ok
+  def kill!(connection, ref, options \\ []),
+    do: connection |> kill(ref, options) |> LibTmux.Action.unwrap()
 end
 
 defmodule LibTmux.Window do
@@ -216,6 +248,12 @@ defmodule LibTmux.Window do
 
   - Rename: `rename/4`
   - Raise on failure: `rename!/4`
+
+  **Killing.** Kill the window, with its panes, in every session that links it,
+  through a Server. A Control connection returns `unsupported_transport`.
+
+  - Kill: `kill/3`
+  - Raise on failure: `kill!/3`
   """
   @enforce_keys [:id, :server_instance]
   defstruct [
@@ -293,6 +331,31 @@ defmodule LibTmux.Window do
           :ok
   def rename!(connection, ref, name, options \\ []),
     do: connection |> rename(ref, name, options) |> LibTmux.Action.unwrap()
+
+  @doc """
+  Kills an exact window through one-shot execution.
+
+  Returns `{:ok, result}` on command completion. Optional `session: session_ref` requires membership in that exact session and `timeout` defaults to 5000ms. Killing a window removes it from every session that links it. The reference is
+  checked against the answering server before dispatch, with the usual one-shot
+  check/use race. A reference to something that is already gone returns
+  `{:error, %LibTmux.Action.CompletionError{}}` with the original evidence.
+  Control connections return `unsupported_transport` before any I/O: a
+  connection cannot kill what it is attached to. Observations you already hold
+  keep describing the window.
+
+      alias LibTmux.Window
+
+      Window.kill(server, window_ref)
+  """
+  @spec kill(LibTmux.Server.t(), LibTmux.Ref.t(), [LibTmux.Action.option()]) ::
+          {:ok, LibTmux.Action.result(:ok)} | {:error, LibTmux.Action.error()}
+  def kill(connection, ref, options \\ []),
+    do: LibTmux.Action.run(:kill_window, connection, ref, nil, options)
+
+  @doc "Returns `:ok` when `kill/3` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
+  @spec kill!(LibTmux.Server.t(), LibTmux.Ref.t(), [LibTmux.Action.option()]) :: :ok
+  def kill!(connection, ref, options \\ []),
+    do: connection |> kill(ref, options) |> LibTmux.Action.unwrap()
 end
 
 defmodule LibTmux.WindowLink do
@@ -359,6 +422,12 @@ defmodule LibTmux.Pane do
 
   - Capture: `capture/3`
   - Raise on failure: `capture!/3`
+
+  **Killing.** Kill the pane through a Server. A Control connection returns
+  `unsupported_transport`. Killing the last pane of a window removes the window.
+
+  - Kill: `kill/3`
+  - Raise on failure: `kill!/3`
   """
   @enforce_keys [:id, :server_instance]
   defstruct [
@@ -559,6 +628,31 @@ defmodule LibTmux.Pane do
           binary()
   def capture!(connection, ref, options \\ []),
     do: connection |> capture(ref, options) |> LibTmux.Action.unwrap()
+
+  @doc """
+  Kills an exact pane through one-shot execution.
+
+  Returns `{:ok, result}` on command completion. Optional `session: session_ref` requires the pane's window to belong to that exact session and `timeout` defaults to 5000ms. The reference is
+  checked against the answering server before dispatch, with the usual one-shot
+  check/use race. A reference to something that is already gone returns
+  `{:error, %LibTmux.Action.CompletionError{}}` with the original evidence.
+  Control connections return `unsupported_transport` before any I/O: a
+  connection cannot kill what it is attached to. Observations you already hold
+  keep describing the pane.
+
+      alias LibTmux.Pane
+
+      Pane.kill(server, pane_ref)
+  """
+  @spec kill(LibTmux.Server.t(), LibTmux.Ref.t(), [LibTmux.Action.option()]) ::
+          {:ok, LibTmux.Action.result(:ok)} | {:error, LibTmux.Action.error()}
+  def kill(connection, ref, options \\ []),
+    do: LibTmux.Action.run(:kill_pane, connection, ref, nil, options)
+
+  @doc "Returns `:ok` when `kill/3` completes; raises API errors or `LibTmux.Action.CompletionError` otherwise."
+  @spec kill!(LibTmux.Server.t(), LibTmux.Ref.t(), [LibTmux.Action.option()]) :: :ok
+  def kill!(connection, ref, options \\ []),
+    do: connection |> kill(ref, options) |> LibTmux.Action.unwrap()
 end
 
 defmodule LibTmux.Client do
