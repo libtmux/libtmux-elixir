@@ -102,7 +102,7 @@ defmodule LibTmux.MixProject do
     ]
 
     scripts =
-      ~w(check_docs_links check_example_docs check_release check_runtime wait_for_hexdocs)
+      ~w(check_docs_links check_example_docs check_release check_runtime ci_plan wait_for_hexdocs)
 
     extras =
       Enum.map(extras, fn source ->

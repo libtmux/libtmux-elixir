@@ -39,7 +39,7 @@ CI reads both ranges from `.tool-versions` and passes them to `setup-beam`
 in loose mode, which selects the Elixir build for the installed OTP major.
 The action's direct `version-file` mode requires exact versions.
 
-The native Linux matrix reads exact tmux source revisions and the reference
+The native Linux matrix reads the tmux releases and the reference
 Elixir/OTP pair from `priv/tmux/support.json`. It also tests the resolved
 `.tool-versions` pair with the newest listed tmux release. Every cell checks
 the actual OTP patch, Elixir version and compiled OTP major before testing.
@@ -72,8 +72,11 @@ version rather than inferred from a newer local binary.
 
 ## Running CI against any tmux
 
-A `plan` job runs `scripts/ci_plan.py` on `priv/tmux/support.json` and decides
-the native cells, so the workflow lists no version. The first and last
+A `plan` job runs [`scripts/ci_plan`](../scripts/ci_plan/README.md) on
+`priv/tmux/support.json` and decides the native cells, so the workflow lists no
+version. The shared
+[`build-tmux` action](https://github.com/libtmux/.github/tree/main/actions/build-tmux)
+builds each cell's tmux. The first and last
 `required_linux` entries are the edges. The release workflow runs the full
 scope before it publishes anything.
 
@@ -88,10 +91,10 @@ $ gh workflow run scaffold.yml \
     -f tmux-ref=3.6b,master
 ```
 
-A release the manifest lists is built at its pinned commit and must report
-that version. Any other ref is resolved to a commit by `scripts/tmux_ref.py`
-and built from that commit, whatever version it reports. Each ref runs on the
-reference Elixir/OTP pair.
+The action builds a release the manifest lists from its checksummed archive and
+requires it to report that version. It resolves any other ref to a commit and
+builds that, whatever version it reports. Each ref runs on the reference
+Elixir/OTP pair.
 
 Name other Elixir or OTP versions with `elixir` and `otp`; they replace the
 reference and tracking pairs, multiply with the refs, and run
@@ -208,11 +211,12 @@ $ time mix run scripts/generate_schema.exs --check
 Regenerate it with `mix run scripts/generate_schema.exs` before the check.
 
 The default suite excludes the `integration` tag. Linux integration fixtures
-require Python 3.9+ with pidfd support and an explicit tmux executable or tmux
-on PATH. Python is a development fixture tool, not a core runtime dependency.
-The helper owns a foreground tmux server, observes socket readiness through
-inotify and verifies server/pane exit through process handles. It uses no
-fixed readiness sleeps and never starts the default server.
+need an explicit tmux executable or tmux on PATH. The fixture starts its server
+with `LibTmux.Server.start/1`, in a private directory, and stops it with
+`LibTmux.Server.stop/2`. It never starts the default server. The BEAM cannot
+hold a pidfd, so a test names a process by its start time and waits for that
+exact process with a short bounded poll
+(`LibTmux.Test.Processes`); it adds no fixed readiness sleep.
 
 Run the real fixture checks in the outer loop with the exact tmux binary
 being qualified:

@@ -21,8 +21,8 @@ The development selectors remain `elixir 1.20` and `erlang 29`. Resolve the
 selected Elixir build for OTP 29 and record its compiled/runtime identity.
 The selectors do not expand the tested support range to OTP 29.0.
 
-[The support manifest](../priv/tmux/support.json) records exact reference
-cells and tmux source revisions. Required Linux cells are tmux 3.3, 3.3a,
+[The support manifest](../priv/tmux/support.json) records the reference
+cells and the tmux releases to build. Required Linux cells are tmux 3.3, 3.3a,
 3.4 and 3.8 on Elixir 1.20.4/OTP 29.1.2, plus the resolved development
 pair. A push and a pull request run the oldest and newest, 3.3 and 3.8, and
 a release runs them all. Add versions when an introduced feature or regression needs its own

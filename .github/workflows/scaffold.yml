@@ -100,8 +100,12 @@ jobs:
         run: time elixir scripts/check_example_docs/tests/check_example_docs_test.exs
       - name: Check publication readiness handling
         run: time elixir scripts/wait_for_hexdocs/tests/wait_for_hexdocs_test.exs
-      - name: Check the CI plan and workflows
-        run: time python3 -m unittest discover -s test -p 'ci_*_test.py'
+      - name: Test the CI plan
+        run: time elixir scripts/ci_plan/tests/ci_plan_test.exs
+      - name: Check that the workflows follow the plan
+        run: time elixir scripts/ci_plan/tests/ci_workflow_test.exs
+      - name: Check that the documents agree with the support manifest
+        run: time elixir scripts/ci_plan/tests/ci_docs_test.exs
       - name: Test the release check
         run: time elixir scripts/check_release/tests/check_release_test.exs
       - name: Test the runtime check
@@ -149,6 +153,24 @@ jobs:
           sparse-checkout: |
             scripts
             priv
+            .tool-versions
+      - name: Read toolchain ranges
+        id: toolchain
+        shell: bash
+        run: |
+          otp_version=$(awk '$1 == "erlang" {print $2}' .tool-versions)
+          elixir_version=$(awk '$1 == "elixir" {print $2}' .tool-versions)
+          : "${otp_version:?Missing Erlang version in .tool-versions}"
+          : "${elixir_version:?Missing Elixir version in .tool-versions}"
+          printf 'otp-version=%s\nelixir-version=%s\n' \
+            "$otp_version" "$elixir_version" >> "$GITHUB_OUTPUT"
+      - uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
+        with:
+          otp-version: ${{ steps.toolchain.outputs.otp-version }}
+          elixir-version: ${{ steps.toolchain.outputs.elixir-version }}
+          version-type: loose
+          install-hex: false
+          install-rebar: false
       - name: Plan the run
         id: plan
         env:
@@ -160,7 +182,7 @@ jobs:
           IMAGE: ${{ inputs.os }}
           TMATE: ${{ inputs.tmate }}
         run: |
-          python3 scripts/ci_plan.py plan \
+          elixir scripts/ci_plan/ci_plan.exs plan \
             --event "$EVENT" \
             --scope "$SCOPE" \
             --tmux-ref "$TMUX_REF" \
@@ -184,10 +206,6 @@ jobs:
     env:
       MIX_ENV: test
       ERL_FLAGS: +S 2:2
-      TMUX_VERSION: ${{ matrix.tmux }}
-      TMUX_SOURCE: ${{ matrix.source }}
-      TMUX_REF: ${{ matrix.ref }}
-      TMUX_BUILD: ${{ matrix.build }}
       TOOLCHAIN_PROFILE: ${{ matrix.toolchain }}
       MATRIX_ELIXIR: ${{ matrix.elixir }}
       MATRIX_OTP: ${{ matrix.otp }}
@@ -222,42 +240,15 @@ jobs:
           install-rebar: false
       - name: Verify runtime and compiled OTP identity
         run: time elixir scripts/check_runtime/check_runtime.exs "$TOOLCHAIN_PROFILE"
-      - name: Install tmux build prerequisites
-        run: |
-          ./scripts/apt-get.sh update
-          ./scripts/apt-get.sh install --yes --no-install-recommends \
-            autoconf automake bison build-essential libevent-dev libncurses-dev pkg-config
-      - name: Build tmux source
-        shell: bash
-        run: |
-          source_commit="$TMUX_SOURCE"
-          if [[ "$TMUX_BUILD" == ref ]]; then
-            source_commit=$(python3 scripts/tmux_ref.py "$TMUX_REF")
-          fi
-          : "${source_commit:?Missing tmux source commit}"
-          build="$RUNNER_TEMP/tmux-$source_commit"
-          mkdir -p "$build/source"
-          curl --fail --location \
-            --output "$build/source.tar.gz" \
-            "https://codeload.github.com/tmux/tmux/tar.gz/$source_commit"
-          sha256sum "$build/source.tar.gz"
-          tar --extract --gzip --file "$build/source.tar.gz" \
-            --strip-components=1 --directory "$build/source"
-          (
-            cd "$build/source"
-            sh autogen.sh
-            ./configure --prefix="$build/install"
-            make -j2
-            make install
-          )
-          tmux_binary="$build/install/bin/tmux"
-          if [[ "$TMUX_BUILD" == ref ]]; then
-            "$tmux_binary" -V
-          else
-            test "$("$tmux_binary" -V)" = "tmux $TMUX_VERSION"
-          fi
-          sha256sum "$tmux_binary"
-          printf 'LIBTMUX_TMUX=%s\n' "$tmux_binary" >> "$GITHUB_ENV"
+      - name: Build tmux
+        id: tmux
+        uses: libtmux/.github/actions/build-tmux@30f81842b1e639ea4e25f93f1f2543504178e228
+        with:
+          ref: ${{ matrix.ref }}
+      - name: Name the tmux binary
+        env:
+          TMUX_BINARY: ${{ steps.tmux.outputs.binary }}
+        run: echo "LIBTMUX_TMUX=$TMUX_BINARY" >> "$GITHUB_ENV"
       - name: Open a tmate session before the tests
         if: ${{ github.event_name == 'workflow_dispatch' && matrix.tmate == 'before-tests' }}
         uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24
