@@ -4,6 +4,32 @@ Notable changes to `libtmux`.
 
 ## Unreleased
 
+### Added
+
+- Start a private tmux server with `LibTmux.Server.start/1` and stop it with
+  `LibTmux.Server.stop/2`. The server runs in a mode-700 directory below
+  `:root`, with a private `TMUX_TMPDIR`, no inherited `TMUX` or `TMUX_PANE`
+  and an empty configuration by default. `start/1` returns once the socket
+  answers. The process that starts it owns it: the server stops when that
+  process exits, even if the VM is killed. `stop/2` removes the directory and
+  keeps it when the server still answers. It refuses a Server that `new/1`
+  built. (#82)
+- Run a function against a private server with `LibTmux.Server.with_owned/2`,
+  which starts the server, calls the function and stops the server afterward.
+  A failing stop never replaces an exception the function raised. Examples
+  and tests no longer need `System.cmd`, a shell preamble or a Python
+  launcher to start tmux. (#85)
+- Kill what a program created with `LibTmux.Server.kill/2`,
+  `LibTmux.Session.kill/3`, `LibTmux.Window.kill/3` and
+  `LibTmux.Pane.kill/3`, each with a bang variant. They run one-shot; a
+  Control connection returns `unsupported_transport` before any I/O. (#76)
+
+### Changed
+
+- **Behavior change:** `t:LibTmux.Server.t/0` has a `:daemon` field, `nil`
+  unless `LibTmux.Server.start/1` created the Server. Code that matches a
+  Server with every field must name it. (#82)
+
 ## libtmux 0.1.1 (2026-11-01)
 
 ### Added
