@@ -334,10 +334,11 @@ defmodule LibTmux.Server do
   default), and stays up with no session. `start/1` returns when the socket
   answers, or when `:timeout` (5000 ms by default) ends.
 
-  The process that calls `start/1` owns the server. When it exits, the helper
-  retires the daemon and its directory is removed, even if the owner or the VM
-  is killed. Other processes may use the returned Server. Stop it with `stop/2`
-  as soon as the work is done, or use `with_owned/2`.
+  The process that calls `start/1` owns the server. When it exits, the daemon
+  stops and its directory is removed. If the VM is killed, the native helper
+  still retires the daemon, but the directory stays. Other processes may use
+  the returned Server. Stop it with `stop/2` as soon as the work is done, or
+  use `with_owned/2`.
 
   Returns `{:error, error}` for an invalid option, a socket path that would
   exceed the 107 usable bytes of `sun_path`, a daemon that cannot start or
