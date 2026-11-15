@@ -19,7 +19,7 @@ defmodule CiPlanTest do
   defp cells(result), do: result["matrix"]["include"]
   defp pairs(result), do: for(c <- cells(result), do: {c["tmux"], c["toolchain"]})
 
-  defp refused(message, event, inputs) do
+  defp refused(message, event, inputs \\ []) do
     error = assert_raise CiPlan.PlanError, fn -> run(event, inputs) end
     assert error.message =~ message
   end
