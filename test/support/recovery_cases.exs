@@ -1,9 +1,14 @@
-[example, executable, socket, session] = System.argv()
-System.argv([executable, socket, session])
+# Runs the example, which starts and stops a server of its own, then runs the
+# fault cases against a second private server. `tmux` must resolve on PATH.
+[example] = System.argv()
+System.argv([])
+{:ok, _} = Application.ensure_all_started(:libtmux)
 Code.require_file(example)
 
-unless Code.ensure_loaded?(LibTmux.Test.OwnedTmux),
-  do: Code.require_file("owned_tmux.ex", __DIR__)
+unless Code.ensure_loaded?(LibTmux.Test.OwnedTmux) do
+  Code.require_file("processes.ex", __DIR__)
+  Code.require_file("owned_tmux.ex", __DIR__)
+end
 
 defmodule LibTmux.Test.RecoveryCases do
   import ExUnit.Assertions
@@ -11,8 +16,7 @@ defmodule LibTmux.Test.RecoveryCases do
   alias LibTmux.Control.{Births, ExecutionError, Request, ScopeFailure}
   alias LibTmux.Test.OwnedTmux
 
-  def run(executable, socket, session) do
-    server = Server.new(executable: executable, socket: socket)
+  def run(server, session) do
     options = [server: server, session: {:existing, session}, lane: :host_qualified, timeout: 800]
 
     assert {:ok, :checked} =
@@ -148,6 +152,12 @@ defmodule LibTmux.Test.RecoveryCases do
                flunk("failed startup entered callback")
              end)
 
+    # The normal path the example takes, on this server: the write lands.
+    assert {:ok, {:ok, %{outcome: :completed}}} =
+             scoped(options, fn control ->
+               inspect_execute(control, Request.set_user_option("@recovery_example", "recorded"))
+             end)
+
     assert {:ok, %{stdout: "recorded\n", exit_status: 0}} =
              Server.run(server, Command.new("show-options", ["-sv", "@recovery_example"]))
 
@@ -272,4 +282,11 @@ defmodule LibTmux.Test.RecoveryCases do
 end
 
 Logger.configure(level: :emergency)
-LibTmux.Test.RecoveryCases.run(executable, socket, session)
+executable = System.find_executable("tmux") || raise "tmux is not on PATH"
+
+LibTmux.Server.with_owned([executable: executable], fn server ->
+  {:ok, %{value: %{id: session}}} =
+    LibTmux.Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
+
+  LibTmux.Test.RecoveryCases.run(server, session)
+end)

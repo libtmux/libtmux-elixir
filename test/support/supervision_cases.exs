@@ -1,9 +1,14 @@
-[example, executable, socket, session] = System.argv()
-System.argv([executable, socket, session])
+# Runs the example, which starts and stops a server of its own, then runs the
+# fault cases against a second private server. `tmux` must resolve on PATH.
+[example] = System.argv()
+System.argv([])
+{:ok, _} = Application.ensure_all_started(:libtmux)
 Code.require_file(example)
 
-unless Code.ensure_loaded?(LibTmux.Test.OwnedTmux),
-  do: Code.require_file("owned_tmux.ex", __DIR__)
+unless Code.ensure_loaded?(LibTmux.Test.OwnedTmux) do
+  Code.require_file("processes.ex", __DIR__)
+  Code.require_file("owned_tmux.ex", __DIR__)
+end
 
 defmodule LibTmux.Test.SupervisionCases do
   import ExUnit.Assertions
@@ -11,9 +16,8 @@ defmodule LibTmux.Test.SupervisionCases do
   alias LibTmux.Control.Request
   alias LibTmux.Test.OwnedTmux
 
-  def run(executable, socket, session) do
+  def run(server, session) do
     Logger.configure(level: :critical)
-    server = Server.new(executable: executable, socket: socket)
     {:ok, application} = Supervisor.start_link([], strategy: :one_for_one)
     monitor = Process.monitor(application)
 
@@ -141,4 +145,11 @@ defmodule LibTmux.Test.SupervisionCases do
   end
 end
 
-LibTmux.Test.SupervisionCases.run(executable, socket, session)
+executable = System.find_executable("tmux") || raise "tmux is not on PATH"
+
+LibTmux.Server.with_owned([executable: executable], fn server ->
+  {:ok, %{value: %{id: session}}} =
+    LibTmux.Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
+
+  LibTmux.Test.SupervisionCases.run(server, session)
+end)

@@ -1,51 +1,49 @@
-# Capture and filter an existing server
+# Capture and filter a server
 
 Capture once, then query the immutable result with no more tmux commands.
 Install the published package as shown in the
 [README](../README.md#installation), then save this program as
-`capture_and_filter.exs`:
+`capture_and_filter.exs`. It starts a private server with
+[`Server.with_owned/2`](owned-server.md), so it runs as it is:
 
 <!-- example: examples/capture_and_filter.exs -->
 
 ```elixir
 alias LibTmux.{Selection, Server, Snapshot}
 
-[executable, socket | _] = System.argv()
-{:ok, _} = Application.ensure_all_started(:libtmux)
+tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
 
-server =
-  Server.new(
-    executable: executable,
-    socket: socket,
-    env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
-  )
+Server.with_owned([executable: tmux], fn server ->
+  {:ok, _} = Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
 
-{:ok, snapshot} = Server.snapshot(server)
+  {:ok, snapshot} = Server.snapshot(server)
 
-active_ids =
-  snapshot
-  |> Snapshot.panes()
-  |> Selection.where(active: true)
-  |> Enum.map(& &1.id)
+  active_ids =
+    snapshot
+    |> Snapshot.panes()
+    |> Selection.where(active: true)
+    |> Enum.map(& &1.id)
 
-IO.puts(JSON.encode!(%{active_panes: active_ids}))
+  IO.puts(JSON.encode!(%{active_panes: active_ids}))
+end)
 ```
 
 <!-- /example -->
 
-Set `LIBTMUX_TMUX` to the absolute path of tmux and `LIBTMUX_SOCKET_PATH` to
-the absolute socket path of the server you want to observe. Run:
+Run it with tmux 3.3 or newer on `PATH`:
 
 ```console
-$ mix run capture_and_filter.exs "$LIBTMUX_TMUX" "$LIBTMUX_SOCKET_PATH"
+$ mix run capture_and_filter.exs
 ```
 
 It prints the IDs of the active panes, in numeric order, as JSON.
 
-- The program passes `socket:` itself, so it never reads those variables.
-- With neither `socket:` nor `socket_name:`, `LibTmux.Server.new/1` reads
-  `LIBTMUX_SOCKET_PATH`, then `LIBTMUX_SOCKET` (a socket name). With neither
-  set, it passes tmux no socket, and tmux uses its default socket.
+- To capture a server that already runs, build the descriptor with
+  `Server.new/1` in place of `Server.with_owned/2`, passing `socket:` or
+  `socket_name:`.
+- With neither, `Server.new/1` reads `LIBTMUX_SOCKET_PATH`, then
+  `LIBTMUX_SOCKET` (a socket name). With neither set, it passes tmux no socket,
+  and tmux uses its default socket.
 - A pane is active within its physical window. This does not choose one
   session's active window. Linked windows do not duplicate their panes.
 - `Server.new/1` builds a descriptor with no I/O. `Server.snapshot/2` runs
@@ -60,6 +58,5 @@ It prints the IDs of the active panes, in numeric order, as JSON.
   rows, 64 KiB per response and 8 MiB in total. A limit failure returns an
   error, not a partial graph.
 
-For an isolated demonstration, use the [owned-server runner](owned-server.md).
 Next: [filter and select](filtering.md), [one-shot actions](one-shot-actions.md)
 or [managed control](managed-control.md).

@@ -68,8 +68,11 @@ guarantee; incomplete cleanup retains uncertainty and ownership.
 Use `-N` for borrowed tmux servers, and choose their socket on purpose: a
 descriptor with no socket reaches the server `TMUX` names, or tmux's default
 one outside tmux. Retiring a client
-must not stop a borrowed server. Intentional server creation and server-owned
-jobs need their own ownership boundaries.
+must not stop a borrowed server. `LibTmux.Server.start/1` is the separate
+lifecycle for a server the program creates: it holds a foreground `tmux -D`
+under the helper's persistent mode, so the helper retires the server when its
+owner or the VM dies. Server-owned jobs still need their own ownership
+boundaries.
 
 ## Building and distribution
 

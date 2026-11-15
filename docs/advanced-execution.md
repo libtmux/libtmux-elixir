@@ -4,12 +4,11 @@ This example exposes retained operations and manual connection teardown. For
 routine work, start with [capture and filter](first-task.md), then choose
 [one-shot actions](one-shot-actions.md) or [managed control](managed-control.md).
 
-Run it on a private server with the [owned-server runner](owned-server.md):
+It starts a private server with [`Server.with_owned/2`](owned-server.md). From
+a checkout, with tmux on `PATH`:
 
 ```console
-$ python3 examples/owned_server.py \
-    --run "$(command -v tmux)" \
-    mix run examples/capture_and_read.exs
+$ mix run examples/capture_and_read.exs
 ```
 
 To run the whole packed-example check against an isolated tmux server, from a
@@ -20,7 +19,7 @@ $ MIX_ENV=test mix run scripts/check_package.exs --examples
 ```
 
 - It needs the toolchain from [Contributing](../.github/CONTRIBUTING.md#setup),
-  plus Python 3 and tmux 3.3 or newer on `PATH`.
+  plus tmux 3.3 or newer on `PATH`.
 - Set `LIBTMUX_TMUX` to an absolute executable to check a particular tmux
   build.
 - Hex must already be installed; the check downloads nothing.
@@ -43,90 +42,86 @@ library calls use the public core.
 alias LibTmux.{Codec, Command, Control, Format, Operation, Ref, Selection, Server, Snapshot}
 alias LibTmux.Control.Request
 
-[executable, socket, session_id] = System.argv()
-{:ok, _} = Application.ensure_all_started(:libtmux)
+tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
 
-server =
-  Server.new(
-    executable: executable,
-    socket: socket,
-    cwd: "/",
-    env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
-  )
+Server.with_owned([executable: tmux], fn server ->
+  {:ok, %{value: %{id: session_id}}} =
+    Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
 
-{:ok, snapshot} = Server.snapshot(server)
-session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
-window = Snapshot.related(snapshot, :session, session.id, :active_window)
+  {:ok, snapshot} = Server.snapshot(server)
+  session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
+  window = Snapshot.related(snapshot, :session, session.id, :active_window)
 
-pane =
-  snapshot
-  |> Snapshot.panes()
-  |> Selection.where(window_id: window.id)
-  |> Selection.filter(& &1.active)
-  |> Selection.one!()
+  pane =
+    snapshot
+    |> Snapshot.panes()
+    |> Selection.where(window_id: window.id)
+    |> Selection.filter(& &1.active)
+    |> Selection.one!()
 
-{:ok, target} = Ref.new(:pane, pane.id, snapshot.server_instance)
-command = Command.new("display-message", ["-p", "-t", pane.id, Format.field("pane_id")])
-{:ok, %{stdout: stdout, cleanup: :retired}} = Server.run(server, command)
-{:ok, one_shot_id} = Codec.decode_field(stdout, :string, encoding: :escaped_v1)
-true = one_shot_id == pane.id
+  {:ok, target} = Ref.new(:pane, pane.id, snapshot.server_instance)
+  command = Command.new("display-message", ["-p", "-t", pane.id, Format.field("pane_id")])
+  {:ok, %{stdout: stdout, cleanup: :retired}} = Server.run(server, command)
+  {:ok, one_shot_id} = Codec.decode_field(stdout, :string, encoding: :escaped_v1)
+  true = one_shot_id == pane.id
 
-{:ok, root, control} =
-  Control.start_link(
-    server: server,
-    session: {:existing, session.id},
-    lane: :host_qualified,
-    timeout: 800
-  )
+  {:ok, root, control} =
+    Control.start_link(
+      server: server,
+      session: {:existing, session.id},
+      lane: :host_qualified,
+      timeout: 800
+    )
 
-root_monitor = Process.monitor(root)
+  root_monitor = Process.monitor(root)
 
-control_id =
-  try do
-    {:ok, operation} = Control.submit(control, Request.field("pane_id", target), timeout: 800)
-
-    {:ok,
-     %{
-       outcome: :completed,
-       certainty: :acknowledged,
-       evidence: :command_reply,
-       lines: [line]
-     }} = Operation.await(operation, timeout: 800)
-
-    {:ok, %{phase: :ready}} = Control.status(control)
-    {:ok, %{result: %{outcome: :completed}}} = Operation.status(operation)
-
-    {:ok, id} = Codec.decode_field(line <> "\n", :string, encoding: :escaped_v1)
-    true = id == pane.id
-    :ok = Control.close(control, timeout: 800)
-    {:ok, %{phase: :retired, terminal: %{reason: :closure_requested}}} = Control.status(control)
-    {:ok, %{outcome: :completed}} = Operation.result(operation)
-    :ok = Operation.forget(operation, timeout: 800)
-    id
-  after
+  control_id =
     try do
-      :ok = Control.close(control, timeout: 800)
-    after
-      :ok = Supervisor.stop(root, :normal, 800)
+      {:ok, operation} = Control.submit(control, Request.field("pane_id", target), timeout: 800)
 
-      receive do
-        {:DOWN, ^root_monitor, :process, ^root, :normal} -> :ok
+      {:ok,
+       %{
+         outcome: :completed,
+         certainty: :acknowledged,
+         evidence: :command_reply,
+         lines: [line]
+       }} = Operation.await(operation, timeout: 800)
+
+      {:ok, %{phase: :ready}} = Control.status(control)
+      {:ok, %{result: %{outcome: :completed}}} = Operation.status(operation)
+
+      {:ok, id} = Codec.decode_field(line <> "\n", :string, encoding: :escaped_v1)
+      true = id == pane.id
+      :ok = Control.close(control, timeout: 800)
+      {:ok, %{phase: :retired, terminal: %{reason: :closure_requested}}} = Control.status(control)
+      {:ok, %{outcome: :completed}} = Operation.result(operation)
+      :ok = Operation.forget(operation, timeout: 800)
+      id
+    after
+      try do
+        :ok = Control.close(control, timeout: 800)
       after
-        800 -> raise "connection supervisor did not exit"
+        :ok = Supervisor.stop(root, :normal, 800)
+
+        receive do
+          {:DOWN, ^root_monitor, :process, ^root, :normal} -> :ok
+        after
+          800 -> raise "connection supervisor did not exit"
+        end
       end
     end
-  end
 
-IO.puts(
-  JSON.encode!(%{
-    "session" => session.id,
-    "window" => window.id,
-    "pane" => pane.id,
-    "oneShot" => one_shot_id,
-    "control" => control_id,
-    "connectionRetired" => true
-  })
-)
+  IO.puts(
+    JSON.encode!(%{
+      "session" => session.id,
+      "window" => window.id,
+      "pane" => pane.id,
+      "oneShot" => one_shot_id,
+      "control" => control_id,
+      "connectionRetired" => true
+    })
+  )
+end)
 ```
 
 <!-- /example -->
@@ -135,8 +130,8 @@ IO.puts(
   must identify the selected pane.
 - `connectionRetired` is true only after the connection closes and its
   supervisor exits.
-- The harness checks that the borrowed server and pane survived, then tears
-  down its own fixture.
+- `Server.with_owned/2` stops the private server after the callback; the
+  packed check then confirms that no directory, socket or process remains.
 - After closure, `LibTmux.Control.status/1` keeps the observed close reason and
   bounded captured stderr until epoch replacement or context loss. Inspect
   that report before reconnecting or shutting its owner down.

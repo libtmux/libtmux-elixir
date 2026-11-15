@@ -74,4 +74,6 @@ child can remain owned beyond that allowance; the helper reports incomplete
 cleanup and retains ownership until it can reap. Helper SIGKILL, hostile
 indefinite forks and host compromise have no unconditional cleanup promise.
 Server-owned tmux jobs are outside a borrowed client's ancestry. Tmux
-clients need `-N`; intentional server creation needs a separate lifecycle.
+clients need `-N`. `LibTmux.Server.start/1` is the separate lifecycle for a
+server the program creates: it runs a foreground `tmux -D` as the persistent
+owned child.

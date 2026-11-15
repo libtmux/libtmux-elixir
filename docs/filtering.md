@@ -1,30 +1,16 @@
 # Filter captured values
 
-Capture one [snapshot](observations.md), then select from it. Run the
-examples on a private server with the [owned-server runner](owned-server.md):
+Capture one [snapshot](observations.md), then select from it. The examples run
+on a private server from [`Server.with_owned/2`](owned-server.md). From a
+checkout, with tmux on `PATH`:
 
 ```console
-$ python3 examples/owned_server.py \
-    --run "$(command -v tmux)" \
-    mix run examples/filtering.exs
+$ mix run examples/filtering.exs
 ```
 
 <!-- example: examples/filtering.exs#where -->
 
 ```elixir
-alias LibTmux.{Selection, Server, Snapshot}
-
-[executable, socket, session_id] = System.argv()
-
-server =
-  Server.new(
-    executable: executable,
-    socket: socket,
-    env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
-  )
-
-snapshot = Server.snapshot!(server)
-
 active =
   snapshot
   |> Snapshot.panes()
@@ -69,8 +55,6 @@ Enum.map(active, & &1.id)
 <!-- example: examples/filtering.exs#relation -->
 
 ```elixir
-alias LibTmux.{Selection, Snapshot}
-
 with_cat =
   Selection.where(Snapshot.sessions(snapshot), %{
     panes: %{some: %{active: true, current_command: "cat"}}

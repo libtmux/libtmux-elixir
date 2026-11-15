@@ -1,6 +1,7 @@
 defmodule LibTmux.RecoveryExampleIntegrationTest do
   use ExUnit.Case, async: true
-  alias LibTmux.Test.OwnedTmux
+
+  alias LibTmux.Test.TmuxPath
   alias LibTmux.Transport.OneShot
 
   @moduletag :integration
@@ -8,9 +9,9 @@ defmodule LibTmux.RecoveryExampleIntegrationTest do
                "Runs the recovery example through real admission, owner loss and cleanup faults"
 
   test "the application retains execution and cleanup evidence in its original caller" do
-    fixture = start_supervised!({OwnedTmux, []})
-    %{socket: socket} = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    tmp = TmuxPath.private_directory(System.tmp_dir!(), "ltx-recovery")
+    on_exit(fn -> File.rm_rf!(tmp) end)
+    env = TmuxPath.environment(TmuxPath.executable(), Path.join(tmp, "bin"), tmp)
     ebin = :code.which(LibTmux.Control) |> List.to_string() |> Path.dirname()
 
     assert {:ok, %{stdout: stdout, stderr: "", exit_status: 0, cleanup: :retired}} =
@@ -20,13 +21,10 @@ defmodule LibTmux.RecoveryExampleIntegrationTest do
                  "-pa",
                  ebin,
                  Path.join(__DIR__, "support/recovery_cases.exs"),
-                 Path.expand("../examples/recover_command.exs", __DIR__),
-                 executable,
-                 socket,
-                 "$0"
+                 Path.expand("../examples/recover_command.exs", __DIR__)
                ],
-               timeout: 5000,
-               env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
+               timeout: 10_000,
+               env: env
              )
 
     [normal, faults] = stdout |> String.split("\n", trim: true) |> Enum.map(&JSON.decode!/1)
@@ -38,9 +36,7 @@ defmodule LibTmux.RecoveryExampleIntegrationTest do
              "native_exited" => true
            }
 
-    assert OwnedTmux.alive?(fixture)
-
-    assert {:ok, %{server_exit: 0, pane_exited: true, clients_exited: true}} =
-             OwnedTmux.close(fixture)
+    # The example and the fault cases each owned a server, and both are gone.
+    assert File.ls!(tmp) == ["bin"]
   end
 end

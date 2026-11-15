@@ -3,13 +3,11 @@
 Keep the execution error and inspect its operation before leaving the scope.
 The example keeps execution and cleanup evidence for the caller's next
 decision. Its scope closes the connection when the callback finishes, which
-can affect outstanding work. Run it on a private server with the
-[owned-server runner](owned-server.md):
+can affect outstanding work. It runs on a private server from
+[`Server.with_owned/2`](owned-server.md). From a checkout, with tmux on `PATH`:
 
 ```console
-$ python3 examples/owned_server.py \
-    --run "$(command -v tmux)" \
-    mix run examples/recover_command.exs
+$ mix run examples/recover_command.exs
 ```
 
 <!-- example: examples/recover_command.exs -->
@@ -50,42 +48,39 @@ end
 alias LibTmux.{Control, Server}
 alias LibTmux.Control.Request
 
-[executable, socket, session_id] = System.argv()
-{:ok, _} = Application.ensure_all_started(:libtmux)
+tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
 
-server =
-  Server.new(
-    executable: executable,
-    socket: socket,
-    env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
-  )
+Server.with_owned([executable: tmux], fn server ->
+  {:ok, %{value: %{id: session_id}}} =
+    Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
 
-result =
-  CommandRecovery.run(
-    [server: server, session: {:existing, session_id}, lane: :host_qualified],
-    fn control ->
-      control
-      |> Control.execute(Request.set_user_option("@recovery_example", "recorded"))
-      |> CommandRecovery.inspect_execution()
-    end
-  )
+  result =
+    CommandRecovery.run(
+      [server: server, session: {:existing, session_id}, lane: :host_qualified],
+      fn control ->
+        control
+        |> Control.execute(Request.set_user_option("@recovery_example", "recorded"))
+        |> CommandRecovery.inspect_execution()
+      end
+    )
 
-case result do
-  {:ok, {:ok, _command_result}} ->
-    IO.puts(JSON.encode!(%{recovery_example: "completed", connection_retired: true}))
+  case result do
+    {:ok, {:ok, _command_result}} ->
+      IO.puts(JSON.encode!(%{recovery_example: "completed", connection_retired: true}))
 
-  {:ok, {:error, evidence}} ->
-    IO.inspect(:stderr, evidence, label: "command needs attention; connection retired")
-    System.halt(1)
+    {:ok, {:error, evidence}} ->
+      IO.inspect(:stderr, evidence, label: "command needs attention; connection retired")
+      System.halt(1)
 
-  {:error, {:cleanup, failure}} ->
-    IO.inspect(:stderr, failure, label: "primary outcome and unproved cleanup")
-    System.halt(1)
+    {:error, {:cleanup, failure}} ->
+      IO.inspect(:stderr, failure, label: "primary outcome and unproved cleanup")
+      System.halt(1)
 
-  {:error, {:startup, error}} ->
-    IO.inspect(:stderr, error, label: "connection startup failed")
-    System.halt(1)
-end
+    {:error, {:startup, error}} ->
+      IO.inspect(:stderr, error, label: "connection startup failed")
+      System.halt(1)
+  end
+end)
 ```
 
 <!-- /example -->

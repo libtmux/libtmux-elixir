@@ -58,59 +58,65 @@ end
 
 # docs:end owner
 
-[executable, socket, session_id] = System.argv()
-{:ok, _} = Application.ensure_all_started(:libtmux)
-server = LibTmux.Server.new(executable: executable, socket: socket)
-{:ok, application} = Supervisor.start_link([], strategy: :one_for_one)
-monitor = Process.monitor(application)
+alias LibTmux.Server
 
-try do
-  # docs:begin application
-  alias LibTmux.Control.Request
+tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
 
-  {:ok, connections} =
-    Supervisor.start_child(application, %{
-      id: :connections,
-      start: {Supervisor, :start_link, [[], [strategy: :one_for_one]]},
-      type: :supervisor
-    })
+Server.with_owned([executable: tmux], fn server ->
+  {:ok, %{value: %{id: session_id}}} =
+    Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
 
-  options = [
-    server: server,
-    session: {:existing, session_id},
-    lane: :host_qualified,
-    timeout: 900
-  ]
+  {:ok, application} = Supervisor.start_link([], strategy: :one_for_one)
+  monitor = Process.monitor(application)
 
-  {:ok, owner} =
-    Supervisor.start_child(application, {ApplicationConnection, {connections, options}})
+  try do
+    # docs:begin application
+    alias LibTmux.Control.Request
 
-  {:ok, %{outcome: :completed}} =
-    ApplicationConnection.execute(owner, Request.set_user_option("@supervised_example", "once"))
+    {:ok, connections} =
+      Supervisor.start_child(application, %{
+        id: :connections,
+        start: {Supervisor, :start_link, [[], [strategy: :one_for_one]]},
+        type: :supervisor
+      })
 
-  # docs:end application
+    options = [
+      server: server,
+      session: {:existing, session_id},
+      lane: :host_qualified,
+      timeout: 900
+    ]
 
-  # docs:begin recovery
-  alias LibTmux.Control
-  alias LibTmux.Control.Request
+    {:ok, owner} =
+      Supervisor.start_child(application, {ApplicationConnection, {connections, options}})
 
-  {:ok, original} = ApplicationConnection.connection(owner)
-  :ok = Control.close(original, timeout: 900)
-  {:ok, inert} = ApplicationConnection.replace(owner)
-  {:ok, %{phase: :retired}} = Control.status(inert)
-  {:ok, ready} = ApplicationConnection.reconnect(owner)
+    {:ok, %{outcome: :completed}} =
+      ApplicationConnection.execute(owner, Request.set_user_option("@supervised_example", "once"))
 
-  {:ok, %{outcome: :completed}} = ApplicationConnection.execute(owner, Request.field("pid"))
-  :ok = Control.close(ready, timeout: 900)
-  # docs:end recovery
+    # docs:end application
 
-  IO.puts(JSON.encode!(%{supervised_control: "completed", explicit_reconnect: true}))
-after
-  :ok = Supervisor.stop(application, :normal, 950)
+    # docs:begin recovery
+    alias LibTmux.Control
+    alias LibTmux.Control.Request
 
-  receive do
-    {:DOWN, ^monitor, :process, ^application, :normal} -> :ok
+    {:ok, original} = ApplicationConnection.connection(owner)
+    :ok = Control.close(original, timeout: 900)
+    {:ok, inert} = ApplicationConnection.replace(owner)
+    {:ok, %{phase: :retired}} = Control.status(inert)
+    {:ok, ready} = ApplicationConnection.reconnect(owner)
+
+    {:ok, %{outcome: :completed}} = ApplicationConnection.execute(owner, Request.field("pid"))
+    :ok = Control.close(ready, timeout: 900)
+    # docs:end recovery
+
+    IO.puts(JSON.encode!(%{supervised_control: "completed", explicit_reconnect: true}))
   after
-    900 -> raise "application supervisor did not exit"
+    :ok = Supervisor.stop(application, :normal, 950)
+
+    receive do
+      {:DOWN, ^monitor, :process, ^application, :normal} -> :ok
+    after
+      900 -> raise "application supervisor did not exit"
+    end
   end
-end
+end)

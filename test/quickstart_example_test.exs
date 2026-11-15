@@ -4,10 +4,10 @@ defmodule LibTmux.QuickstartExampleTest do
   @example Path.expand("../examples/quickstart.exs", __DIR__)
   @columns 80
 
-  test "requires any 0.1.N release" do
+  test "requires the first release that has Server.with_owned" do
     [install | _] = @example |> File.read!() |> String.split("\n")
 
-    assert install == ~s|Mix.install([{:libtmux, "~> 0.1"}])|
+    assert install == ~s|Mix.install([{:libtmux, "~> 0.1.2"}])|
   end
 
   test "fits the 80-column display of published examples" do

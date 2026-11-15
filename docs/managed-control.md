@@ -1,13 +1,11 @@
 # Run repeated work with managed control
 
 `Control.with_connection/2` owns connection and supervisor teardown around a
-callback. Run the example on a private server with the
-[owned-server runner](owned-server.md):
+callback. The example starts a private server with
+[`Server.with_owned/2`](owned-server.md). From a checkout, with tmux on `PATH`:
 
 ```console
-$ python3 examples/owned_server.py \
-    --run "$(command -v tmux)" \
-    mix run examples/managed_control.exs
+$ mix run examples/managed_control.exs
 ```
 
 ## Before you start
@@ -18,8 +16,8 @@ $ python3 examples/owned_server.py \
   hooks, aliases, input-mode bindings and other writers.
 - `lane: :host_qualified` declares that you did. It does not inspect or repair
   configuration.
-- The owned runner qualifies it: a private server, an empty config and no
-  other clients.
+- A server from `Server.start/1` qualifies it: a private server, an empty
+  config and no other clients.
 
 <!-- example: examples/managed_control.exs -->
 
@@ -27,48 +25,47 @@ $ python3 examples/owned_server.py \
 alias LibTmux.{Control, Pane, Ref, Selection, Server, Session, Snapshot, Window}
 alias LibTmux.Control.Request
 
-[executable, socket, session_id] = System.argv()
-{:ok, _} = Application.ensure_all_started(:libtmux)
+tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
 
-server =
-  Server.new(
-    executable: executable,
-    socket: socket,
-    env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
-  )
+Server.with_owned([executable: tmux], fn server ->
+  {:ok, %{value: %{id: session_id}}} =
+    Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
 
-{:ok, snapshot} = Server.snapshot(server)
-session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
-window = Session.active_window(snapshot, session)
-pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
-{:ok, session_ref} = Ref.from_observation(session)
-{:ok, window_ref} = Ref.from_observation(window)
-{:ok, pane_ref} = Ref.from_observation(pane)
+  {:ok, snapshot} = Server.snapshot(server)
+  session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
+  window = Session.active_window(snapshot, session)
+  pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
+  {:ok, session_ref} = Ref.from_observation(session)
+  {:ok, window_ref} = Ref.from_observation(window)
+  {:ok, pane_ref} = Ref.from_observation(pane)
 
-{:ok, created_id} =
-  Control.with_connection(
-    [server: server, session: {:existing, session.id}, lane: :host_qualified],
-    fn control ->
-      :ok = Session.rename!(control, session_ref, "work")
-      :ok = Window.rename!(control, window_ref, "editor")
+  {:ok, created_id} =
+    Control.with_connection(
+      [server: server, session: {:existing, session.id}, lane: :host_qualified],
+      fn control ->
+        :ok = Session.rename!(control, session_ref, "work")
+        :ok = Window.rename!(control, window_ref, "editor")
 
-      %{id: id, ref: created} =
-        Pane.split!(control, pane_ref, command: {:argv, ["/bin/cat"]})
+        %{id: id, ref: created} =
+          Pane.split!(control, pane_ref, command: {:argv, ["/bin/cat"]})
 
-      false = snapshot |> Snapshot.panes() |> Selection.member_id?(id)
-      :ok = Pane.send_text!(control, created, "hello")
-      :ok = Pane.send_keys!(control, created, ["Enter"])
+        false = snapshot |> Snapshot.panes() |> Selection.member_id?(id)
+        :ok = Pane.send_text!(control, created, "hello")
+        :ok = Pane.send_keys!(control, created, ["Enter"])
 
-      for _ <- 1..128 do
-        %{outcome: :completed, certainty: :acknowledged, lines: ["v1:" <> ^id]} =
-          Control.execute!(control, Request.field("pane_id", created))
+        for _ <- 1..128 do
+          %{outcome: :completed, certainty: :acknowledged, lines: ["v1:" <> ^id]} =
+            Control.execute!(control, Request.field("pane_id", created))
+        end
+
+        id
       end
+    )
 
-      id
-    end
+  IO.puts(
+    JSON.encode!(%{created_pane: created_id, repeated_reads: 128, connection_retired: true})
   )
-
-IO.puts(JSON.encode!(%{created_pane: created_id, repeated_reads: 128, connection_retired: true}))
+end)
 ```
 
 <!-- /example -->
@@ -84,8 +81,8 @@ IO.puts(JSON.encode!(%{created_pane: created_id, repeated_reads: 128, connection
   larger capacity.
 - `connection_retired: true` prints only after the scope confirms native
   retirement and supervisor exit.
-- The runner owns the server and panes. It checks that they survived before
-  its own teardown.
+- `Server.with_owned/2` owns the server and its panes, and stops them after
+  the callback returns.
 
 ## Choose the transport explicitly
 

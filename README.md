@@ -33,6 +33,8 @@ type through domain actions.
 
 **Contents** — [Installation](#installation) ·
 [Try the examples](#try-the-examples) ·
+[Start a server](#start-a-private-server) ·
+[Choose a server](#choose-the-server) ·
 [Find things](#find-sessions-windows-and-panes) ·
 [Rename](#rename-a-window) ·
 [Control](#split-a-pane-send-input-and-read-the-screen) ·
@@ -66,39 +68,138 @@ The exact floors and tested releases are in
 
 ## Try the examples
 
-The snippets below form one [executable program](examples/readme.exs). From
-this checkout, run it on a private tmux server:
+The snippets below form one [executable program](examples/readme.exs). It
+starts a private tmux server and stops it afterward. From this checkout, with
+tmux on `PATH`:
 
 ```console
-$ python3 examples/owned_server.py \
-    --run "$(command -v tmux)" \
-    mix run examples/readme.exs
+$ mix run examples/readme.exs
 ```
 
-- The [runner](docs/owned-server.md) starts the server, passes in the
-  executable, socket and session ID, and stops the server afterward.
-- Your own tmux sessions are untouched. The runner needs Python 3.9+.
-- Starting and stopping the server is the host's job; the library never starts
-  one.
+- Your own tmux sessions are untouched: the server has its own directory and
+  never sees `TMUX`.
+- Every example under `examples/` does the same, with no shell step.
 
 No checkout? The [standalone demo](docs/standalone-demo.md) installs the
-package from Hex. To read an existing server, use the
-[capture-only program](docs/first-task.md).
+package from Hex.
 
-`LibTmux.Server.new/1` picks the socket in this order:
+## Start a private server
 
-- `:socket` (a path) or `:socket_name`
-- `LIBTMUX_SOCKET_PATH`, then `LIBTMUX_SOCKET`
-- neither: tmux's choice, which is the server `TMUX` names inside tmux and
-  the default socket outside it
+### [`Server.with_owned/2`][with-owned]: a server for one function
 
-A Server with a chosen socket removes `TMUX`.
+It starts a tmux server in a private directory, calls your function with the
+[`Server`][server-type], and stops the server afterward, even when the function
+raises. [`Server.new_session!/3`][new-session] and
+[`Session.new_window!/4`][new-window] create what you work on, and
+[`Window.kill!/3`][kill-window] removes it.
+
+<!-- example: examples/private_server.exs -->
+
+```elixir
+alias LibTmux.{Ref, Selection, Server, Session, Snapshot, Window}
+
+tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
+
+Server.with_owned([executable: tmux], fn server ->
+  cat = [command: {:argv, ["/bin/cat"]}]
+  %{id: session_id} = Server.new_session!(server, "work", cat)
+
+  snapshot = Server.snapshot!(server)
+  session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
+  {:ok, session_ref} = Ref.from_observation(session)
+
+  %{id: logs_id} = Session.new_window!(server, session_ref, "logs", cat)
+
+  snapshot = Server.snapshot!(server)
+  logs = snapshot |> Snapshot.windows() |> Selection.one!(id: logs_id)
+  {:ok, logs_ref} = Ref.from_observation(logs)
+  windows = snapshot |> Snapshot.windows() |> Selection.size()
+
+  :ok = Window.kill!(server, logs_ref)
+
+  remaining = Server.snapshot!(server) |> Snapshot.windows() |> Enum.map(& &1.id)
+
+  IO.puts(
+    JSON.encode!(%{
+      session: session_id,
+      created_window: logs_id,
+      windows_before_kill: windows,
+      remaining_windows: remaining
+    })
+  )
+end)
+```
+
+<!-- /example -->
+
+It prints:
+
+```text
+{"session":"$0","created_window":"@1","windows_before_kill":2,"remaining_windows":["@0"]}
+```
+
+- [`Server.start/1`][start] and [`Server.stop/2`][stop] are the same call in
+  two parts. The process that starts a server owns it, and the server stops
+  when that process exits.
+- `kill` also exists for [`Session`][kill-session], [`Pane`][kill-pane] and
+  [`Server`][kill-server]. A control connection refuses it.
+
+More: [Own a private server](docs/owned-server.md).
+
+## Choose the server
+
+### [`Server.new/1`][server-type]: describe a server that already runs
+
+It builds a descriptor with no I/O. Pass `:socket` for a path or
+`:socket_name` for a name; with neither, it reads `LIBTMUX_SOCKET_PATH`, then
+`LIBTMUX_SOCKET`, and otherwise leaves the choice to tmux.
+
+<!-- example: examples/choose_server.exs -->
+
+```elixir
+alias LibTmux.Server
+
+tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
+
+by_path = Server.new(executable: tmux, socket: "/run/user/1000/work.sock")
+by_name = Server.new(executable: tmux, socket_name: "work")
+from_variable = Server.new(executable: tmux, env: %{"LIBTMUX_SOCKET" => "work"})
+from_path_variable = Server.new(executable: tmux, env: %{"LIBTMUX_SOCKET_PATH" => "/tmp/w.sock"})
+default = Server.new(executable: tmux, env: %{})
+
+%Server{socket: "/run/user/1000/work.sock", socket_name: nil} = by_path
+%Server{socket: nil, socket_name: "work"} = by_name
+%Server{socket: nil, socket_name: "work"} = from_variable
+%Server{socket: "/tmp/w.sock", socket_name: nil} = from_path_variable
+%Server{socket: nil, socket_name: nil} = default
+
+IO.puts(
+  JSON.encode!(%{
+    by_path: by_path.socket,
+    by_name: by_name.socket_name,
+    from_variable: from_variable.socket_name,
+    from_path_variable: from_path_variable.socket,
+    default: "tmux chooses"
+  })
+)
+```
+
+<!-- /example -->
+
+- With neither option nor variable, tmux uses the server `TMUX` names inside
+  tmux and its default socket outside it.
+- A Server with a chosen socket removes `TMUX` from the environment it gives
+  tmux.
+
+More: [Capture an existing server](docs/first-task.md).
 
 ## Find sessions, windows and panes
 
 ### [`Server.snapshot!/2`][snapshot]: what tmux has now
 
-One call captures every session, window and pane as an immutable graph.
+The snippets from here on run inside the function that
+[`Server.with_owned/2`](#start-a-private-server) calls, so `server` is its
+private server. One call captures every session, window and pane as an immutable graph.
 [`Snapshot.sessions/1`][snapshot-sessions],
 [`Snapshot.windows/1`][snapshot-windows] and
 [`Snapshot.panes/1`][snapshot-panes] pick a type, and
@@ -107,16 +208,7 @@ One call captures every session, window and pane as an immutable graph.
 <!-- example: examples/readme.exs#capture -->
 
 ```elixir
-alias LibTmux.{Selection, Server, Snapshot}
-
-[executable, socket, session_id] = System.argv()
-
-server =
-  Server.new(
-    executable: executable,
-    socket: socket,
-    env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
-  )
+alias LibTmux.{Selection, Snapshot}
 
 snapshot = Server.snapshot!(server)
 
@@ -253,8 +345,8 @@ The program prints:
 - `Pane.capture!/3` runs one command through the `server`; a control
   connection refuses it.
 - `lane: :host_qualified` says you control this server's hooks and aliases.
-  The demo runner does. Read the managed-control guide before using another
-  host.
+  A server from `Server.start/1` does. Read the managed-control guide before
+  using another host.
 
 More: [Managed control](docs/managed-control.md).
 
@@ -288,8 +380,6 @@ More: [Recovery](docs/recovery.md), [Mental model](docs/mental-model.md).
 
 ## What it leaves out
 
-- **Server lifecycle.** It never starts a server and has no stop call; send
-  `kill-server` through [`Server.run/3`][run].
 - **A query planner.** Selections run locally over a snapshot; `Query`,
   `Batch` and `Plan` are planned.
 - **Change notifications.** `Observation` and `Tracker` are planned.
@@ -310,12 +400,20 @@ Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
 [libtmux ports](https://github.com/libtmux), and [tmux](https://github.com/tmux/tmux).
 [Artwork](docs/branding.md). Licensed under the [MIT License](LICENSE).
 
+[with-owned]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-with_owned-2/
+[start]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-start-1/
+[stop]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-stop-2/
+[kill-server]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-kill-2/
+[kill-session]: https://libtmux.org/en/elixir/latest/reference/libtmux-session-kill-3/
+[kill-window]: https://libtmux.org/en/elixir/latest/reference/libtmux-window-kill-bang-3/
+[kill-pane]: https://libtmux.org/en/elixir/latest/reference/libtmux-pane-kill-3/
+[new-session]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-new_session-bang-3/
+[new-window]: https://libtmux.org/en/elixir/latest/reference/libtmux-session-new_window-bang-4/
 [snapshot]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-snapshot-bang-2/
 [snapshot-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot/
 [snapshot-sessions]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-sessions-1/
 [snapshot-windows]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-windows-1/
 [snapshot-panes]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-panes-1/
-[run]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-run-3/
 [server-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-server/
 [where]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-where-2/
 [filter]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-filter-2/

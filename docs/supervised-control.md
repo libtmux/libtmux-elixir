@@ -7,14 +7,12 @@
 - For a short task, prefer
   [`Control.with_connection/2`](LibTmux.Control.html#with_connection/2).
 
-The program is `examples/supervised_control.exs`. Run it on a private server
-with the [owned-server runner](owned-server.md). The displayed parts omit
-argument setup, application shutdown and the fixture's process-exit checks:
+The program is `examples/supervised_control.exs`. It runs on a private server
+from [`Server.with_owned/2`](owned-server.md). The displayed parts omit server
+setup and application shutdown. From a checkout, with tmux on `PATH`:
 
 ```console
-$ python3 examples/owned_server.py \
-    --run "$(command -v tmux)" \
-    mix run examples/supervised_control.exs
+$ mix run examples/supervised_control.exs
 ```
 
 ## Store the handle

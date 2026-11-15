@@ -1,99 +1,97 @@
-{:ok, _} = Application.ensure_all_started(:libtmux)
+alias LibTmux.Server
 
-# docs:begin capture
-alias LibTmux.{Selection, Server, Snapshot}
+tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
 
-[executable, socket, session_id] = System.argv()
+Server.with_owned([executable: tmux], fn server ->
+  {:ok, %{value: %{id: session_id}}} =
+    Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
 
-server =
-  Server.new(
-    executable: executable,
-    socket: socket,
-    env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
+  # docs:begin capture
+  alias LibTmux.{Selection, Snapshot}
+
+  snapshot = Server.snapshot!(server)
+
+  active_ids =
+    snapshot
+    |> Snapshot.panes()
+    |> Selection.where(active: true)
+    |> Enum.map(& &1.id)
+
+  # docs:end capture
+
+  # docs:begin filter
+  alias LibTmux.{Filter, Pane, Selection, Snapshot}
+
+  windows =
+    snapshot
+    |> Snapshot.windows()
+    |> Selection.where(panes: [some: [active: true, current_command: "cat"]])
+    |> Enum.map(& &1.id)
+
+  json = """
+  {"version":1,"entity":"pane",
+   "where":{"active":true,"currentCommand":{"in":["cat","nvim"]}}}
+  """
+
+  {:ok, filter} = Filter.from_json(Pane, json)
+
+  pane_ids =
+    snapshot
+    |> Snapshot.panes()
+    |> Selection.where(filter)
+    |> Enum.map(& &1.id)
+
+  # docs:end filter
+
+  ["@0"] = windows
+  ["%0"] = pane_ids
+
+  # docs:begin rename
+  alias LibTmux.{Ref, Selection, Session, Snapshot, Window}
+
+  session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
+  window = Session.active_window(snapshot, session)
+  {:ok, session_ref} = Ref.from_observation(session)
+  {:ok, window_ref} = Ref.from_observation(window)
+
+  Window.rename!(server, window_ref, "editor", session: session_ref)
+  # docs:end rename
+
+  # docs:begin control
+  alias LibTmux.{Control, Pane, Ref, Selection, Snapshot}
+
+  pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
+  {:ok, pane_ref} = Ref.from_observation(pane)
+
+  {:ok, {created_id, created}} =
+    Control.with_connection(
+      [server: server, session: {:existing, session.id}, lane: :host_qualified],
+      fn control ->
+        %{id: id, ref: created} =
+          Pane.split!(control, pane_ref, axis: :horizontal, command: {:argv, ["/bin/cat"]})
+
+        Pane.send_text!(control, created, "hello")
+        Pane.send_keys!(control, created, ["Enter"])
+        {id, created}
+      end
+    )
+
+  screen = Pane.capture!(server, created, max_bytes: 4096)
+  # docs:end control
+
+  true = is_binary(screen)
+
+  fresh = Server.snapshot!(server)
+  {:ok, %{name: "editor"}} = Snapshot.fetch(fresh, :window, window.id)
+  {:ok, _created} = Snapshot.fetch(fresh, :pane, created_id)
+  false = Snapshot.panes(snapshot) |> Selection.member_id?(created_id)
+
+  IO.puts(
+    JSON.encode!(%{
+      active_panes: active_ids,
+      window: "editor",
+      created_pane: created_id,
+      connection_retired: true
+    })
   )
-
-snapshot = Server.snapshot!(server)
-
-active_ids =
-  snapshot
-  |> Snapshot.panes()
-  |> Selection.where(active: true)
-  |> Enum.map(& &1.id)
-
-# docs:end capture
-
-# docs:begin filter
-alias LibTmux.{Filter, Pane, Selection, Snapshot}
-
-windows =
-  snapshot
-  |> Snapshot.windows()
-  |> Selection.where(panes: [some: [active: true, current_command: "cat"]])
-  |> Enum.map(& &1.id)
-
-json = """
-{"version":1,"entity":"pane",
- "where":{"active":true,"currentCommand":{"in":["cat","nvim"]}}}
-"""
-
-{:ok, filter} = Filter.from_json(Pane, json)
-
-pane_ids =
-  snapshot
-  |> Snapshot.panes()
-  |> Selection.where(filter)
-  |> Enum.map(& &1.id)
-
-# docs:end filter
-
-["@0"] = windows
-["%0"] = pane_ids
-
-# docs:begin rename
-alias LibTmux.{Ref, Selection, Session, Snapshot, Window}
-
-session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
-window = Session.active_window(snapshot, session)
-{:ok, session_ref} = Ref.from_observation(session)
-{:ok, window_ref} = Ref.from_observation(window)
-
-Window.rename!(server, window_ref, "editor", session: session_ref)
-# docs:end rename
-
-# docs:begin control
-alias LibTmux.{Control, Pane, Ref, Selection, Snapshot}
-
-pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
-{:ok, pane_ref} = Ref.from_observation(pane)
-
-{:ok, {created_id, created}} =
-  Control.with_connection(
-    [server: server, session: {:existing, session.id}, lane: :host_qualified],
-    fn control ->
-      %{id: id, ref: created} =
-        Pane.split!(control, pane_ref, axis: :horizontal, command: {:argv, ["/bin/cat"]})
-
-      Pane.send_text!(control, created, "hello")
-      Pane.send_keys!(control, created, ["Enter"])
-      {id, created}
-    end
-  )
-
-screen = Pane.capture!(server, created, max_bytes: 4096)
-# docs:end control
-
-true = is_binary(screen)
-
-fresh = Server.snapshot!(server)
-{:ok, %{name: "editor"}} = Snapshot.fetch(fresh, :window, window.id)
-{:ok, _created} = Snapshot.fetch(fresh, :pane, created_id)
-false = Snapshot.panes(snapshot) |> Selection.member_id?(created_id)
-
-IO.puts(
-  JSON.encode!(%{
-    active_panes: active_ids,
-    window: "editor",
-    created_pane: created_id,
-    connection_retired: true
-  })
-)
+end)
