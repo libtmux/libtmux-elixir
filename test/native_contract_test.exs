@@ -206,7 +206,9 @@ defmodule LibTmux.NativeContractTest do
   test "a reader that closes its end retires the child and ends the helper with status 0", c do
     marker = "1000.#{System.unique_integer([:positive])}"
     status = Path.join(c.directory, "closed-reader-status")
-    script = ~S({ "$0"; echo $? >"$1"; } | true)
+    # The reader takes one byte, which is the start of the helper's first frame,
+    # and exits. Closing it earlier would end the helper before it starts a child.
+    script = ~S({ "$0"; echo $? >"$1"; } | head -c 1 >/dev/null)
     port = shell_port(script, [Native.executable(), status])
     send_open(port, sh("exec sleep " <> marker))
 
