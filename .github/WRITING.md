@@ -65,7 +65,7 @@ The README is for scanning. A reader should find the call to use at a glance.
   standalone quickstart starts its server with tmux and stops it with
   `Server.run/3`. Say so where a step has no library call.
 - Every displayed example comes from a file CI runs.
-  `scripts/check_example_docs.py` keeps each displayed copy equal to its
+  `scripts/check_example_docs/check_example_docs.exs` keeps each displayed copy equal to its
   source, and the packed example check runs the source.
 - The README shows the features the port has: queries and filters, and
   control connections. Show a query planner, command chaining and

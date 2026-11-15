@@ -49,12 +49,12 @@ jobs:
           install-hex: true
           install-rebar: false
       - name: Verify runtime and compiled OTP identity
-        run: time elixir scripts/check_runtime.exs tracking
+        run: time elixir scripts/check_runtime/check_runtime.exs tracking
       - name: Validate release metadata
         id: release
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: elixir scripts/check_release.exs "$RELEASE_TAG"
+        run: elixir scripts/check_release/check_release.exs "$RELEASE_TAG"
       - name: Install development documentation tools
         run: mix deps.get
       - name: Build the release archive without publishing
@@ -62,7 +62,7 @@ jobs:
       - name: Render release documentation
         run: mix docs --warnings-as-errors
       - name: Check rendered documentation links
-        run: python3 scripts/check_docs_links.py
+        run: elixir scripts/check_docs_links/check_docs_links.exs
       - name: Publish core and documentation to Hex
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
@@ -75,7 +75,7 @@ jobs:
             "https://hex.pm/api/packages/libtmux/releases/$RELEASE_VERSION" | \
             jq --exit-status --arg version "$RELEASE_VERSION" \
               '.version == $version and .requirements == {}'
-          bash scripts/wait_for_hexdocs.sh \
+          elixir scripts/wait_for_hexdocs/wait_for_hexdocs.exs \
             "https://hexdocs.pm/libtmux/$RELEASE_VERSION/"
       - name: Install and execute the public core outside the checkout
         env:

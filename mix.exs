@@ -32,6 +32,7 @@ defmodule LibTmux.MixProject do
           ".github/CONTRIBUTING.md",
           ".github/WRITING.md",
           ".github/SCRIPTS.md",
+          "scripts/*/README.md",
           "docs",
           "priv/tmux"
         ]
@@ -65,6 +66,7 @@ defmodule LibTmux.MixProject do
         {"../examples/capture_and_read.exs", blob <> "examples/capture_and_read.exs"}
       ],
       "docs/ownership.md" => [{"../c_src/README.md", blob <> "c_src/README.md"}],
+      "docs/first-task.md" => [{"../README.md#installation", "readme.html#installation"}],
       "docs/branding.md" => [
         {"assets/", tree <> "docs/assets/"},
         {"assets/source.json", blob <> "docs/assets/source.json"}
@@ -99,6 +101,9 @@ defmodule LibTmux.MixProject do
       "LICENSE"
     ]
 
+    scripts =
+      ~w(check_docs_links check_example_docs check_release check_runtime wait_for_hexdocs)
+
     extras =
       Enum.map(extras, fn source ->
         case replacements[source] do
@@ -118,6 +123,28 @@ defmodule LibTmux.MixProject do
         end
       end)
 
+    # ExDoc resolves a relative .md link by file name, and the last extra of a
+    # name wins, so a link to README.md would land on a script's page. The one
+    # guide that links the repository README names its page instead.
+    script_links = [{"../../priv/tmux/support.json", blob <> "priv/tmux/support.json"}]
+
+    script_extras =
+      for name <- scripts do
+        source = "scripts/#{name}/README.md"
+
+        text =
+          Enum.reduce(script_links, File.read!(source), fn {from, to}, text ->
+            String.replace(text, "(" <> from <> ")", "(" <> to <> ")")
+          end)
+
+        path = Path.join([Mix.Project.build_path(), "doc_sources", "scripts", "#{name}.md"])
+        File.mkdir_p!(Path.dirname(path))
+        File.write!(path, text)
+        {path, source: source, filename: "script-#{name}", title: "Script: #{name}"}
+      end
+
+    extras = extras ++ script_extras
+
     [
       main: "readme",
       source_ref: source_ref,
@@ -128,7 +155,8 @@ defmodule LibTmux.MixProject do
           ~r/(first-task|standalone-demo|one-shot-actions|managed-control|supervised-control|recovery|owned-server|advanced-execution)/,
         "Concepts and reference": ~r/(mental-model|observations|filtering|schema|api-examples)/,
         "Design and internals": ~r/(ownership|encoding|design|implementation)/,
-        Contributing: ~r/(AGENTS|CONTRIBUTING|WRITING|SCRIPTS|branding|LICENSE)/
+        Contributing:
+          ~r/(AGENTS|CONTRIBUTING|WRITING|SCRIPTS|doc_sources\/scripts\/|branding|LICENSE)/
       ],
       groups_for_modules: [
         "Observe and select": [

@@ -95,7 +95,7 @@ reference Elixir/OTP pair.
 
 Name other Elixir or OTP versions with `elixir` and `otp`; they replace the
 reference and tracking pairs, multiply with the refs, and run
-`scripts/check_runtime.exs custom`, which prints the runtime identity and
+`scripts/check_runtime/check_runtime.exs custom`, which prints the runtime identity and
 asserts nothing. The `os` input picks the Ubuntu image of the native cells.
 
 The `tmate` input opens a [tmate](https://github.com/mxschmitt/action-tmate)
@@ -129,7 +129,7 @@ Check that the active runtime matches the development selectors, minimum
 versions and compiled OTP major:
 
 ```console
-$ time elixir scripts/check_runtime.exs tracking
+$ time elixir scripts/check_runtime/check_runtime.exs tracking
 ```
 
 Use `reference` instead of `tracking` to require the exact reference pair.
@@ -177,7 +177,7 @@ $ time mix docs --warnings-as-errors
 Check rendered local files and HTML fragments without network requests:
 
 ```console
-$ time python3 scripts/check_docs_links.py
+$ time elixir scripts/check_docs_links/check_docs_links.exs
 ```
 
 The link check reports ExDoc's optional host-provided version catalogue
@@ -247,7 +247,7 @@ resource ceilings and remaining distribution gates.
 These gates exercise implemented core behavior and fixture ownership. They
 do not establish compatibility for unexercised operations. Do not add empty source or tests to make a command
 appear useful. Public task programs are shipped in `examples/`. Check their
-displayed copies with `python3 scripts/check_example_docs.py`, then run
+displayed copies with `elixir scripts/check_example_docs/check_example_docs.exs`, then run
 `MIX_ENV=test mix run scripts/check_package.exs --examples` outside inner/mid
 loops. The package check executes the extracted programs outside the checkout
 and verifies native teardown, including a failed caller.
@@ -340,8 +340,9 @@ The installed-consumer check follows a successful documentation read. Core
 CI exercises this policy against an owned local HTTP fixture.
 
 The core keeps a `CHANGELOG.md` that its `files` list ships.
-`scripts/check_release.exs` refuses a release while it is missing, opens with
-another package's name, lacks an `## Unreleased` heading or is not matched by
-`files`, and `test/ci_changelog_test.py` runs it against a broken copy of the
-tree for each case. [WRITING.md](WRITING.md#release-notes) says which file an entry
+`scripts/check_release/check_release.exs` refuses a release while it is
+missing, opens with another package's name, lacks an `## Unreleased` heading
+or is not matched by `files`, and
+`scripts/check_release/tests/check_release_test.exs` runs it against a broken
+copy of the tree for each case. [WRITING.md](WRITING.md#release-notes) says which file an entry
 goes in.

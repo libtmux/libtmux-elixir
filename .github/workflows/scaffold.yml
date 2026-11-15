@@ -63,7 +63,7 @@ jobs:
   scaffold:
     name: Core units and package
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -89,17 +89,23 @@ jobs:
         if: github.ref_type == 'tag'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
-        run: elixir scripts/check_release.exs "$RELEASE_TAG"
+        run: elixir scripts/check_release/check_release.exs "$RELEASE_TAG"
       - name: Install development documentation tools
         run: mix deps.get
       - name: Check formatting
         run: time mix format --check-formatted
       - name: Check executable documentation drift
-        run: time python3 scripts/check_example_docs.py
+        run: time elixir scripts/check_example_docs/check_example_docs.exs
+      - name: Test the documentation drift check
+        run: time elixir scripts/check_example_docs/tests/check_example_docs_test.exs
       - name: Check publication readiness handling
-        run: time python3 test/hexdocs_readiness_test.py
+        run: time elixir scripts/wait_for_hexdocs/tests/wait_for_hexdocs_test.exs
       - name: Check the CI plan and workflows
         run: time python3 -m unittest discover -s test -p 'ci_*_test.py'
+      - name: Test the release check
+        run: time elixir scripts/check_release/tests/check_release_test.exs
+      - name: Test the runtime check
+        run: time elixir scripts/check_runtime/tests/check_runtime_test.exs
       - name: Compile core
         run: time mix compile --warnings-as-errors
       - name: Check generated schema reference
@@ -115,7 +121,9 @@ jobs:
           DOCS_SOURCE_REF: ${{ github.sha }}
         run: time mix docs --warnings-as-errors
       - name: Check rendered documentation links
-        run: time python3 scripts/check_docs_links.py
+        run: time elixir scripts/check_docs_links/check_docs_links.exs
+      - name: Test the documentation link check
+        run: time elixir scripts/check_docs_links/tests/check_docs_links_test.exs
       - name: Build local package
         run: time mix hex.build --output "${RUNNER_TEMP}/libtmux.tar"
       - name: List packaged files
@@ -213,7 +221,7 @@ jobs:
           install-hex: true
           install-rebar: false
       - name: Verify runtime and compiled OTP identity
-        run: time elixir scripts/check_runtime.exs "$TOOLCHAIN_PROFILE"
+        run: time elixir scripts/check_runtime/check_runtime.exs "$TOOLCHAIN_PROFILE"
       - name: Install tmux build prerequisites
         run: |
           ./scripts/apt-get.sh update
