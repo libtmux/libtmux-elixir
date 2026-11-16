@@ -40,6 +40,7 @@ try do
 
   true = File.regular?(Path.join(package, "c_src/owned_io.c"))
   true = File.regular?(Path.join(package, "CHANGELOG.md"))
+  true = File.regular?(Path.join(package, "priv/tmux/capabilities.json"))
   false = File.exists?(Path.join(package, "priv/native"))
 
   if :os.type() == {:unix, :linux} do
@@ -76,6 +77,14 @@ try do
   {:ok, "hello\n"} = LibTmux.Codec.decode_field("hello\n\n", :string)
   {:ok, "hello\n"} = LibTmux.Codec.decode_field("v1:hello\\012\n", :string, encoding: :escaped_v1)
   true = String.starts_with?(LibTmux.Format.field("pane_title"), "v1:")
+  report = %LibTmux.Capabilities{
+    daemon_version: "3.3", server_instance: "packed-observation", source: :one_shot,
+    features: %{}
+  }
+  {:ok, %{scope: :tmux_primitive, since: "3.8"}} = LibTmux.Capabilities.status(report, "event-wait")
+  {:error, %LibTmux.Error{kind: :unsupported_feature, certainty: :no_write}} =
+    LibTmux.Capabilities.require(report, "event-wait")
+  false = LibTmux.Capabilities.supports?(report, "event-wait")
   true = is_binary(LibTmux.Format.literal(~S"#{pid}"))
   {:ok, [{:reply, :ok, {1, 2, 1}, ["hello"]}], parser} =
     LibTmux.Protocol.feed(LibTmux.Protocol.new(), "%begin 1 2 1\nhello\n%end 1 2 1\n")
