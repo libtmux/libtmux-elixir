@@ -14,6 +14,7 @@ defmodule CiWorkflowTest do
   @root Path.expand("../../..", __DIR__)
   @scaffold File.read!(Path.join(@root, ".github/workflows/scaffold.yml"))
   @release File.read!(Path.join(@root, ".github/workflows/release.yml"))
+  @cleanup File.read!(Path.join(@root, ".github/workflows/docs-preview-cleanup.yml"))
   @manifest CiPlan.load()
   @sha ~r/@[0-9a-f]{40}(\s|$)/
   @tmate "mxschmitt/action-tmate"
@@ -102,7 +103,7 @@ defmodule CiWorkflowTest do
 
   # The rules
 
-  defp problems(scaffold, release) do
+  defp problems(scaffold, release, cleanup \\ @cleanup) do
     jobs = jobs(scaffold)
     code = Regex.replace(~r/^ +description: .*\n(?: {10,}.*\n)*/m, scaffold, "")
 
@@ -125,7 +126,7 @@ defmodule CiWorkflowTest do
     else
       tmux_names ++
         own_matrix ++
-        toolchain_problems(scaffold: scaffold, release: release) ++
+        toolchain_problems(scaffold: scaffold, release: release, "docs-preview-cleanup": cleanup) ++
         native_problems(jobs["native"]) ++
         gate_problems(jobs) ++
         concurrency_problems(scaffold) ++
@@ -418,6 +419,8 @@ defmodule CiWorkflowTest do
      "TRACKING_ELIXIR: 'x", "scaffold: TRACKING_ELIXIR must be"},
     {"the release's OTP drifts from the tool versions", :release, "TRACKING_OTP: '",
      "TRACKING_OTP: 'x", "release: TRACKING_OTP must be"},
+    {"the cleanup's Elixir drifts from the tool versions", :cleanup, "TRACKING_ELIXIR: '",
+     "TRACKING_ELIXIR: 'x", "docs-preview-cleanup: TRACKING_ELIXIR must be"},
     {"the native job installs a fixed OTP", :scaffold, "otp-version: ${{ matrix.otp }}",
      "otp-version: '29'", "versions come from the plan"},
     {"the native job installs a fixed Elixir", :scaffold, "elixir-version: ${{ matrix.elixir }}",
@@ -426,13 +429,19 @@ defmodule CiWorkflowTest do
 
   for {description, which, old, new, message} <- @mutations do
     test "a mutation is reported: #{description}" do
-      {scaffold, release} =
+      {scaffold, release, cleanup} =
         case unquote(which) do
-          :scaffold -> {mutate(@scaffold, unquote(Macro.escape(old)), unquote(new)), @release}
-          :release -> {@scaffold, mutate(@release, unquote(Macro.escape(old)), unquote(new))}
+          :scaffold ->
+            {mutate(@scaffold, unquote(Macro.escape(old)), unquote(new)), @release, @cleanup}
+
+          :release ->
+            {@scaffold, mutate(@release, unquote(Macro.escape(old)), unquote(new)), @cleanup}
+
+          :cleanup ->
+            {@scaffold, @release, mutate(@cleanup, unquote(Macro.escape(old)), unquote(new))}
         end
 
-      reported = problems(scaffold, release)
+      reported = problems(scaffold, release, cleanup)
 
       assert Enum.any?(reported, &String.contains?(&1, unquote(message))),
              inspect({unquote(message), reported})

@@ -107,6 +107,8 @@ jobs:
         run: time elixir scripts/check_release/tests/check_release_test.exs
       - name: Test the runtime check
         run: time elixir scripts/check_runtime/tests/check_runtime_test.exs
+      - name: Test the docs preview cleanup
+        run: time elixir scripts/docs_preview_cleanup/tests/docs_preview_cleanup_test.exs
       - name: Compile core
         run: time mix compile --warnings-as-errors
       - name: Check generated schema reference
