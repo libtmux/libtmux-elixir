@@ -5,7 +5,8 @@ defmodule LibTmux.Capabilities do
   Obtain a report with `LibTmux.Server.capabilities/2` or
   `LibTmux.Control.capabilities/2`. Decisions describe native tmux primitives;
   they do not advertise an implemented Elixir Program API. Unknown releases
-  refuse discovery, and unknown feature IDs return an explicit error.
+  refuse discovery. For unknown feature IDs, `status/2` and `require/2` return
+  an explicit error; `supports?/2` returns `false`.
 
   Reports are captured data. Pure checks perform no I/O and grant no mutation
   authority. Editing a report cannot change the registry or another report.
@@ -63,7 +64,7 @@ defmodule LibTmux.Capabilities do
     end
   end
 
-  @doc "Returns whether the observed release supports one named native primitive."
+  @doc "Returns whether the observed release supports a named primitive; unknown IDs return false."
   @spec supports?(t(), String.t()) :: boolean()
   def supports?(%__MODULE__{} = report, id),
     do: match?({:ok, %{supported: true}}, status(report, id))

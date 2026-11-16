@@ -71,7 +71,8 @@ server and panes; `Control.with_connection/2` retires its client.
 
 `Capabilities.status/2` returns a decision; `supports?/2` returns a boolean;
 `require/2` returns the supported decision or an error before dispatch. All
-three are pure. Unknown IDs return `unknown_feature`; an unsupported decision
+three are pure. For unknown IDs, `status/2` and `require/2` return
+`unknown_feature`, and `supports?/2` returns `false`. An unsupported decision
 returns `unsupported_feature` with its required and observed versions.
 
 | Feature ID | Native prerequisite | First release |
