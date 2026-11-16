@@ -36,6 +36,12 @@ discovery can run; [control qualification](https://github.com/libtmux/libtmux-el
 retains that limitation. `Control.capabilities/2` reports only over an already
 established native epoch and does not repair or replace a connection.
 
+Server discovery reserves the native, unaliased `list-commands` bootstrap for
+the whole call, excluding concurrent administrative configuration changes.
+Control discovery inherits its established lane's hook, alias and writer
+qualification. Neither call inspects or repairs those prerequisites. See
+[daemon features](capabilities.md) before using an existing server.
+
 ## Public responsibilities
 
 | Surface | Contract and critical proof |

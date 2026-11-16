@@ -10,6 +10,10 @@ defmodule LibTmux.Capabilities do
   Reports are captured data. Pure checks perform no I/O and grant no mutation
   authority. Editing a report cannot change the registry or another report.
   A later operation still needs its own identity and capability checks.
+
+  Server discovery requires the native, unaliased `list-commands` bootstrap
+  throughout the call, without concurrent administrative changes. Control
+  discovery inherits the connection's host qualification for hooks and aliases.
   """
 
   alias LibTmux.{Codec, Command, Control, Deadline, Error, ProcessIdentity, Server}
@@ -195,45 +199,53 @@ defmodule LibTmux.Capabilities do
   defp probe(server, deadline) do
     nonce = :erlang.unique_integer([:positive, :monotonic]) |> Integer.to_string(16)
     marker = "libtmux-cap-#{System.pid()}-#{nonce}-"
-    command = Command.new("run-shell", ["-C", marker <> ~S"#{pid}_#{version}."])
+
+    command =
+      Command.new("list-commands", [
+        "-F",
+        marker <> ~S"#{pid},#{start_time},#{version}",
+        "list-sessions"
+      ])
 
     case Server.run(server, command,
            deadline: deadline,
-           max_stdout_bytes: 0,
-           max_stderr_bytes: 1024,
-           max_total_bytes: 1024,
+           max_stdout_bytes: 256,
+           max_stderr_bytes: 256,
+           max_total_bytes: 512,
            max_chunks: 16
          ) do
-      {:error,
-       %Error{
-         kind: :command_error,
-         details: %{stdout: "", stderr: stderr, exit_status: 1, cleanup: :retired}
-       } = original} ->
-        case parse_probe(stderr, marker) do
+      {:ok, %{stdout: stdout, stderr: "", exit_status: 0, cleanup: :retired} = result} ->
+        case parse_probe(stdout, marker) do
           {:ok, _} = observed ->
             observed
 
           {:error, error} ->
-            {:error, %{error | details: Map.put(error.details, :command_error, original)}}
+            {:error, %{error | details: Map.put(error.details, :command_result, result)}}
         end
 
       {:error, _} = error ->
         error
 
-      {:ok, _} ->
-        failure(:invalid_capability_reply, :unexpected_success, :observed)
+      {:ok, result} ->
+        {:error,
+         %Error{
+           kind: :invalid_capability_reply,
+           phase: :capabilities,
+           certainty: :observed,
+           details: %{reason: :unexpected_reply, command_result: result}
+         }}
     end
   end
 
-  defp parse_probe(stderr, marker) do
-    prefix = "unknown command: " <> marker
-
-    with true <- String.starts_with?(stderr, prefix),
-         rest <- binary_part(stderr, byte_size(prefix), byte_size(stderr) - byte_size(prefix)),
-         [_, pid, version] <- Regex.run(~r/\A([1-9][0-9]{0,9})_([a-zA-Z0-9.-]{1,32})\.\n\z/, rest),
+  defp parse_probe(stdout, marker) do
+    with true <- String.starts_with?(stdout, marker),
+         rest <- binary_part(stdout, byte_size(marker), byte_size(stdout) - byte_size(marker)),
+         [_, pid, started, version] <-
+           Regex.run(~r/\A([1-9][0-9]{0,9}),([1-9][0-9]{0,18}),([a-zA-Z0-9.-]{1,32})\n\z/, rest),
          pid <- String.to_integer(pid),
-         true <- pid <= 2_147_483_647 do
-      {:ok, %{pid: pid, version: version}}
+         started <- String.to_integer(started),
+         true <- pid <= 2_147_483_647 and started <= 9_223_372_036_854_775_807 do
+      {:ok, %{pid: pid, started: started, version: version}}
     else
       _ -> failure(:invalid_capability_reply, :malformed_reply, :observed)
     end
@@ -267,7 +279,20 @@ defmodule LibTmux.Capabilities do
          true <- actual >= minimum and Map.has_key?(@profiles, version) do
       {:ok, actual}
     else
-      _ -> failure(:unsupported_version, :unknown_or_unsupported_profile, :observed)
+      _ ->
+        observed = if is_binary(version) and byte_size(version) <= 32, do: version, else: :invalid
+
+        {:error,
+         %Error{
+           kind: :unsupported_version,
+           phase: :capabilities,
+           certainty: :observed,
+           details: %{
+             reason: :unknown_or_unsupported_profile,
+             observed: observed,
+             minimum: @minimum
+           }
+         }}
     end
   end
 

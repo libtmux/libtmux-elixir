@@ -557,6 +557,9 @@ defmodule LibTmux.Server do
   not the client executable's version. This descriptor remains unbound: a later
   call can reach a replacement daemon. Reports do not authorize later mutations.
   Unknown release profiles and uncertain or changed evidence return an error.
+  The native `list-commands` bootstrap must remain unaliased throughout the
+  call, without concurrent administrative changes. Discovery does not inspect
+  or repair that prerequisite. An owned private server supplies it by default.
   See `LibTmux.Capabilities` for pure checks and the native-primitive scope.
   """
   @spec capabilities(t(), [LibTmux.Capabilities.option()]) ::

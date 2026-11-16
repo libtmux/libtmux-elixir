@@ -42,7 +42,8 @@ defmodule LibTmux.CapabilitiesTest do
     end
 
     for version <- ~w(3.8a 3.8-rc2 next-3.9 4.0 3.3b) do
-      assert {:error, %Error{kind: :unsupported_version}} =
+      assert {:error,
+              %Error{kind: :unsupported_version, details: %{observed: ^version, minimum: "3.3"}}} =
                apply(@registry, :from_observation, [version, @context])
     end
   end

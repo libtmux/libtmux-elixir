@@ -103,6 +103,45 @@ defmodule LibTmux.CapabilitiesIntegrationTest do
     end
   end
 
+  test "one-shot discovery avoids aliased commands and configured after-hooks" do
+    expected = version()
+
+    Server.with_owned([executable: executable()], fn server ->
+      {:ok, _session} =
+        Server.new_session(server, "capability-hooks", command: {:argv, ["/bin/cat"]})
+
+      for name <- ~w(hook alias) do
+        output!(server, "set-option", ["-s", "@capability-#{name}", "untouched"])
+      end
+
+      hooks =
+        ~w(after-display-message after-show-options) ++
+          if(expected == "3.8", do: ["command-error"], else: [])
+
+      for hook <- hooks do
+        output!(server, "set-hook", ["-g", hook, "set-option -s @capability-hook ran"])
+      end
+
+      for {name, index} <- Enum.with_index(~w(run-shell if-shell display-message), 100) do
+        output!(server, "set-option", [
+          "-s",
+          "command-alias[#{index}]",
+          "#{name}=set-option -s @capability-alias ran ; #{name}"
+        ])
+      end
+
+      result = Server.capabilities(server)
+
+      assert output!(server, "list-commands", [
+               "-F",
+               ~S"#{@capability-hook},#{@capability-alias}",
+               "list-sessions"
+             ]) == "untouched,untouched\n"
+
+      observed(result, expected)
+    end)
+  end
+
   test "control discovery preserves its accepted epoch and refuses after close" do
     expected = version()
 
