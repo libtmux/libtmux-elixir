@@ -2,6 +2,7 @@ defmodule LibTmux.CapabilitiesIntegrationTest do
   use ExUnit.Case, async: true
 
   alias LibTmux.{Capabilities, Command, Control, Error, ProcessIdentity, Server}
+  alias LibTmux.Test.CapabilityClient
 
   @moduletag :integration
   @moduletag reason:
@@ -142,7 +143,8 @@ defmodule LibTmux.CapabilitiesIntegrationTest do
     end)
   end
 
-  test "control discovery preserves its accepted epoch and refuses after close" do
+  @tag :capability_epoch
+  test "control discovery preserves its accepted epoch and refuses after replacement" do
     expected = version()
 
     Server.with_owned([executable: executable()], fn original ->
@@ -164,10 +166,57 @@ defmodule LibTmux.CapabilitiesIntegrationTest do
                    end
 
                    assert :ok = Control.close(control)
-                   assert {:error, %Error{}} = Control.capabilities(control)
+
+                   assert {:error, %Error{kind: :stale_connection}} =
+                            Control.capabilities(control)
+
+                   assert {:ok, replacement} = Control.reconnect(control)
+
+                   assert {:error, %Error{kind: :stale_connection}} =
+                            Control.capabilities(control)
+
+                   if report = observed(Control.capabilities(replacement), expected) do
+                     assert report.server_instance == status.instance
+                     assert report.epoch != status.epoch
+                   end
+
                    :checked
                  end
                )
+    end)
+  end
+
+  @tag :capability_evidence
+  test "counterfeit CLI replies cannot pass malformed or inconsistent evidence" do
+    Server.with_owned([executable: executable()], fn server ->
+      [pid, started] =
+        server
+        |> output!("list-commands", ["-F", ~S"#{pid},#{start_time}", "list-sessions"])
+        |> String.trim()
+        |> String.split(",")
+
+      for {mode, kind} <- [
+            {"valid", nil},
+            {"duplicate", :invalid_capability_reply},
+            {"truncated", :invalid_capability_reply},
+            {"diagnostic", :invalid_capability_reply},
+            {"invalid-pid", :invalid_capability_reply},
+            {"changed", :stale_server},
+            {"unknown", :unsupported_version}
+          ] do
+        path = Path.join(Path.dirname(server.socket), "capability-client-#{mode}")
+        executable = CapabilityClient.build(path, %{pid: pid, started: started, mode: mode})
+        result = Server.capabilities(%{server | executable: executable})
+
+        if kind do
+          assert {:error, %Error{kind: ^kind} = error} = result
+
+          if kind == :invalid_capability_reply,
+            do: assert(error.details.command_result.cleanup == :retired)
+        else
+          assert {:ok, %{daemon_version: "3.8"}} = result
+        end
+      end
     end)
   end
 end

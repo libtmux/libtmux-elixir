@@ -21,6 +21,7 @@ defmodule LibTmux.CapabilitiesTest do
     end
   end
 
+  @tag :capability_release
   test "release patches do not promote a feature across its minor boundary" do
     assert Code.ensure_loaded?(@registry), "the named capability registry is missing"
 
