@@ -61,16 +61,19 @@ jobs:
         env:
           HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
         run: mix hex.publish --yes
-      - name: Verify the public release and documentation
+      - name: Verify the public release
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          curl --fail --silent --show-error \
-            "https://hex.pm/api/packages/libtmux/releases/$RELEASE_VERSION" | \
-            jq --exit-status --arg version "$RELEASE_VERSION" \
-              '.version == $version and .requirements == {}'
-          elixir scripts/wait_for_hexdocs/wait_for_hexdocs.exs \
-            "https://hexdocs.pm/libtmux/$RELEASE_VERSION/"
+        run: >-
+          elixir scripts/check_hex_release/check_hex_release.exs
+          "https://hex.pm/api/packages/libtmux/releases/$RELEASE_VERSION"
+          "$RELEASE_VERSION"
+      - name: Wait for the documentation
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: >-
+          elixir scripts/wait_for_hexdocs/wait_for_hexdocs.exs
+          "https://hexdocs.pm/libtmux/$RELEASE_VERSION/"
       - name: Install and execute the public core outside the checkout
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
