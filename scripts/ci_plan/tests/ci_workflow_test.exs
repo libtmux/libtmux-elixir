@@ -125,6 +125,7 @@ defmodule CiWorkflowTest do
     else
       tmux_names ++
         own_matrix ++
+        toolchain_problems(scaffold: scaffold, release: release) ++
         native_problems(jobs["native"]) ++
         gate_problems(jobs) ++
         concurrency_problems(scaffold) ++
@@ -135,8 +136,26 @@ defmodule CiWorkflowTest do
     end
   end
 
+  # The jobs that install the tracking toolchain cannot read .tool-versions
+  # before Elixir exists, so each workflow spells its selectors and this holds
+  # them to the file.
+  defp toolchain_problems(workflows) do
+    tracking = CiPlan.tracking_versions()
+
+    for {name, text} <- workflows,
+        {key, selector} <- [
+          {"TRACKING_OTP", tracking["otp"]},
+          {"TRACKING_ELIXIR", tracking["elixir"]}
+        ],
+        not String.contains?(text, "#{key}: '#{selector}'\n"),
+        do: "#{name}: #{key} must be '#{selector}', the selector in .tool-versions"
+  end
+
   defp native_problems(native) do
     [
+      {String.contains?(native, "otp-version: ${{ matrix.otp }}") and
+         String.contains?(native, "elixir-version: ${{ matrix.elixir }}"),
+       "native: the Elixir and OTP versions come from the plan"},
       {needs(native) == ["plan"], "native: must wait for the plan"},
       {field(native, "runs-on") == "${{ needs.plan.outputs.os }}",
        "native: must run on the image the plan chose"},
@@ -392,7 +411,17 @@ defmodule CiWorkflowTest do
     {"the upload stops waiting for verification", :release, "    needs: verify\n", "",
      "publish must wait for verify"},
     {"the release opens a session", :release, "    steps:\n",
-     "    steps:\n      - uses: #{@tmate}@v3\n", "never opens a debugging session"}
+     "    steps:\n      - uses: #{@tmate}@v3\n", "never opens a debugging session"},
+    {"the core job's OTP drifts from the tool versions", :scaffold, "TRACKING_OTP: '",
+     "TRACKING_OTP: 'x", "scaffold: TRACKING_OTP must be"},
+    {"the core job's Elixir drifts from the tool versions", :scaffold, "TRACKING_ELIXIR: '",
+     "TRACKING_ELIXIR: 'x", "scaffold: TRACKING_ELIXIR must be"},
+    {"the release's OTP drifts from the tool versions", :release, "TRACKING_OTP: '",
+     "TRACKING_OTP: 'x", "release: TRACKING_OTP must be"},
+    {"the native job installs a fixed OTP", :scaffold, "otp-version: ${{ matrix.otp }}",
+     "otp-version: '29'", "versions come from the plan"},
+    {"the native job installs a fixed Elixir", :scaffold, "elixir-version: ${{ matrix.elixir }}",
+     "elixir-version: '1.20'", "versions come from the plan"}
   ]
 
   for {description, which, old, new, message} <- @mutations do

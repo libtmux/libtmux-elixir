@@ -14,6 +14,11 @@ defmodule CiPlanTest do
   @names Enum.map(@entries, & &1["tmux"])
   @oldest hd(@names)
   @newest List.last(@names)
+  @scratch Path.join(System.tmp_dir!(), "ci-plan-test-#{System.unique_integer([:positive])}")
+
+  setup_all do
+    on_exit(fn -> File.rm_rf(@scratch) end)
+  end
 
   defp run(event, inputs \\ []), do: CiPlan.plan(@manifest, Map.new([event: event] ++ inputs))
   defp cells(result), do: result["matrix"]["include"]
@@ -156,6 +161,44 @@ defmodule CiPlanTest do
     test "an unusable version is refused" do
       refused("elixir must name versions", "workflow_dispatch", elixir: "latest")
       refused("otp must name versions", "workflow_dispatch", otp: "29;id")
+    end
+
+    test "every cell names the versions it installs" do
+      reference = {@manifest["reference"]["elixir"], @manifest["reference"]["otp"]}
+      tracking = CiPlan.tracking_versions()
+
+      for cell <- cells(run("push")) do
+        expected =
+          if cell["toolchain"] == "tracking",
+            do: {tracking["elixir"], tracking["otp"]},
+            else: reference
+
+        assert {cell["elixir"], cell["otp"]} == expected
+      end
+
+      assert Enum.any?(cells(run("push")), &(&1["toolchain"] == "tracking"))
+    end
+
+    test "the tracking toolchain is the selectors of the tool versions file" do
+      File.mkdir_p!(@scratch)
+      path = Path.join(@scratch, "tool-versions-#{System.unique_integer([:positive])}")
+      File.write!(path, "# a comment\nerlang 28.1\nelixir 1.19 # trailing\nnodejs 22\n")
+
+      assert CiPlan.tracking_versions(path) == %{"elixir" => "1.19", "otp" => "28.1"}
+
+      result = run("push", tool_versions: path)
+      tracking = Enum.find(cells(result), &(&1["toolchain"] == "tracking"))
+      assert {tracking["elixir"], tracking["otp"]} == {"1.19", "28.1"}
+    end
+
+    test "a tool versions file without a selector is refused" do
+      File.mkdir_p!(@scratch)
+      path = Path.join(@scratch, "tool-versions-#{System.unique_integer([:positive])}")
+      File.write!(path, "elixir 1.19\n")
+
+      error = assert_raise CiPlan.PlanError, fn -> CiPlan.tracking_versions(path) end
+      assert error.message =~ "names no erlang version"
+      refused("names no erlang version", "push", tool_versions: path)
     end
 
     test "the runner comes from the known images" do

@@ -26,6 +26,7 @@ defmodule CiPlan do
   end
 
   @support Path.expand("../../priv/tmux/support.json", __DIR__)
+  @tool_versions Path.expand("../../.tool-versions", __DIR__)
 
   @scopes ~w(edges full custom)
   @event_scopes %{
@@ -83,7 +84,18 @@ defmodule CiPlan do
   @doc "Returns the matrix, the runner image and the job count for one run."
   def plan(manifest, inputs) do
     inputs =
-      Map.merge(%{scope: "", tmux_ref: "", elixir: "", otp: "", image: "", tmate: ""}, inputs)
+      Map.merge(
+        %{
+          scope: "",
+          tmux_ref: "",
+          elixir: "",
+          otp: "",
+          image: "",
+          tmate: "",
+          tool_versions: @tool_versions
+        },
+        inputs
+      )
 
     chosen = resolve_scope(inputs.event, inputs.scope)
     check_scope_inputs(chosen, inputs.tmux_ref)
@@ -116,11 +128,12 @@ defmodule CiPlan do
 
     cells =
       if chosen != "custom" and hd(toolchains)["toolchain"] == "reference" and
-           manifest["tracking"]["required"],
-         do:
-           cells ++
-             [cell(List.last(names), %{"toolchain" => "tracking", "elixir" => "", "otp" => ""})],
-         else: cells
+           manifest["tracking"]["required"] do
+        tracking = tracking_versions(inputs.tool_versions)
+        cells ++ [cell(List.last(names), Map.put(tracking, "toolchain", "tracking"))]
+      else
+        cells
+      end
 
     if cells == [], do: fail("the plan has no native cell")
     cells = assign_tmate(inputs.event, inputs.tmate, cells)
@@ -192,7 +205,31 @@ defmodule CiPlan do
     end
   end
 
-  @doc "The reference pair, or the Elixir and OTP versions a dispatch asked for."
+  @doc """
+  The Elixir and OTP selectors of the tracking toolchain, from `.tool-versions`.
+
+  A selector is a prefix such as `1.20`, which `erlef/setup-beam` resolves with
+  `version-type: loose`.
+  """
+  def tracking_versions(path \\ @tool_versions) do
+    selectors =
+      for line <- path |> File.read!() |> String.split("\n"),
+          [tool, selector | _] <- [String.split(line)],
+          tool in ["erlang", "elixir"],
+          into: %{},
+          do: {tool, selector}
+
+    for tool <- ["erlang", "elixir"],
+        not is_map_key(selectors, tool),
+        do: fail("#{path} names no #{tool} version")
+
+    %{"elixir" => selectors["elixir"], "otp" => selectors["erlang"]}
+  end
+
+  @doc """
+  The versions each cell installs: the reference pair, or the Elixir and OTP
+  versions a dispatch asked for.
+  """
   def select_toolchains(manifest, elixir, otp) do
     elixirs = split_list(elixir)
     otps = split_list(otp)
@@ -206,7 +243,13 @@ defmodule CiPlan do
         do: fail("otp must name versions such as 29.1.2, not #{inspect(version)}")
 
     if elixirs == [] and otps == [] do
-      [%{"toolchain" => "reference", "elixir" => "", "otp" => ""}]
+      [
+        %{
+          "toolchain" => "reference",
+          "elixir" => manifest["reference"]["elixir"],
+          "otp" => manifest["reference"]["otp"]
+        }
+      ]
     else
       for e <- if(elixirs == [], do: [manifest["reference"]["elixir"]], else: elixirs),
           o <- if(otps == [], do: [manifest["reference"]["otp"]], else: otps),

@@ -21,6 +21,13 @@ Scopes:
 - `custom`: the refs a dispatch names, on the reference toolchain or on the
   Elixir and OTP versions it names.
 
+Each cell also carries the Elixir and OTP versions it installs, so the `native`
+job reads no file before `erlef/setup-beam` runs: the reference pair from the
+manifest, the versions a dispatch named, or for the tracking toolchain the
+selectors of `.tool-versions`. The other jobs install
+the tracking toolchain before any plan exists, so each workflow spells the two
+selectors itself and `ci_workflow_test.exs` holds them to `.tool-versions`.
+
 `--tmate` gives exactly one cell of a dispatch a debugging session. The plan
 refuses a list of refs without `custom`, an unusable ref or version, more than
 12 custom cells and a session on more than one cell.
