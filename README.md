@@ -35,7 +35,7 @@ type through domain actions.
 [Try the examples](#try-the-examples) ·
 [Start a server](#start-a-private-server) ·
 [Choose a server](#choose-the-server) ·
-[Daemon features](#check-the-daemons-tmux-features) ·
+[Daemon features](#check-tmux-features-on-the-daemon) ·
 [Find things](#find-sessions-windows-and-panes) ·
 [Rename](#rename-a-window) ·
 [Control](#split-a-pane-send-input-and-read-the-screen) ·
@@ -194,7 +194,7 @@ IO.puts(
 
 More: [Capture an existing server](docs/first-task.md).
 
-## Check the daemon's tmux features
+## Check tmux features on the daemon
 
 ### [`Server.capabilities/2`][server-capabilities]: decide from the daemon's release
 
