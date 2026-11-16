@@ -1,7 +1,7 @@
 defmodule LibTmux.NativeOwnershipTest do
   use ExUnit.Case, async: true
 
-  alias LibTmux.Test.Processes
+  alias LibTmux.Test.{Child, Processes}
   alias LibTmux.Transport.Native
 
   @moduletag :integration
@@ -10,48 +10,45 @@ defmodule LibTmux.NativeOwnershipTest do
 
   @vm_flags ~c"+S 1:1 +A 1 +SDcpu 1 +SDio 1"
 
+  # A grandchild that ignores SIGTERM and prints its pid as its first output.
+  @detached [{:detach, [:ignore_term, :pid, :hold]}, :hold]
+  @flood [{:flood, :stderr, "yyyyyyyy"}, {:flood, :stdout, "xxxxxxxx"}, :hold]
+
   setup_all do
-    root =
-      Path.join(System.tmp_dir!(), "ltx-vm-#{System.pid()}-#{System.unique_integer([:positive])}")
-
-    File.mkdir!(root)
-    on_exit(fn -> File.rm_rf!(root) end)
-
-    {output, status} =
-      System.cmd(
-        System.find_executable("erlc"),
-        ["-Werror", "-o", root, Path.join(__DIR__, "support/libtmux_io_vm.erl")],
-        stderr_to_stdout: true
-      )
-
-    assert status == 0, output
-    %{beams: root}
+    Child.start_ms()
+    :ok
   end
 
   for mode <- ["owner", "vm"] do
-    test "#{mode} death retires helper descendants while an unrelated process survives", c do
+    test "#{mode} death retires helper descendants while an unrelated process survives" do
       unrelated = Port.open({:spawn_executable, "/bin/cat"}, [:binary, :exit_status])
       {:os_pid, unrelated_pid} = Port.info(unrelated, :os_pid)
       unrelated_identity = Processes.identity!(unrelated_pid)
+
+      wait = Child.deadline(750)
+
+      arguments = [
+        unquote(mode),
+        Integer.to_string(wait),
+        Native.executable() | Child.argv(@detached)
+      ]
 
       vm =
         Port.open({:spawn_executable, System.find_executable("erl")}, [
           :binary,
           :exit_status,
           {:line, 256},
-          {:env,
-           [
-             {~c"ERL_FLAGS", @vm_flags},
-             {~c"LIBTMUX_IO_SPIKE", String.to_charlist(Native.executable())}
-           ]},
+          {:env, [{~c"ERL_FLAGS", @vm_flags}]},
           {:args,
-           ["-noshell", "-pa", c.beams, "-s", "libtmux_io_vm", "run"] ++ extra(unquote(mode))}
+           ["-noshell"] ++
+             Child.code_paths() ++
+             ["-s", "Elixir.LibTmux.Test.IoVm", "run", "-extra" | arguments]}
         ])
 
       {:os_pid, vm_pid} = Port.info(vm, :os_pid)
 
       try do
-        assert_receive {^vm, {:data, {:eol, line}}}, 950
+        assert_receive {^vm, {:data, {:eol, line}}}, Child.deadline(950)
 
         processes =
           line |> String.split() |> Enum.map(&Processes.identity!(String.to_integer(&1)))
@@ -61,16 +58,16 @@ defmodule LibTmux.NativeOwnershipTest do
         case unquote(mode) do
           "owner" ->
             true = Port.command(vm, "kill\n")
-            assert_receive {^vm, {:data, {:eol, "owner-down"}}}, 750
+            assert_receive {^vm, {:data, {:eol, "owner-down"}}}, wait
             assert Port.info(vm), "the VM died during the owner-only test"
 
           "vm" ->
             {_, 0} = System.cmd("kill", ["-KILL", Integer.to_string(vm_pid)])
-            assert_receive {^vm, {:exit_status, status}}, 750
+            assert_receive {^vm, {:exit_status, status}}, wait
             assert status == 137
         end
 
-        assert Processes.await_exit(processes) == :ok,
+        assert Processes.await_exit(processes, wait) == :ok,
                "owned processes survived owner or VM death"
 
         assert Processes.alive?(unrelated_identity), "an unrelated process was killed"
@@ -85,12 +82,13 @@ defmodule LibTmux.NativeOwnershipTest do
   test "a suspended BEAM owner receives only its credited flood bytes" do
     parent = self()
     helper = Native.executable()
+    wait = Child.deadline(750)
     string = fn value -> <<byte_size(value)::16, value::binary>> end
 
     {owner, monitor} =
       spawn_monitor(fn ->
         port = Port.open({:spawn_executable, helper}, [:binary, :exit_status, {:packet, 2}])
-        args = ["/bin/sh", "-c", "yes yyyyyyyy >&2 & exec yes xxxxxxxx"]
+        args = Child.argv(@flood)
 
         true =
           Port.command(port, [
@@ -118,7 +116,7 @@ defmodule LibTmux.NativeOwnershipTest do
                 true = byte_size(bytes) <= 8192
                 stream
             after
-              750 -> raise "flood did not produce both streams"
+              wait -> raise "flood did not produce both streams"
             end
           end
 
@@ -135,7 +133,7 @@ defmodule LibTmux.NativeOwnershipTest do
       end)
 
     try do
-      assert_receive {:ready, ^owner, port, helper_pid, child_pid}, 950
+      assert_receive {:ready, ^owner, port, helper_pid, child_pid}, Child.deadline(950)
       helper = Processes.identity!(helper_pid)
       child = Processes.identity!(child_pid)
 
@@ -163,9 +161,6 @@ defmodule LibTmux.NativeOwnershipTest do
       if Process.alive?(owner), do: Process.exit(owner, :kill)
     end
   end
-
-  defp extra("owner"), do: ["-extra", "owner"]
-  defp extra("vm"), do: []
 
   defp retire(port) do
     receive do

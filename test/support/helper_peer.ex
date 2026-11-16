@@ -6,6 +6,7 @@ defmodule LibTmux.Test.HelperPeer do
 
   import ExUnit.Assertions
 
+  alias LibTmux.Test.Child
   alias LibTmux.Transport.Native
 
   @receive_ms 750
@@ -35,7 +36,7 @@ defmodule LibTmux.Test.HelperPeer do
   end
 
   def open_frame(argv, options \\ []) do
-    timeout = Keyword.get(options, :timeout, 700)
+    timeout = Keyword.get_lazy(options, :timeout, fn -> Child.deadline(700) end)
     stdin = if Keyword.get(options, :stdin, false), do: 1, else: 0
     cwd = Keyword.get(options, :cwd, File.cwd!())
 
@@ -63,7 +64,7 @@ defmodule LibTmux.Test.HelperPeer do
   def write(peer, id, bytes), do: send_frame(peer, <<?W, id::32, bytes::binary>>)
 
   @doc "The next frame, or a failed assertion when none arrives in time."
-  def receive_frame(%{port: port} = peer, milliseconds \\ @receive_ms) do
+  def receive_frame(%{port: port} = peer, milliseconds \\ Child.deadline(@receive_ms)) do
     case take(Process.get({__MODULE__, port})) do
       {:ok, frame, rest} ->
         Process.put({__MODULE__, port}, rest)

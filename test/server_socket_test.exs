@@ -4,6 +4,7 @@ defmodule LibTmux.ServerSocketTest do
   use ExUnit.Case, async: false
 
   alias LibTmux.{Command, Server}
+  alias LibTmux.Test.Recorder
   alias LibTmux.Control.Bootstrap
 
   @path "/run/libtmux-test/server.sock"
@@ -21,84 +22,70 @@ defmodule LibTmux.ServerSocketTest do
 
       File.mkdir_p!(dir)
       on_exit(fn -> File.rm_rf!(dir) end)
-      recorder = Path.join(dir, "recorder")
-
-      # Argv goes to stdout. Stderr names which tmux variables arrived and
-      # never their values.
-      File.write!(recorder, """
-      #!/bin/sh
-      for argument in "$@"; do printf '%s\\n' "$argument"; done
-      if [ -n "${TMUX+x}" ]; then printf 'TMUX=set\\n' >&2; else printf 'TMUX=unset\\n' >&2; fi
-      if [ -n "${TMUX_PANE+x}" ]; then printf 'TMUX_PANE=set\\n' >&2; else printf 'TMUX_PANE=unset\\n' >&2; fi
-      """)
-
-      File.chmod!(recorder, 0o755)
-      {:ok, recorder: recorder}
+      {:ok, recorder: Recorder.build(Path.join(dir, "recorder"))}
     else
       :ok
     end
   end
 
   describe "the arguments one-shot execution sends" do
-    @describetag :recorder
-
-    test "pass no socket when no option and no variable names one", %{recorder: recorder} do
-      server = Server.new(executable: recorder, env: %{})
+    test "pass no socket when no option and no variable names one" do
+      server = Server.new(executable: echo(), env: %{})
 
       assert %Server{socket: nil, socket_name: nil} = server
-      assert sent(server) == ["-N", "-u", "list-sessions"]
+      assert words(server) == ["-N", "-u", "list-sessions"]
     end
 
-    test "pass -S for LIBTMUX_SOCKET_PATH", %{recorder: recorder} do
-      server = Server.new(executable: recorder, env: %{"LIBTMUX_SOCKET_PATH" => @path})
+    test "pass -S for LIBTMUX_SOCKET_PATH" do
+      server = Server.new(executable: echo(), env: %{"LIBTMUX_SOCKET_PATH" => @path})
 
-      assert sent(server) == ["-N", "-u", "-S", @path, "list-sessions"]
+      assert words(server) == ["-N", "-u", "-S", @path, "list-sessions"]
     end
 
-    test "pass -L for LIBTMUX_SOCKET", %{recorder: recorder} do
-      server = Server.new(executable: recorder, env: %{"LIBTMUX_SOCKET" => "work"})
+    test "pass -L for LIBTMUX_SOCKET" do
+      server = Server.new(executable: echo(), env: %{"LIBTMUX_SOCKET" => "work"})
 
-      assert sent(server) == ["-N", "-u", "-L", "work", "list-sessions"]
+      assert words(server) == ["-N", "-u", "-L", "work", "list-sessions"]
     end
 
-    test "pass only the path when both variables are set", %{recorder: recorder} do
+    test "pass only the path when both variables are set" do
       env = %{"LIBTMUX_SOCKET_PATH" => @path, "LIBTMUX_SOCKET" => "work"}
 
-      assert sent(Server.new(executable: recorder, env: env)) ==
+      assert words(Server.new(executable: echo(), env: env)) ==
                ["-N", "-u", "-S", @path, "list-sessions"]
     end
 
-    test "treat an empty variable as unset, each one alone", %{recorder: recorder} do
+    test "treat an empty variable as unset, each one alone" do
       name_only = %{"LIBTMUX_SOCKET_PATH" => "", "LIBTMUX_SOCKET" => "work"}
       path_only = %{"LIBTMUX_SOCKET_PATH" => @path, "LIBTMUX_SOCKET" => ""}
       neither = %{"LIBTMUX_SOCKET_PATH" => "", "LIBTMUX_SOCKET" => ""}
 
-      assert sent(Server.new(executable: recorder, env: name_only)) ==
+      assert words(Server.new(executable: echo(), env: name_only)) ==
                ["-N", "-u", "-L", "work", "list-sessions"]
 
-      assert sent(Server.new(executable: recorder, env: path_only)) ==
+      assert words(Server.new(executable: echo(), env: path_only)) ==
                ["-N", "-u", "-S", @path, "list-sessions"]
 
-      assert sent(Server.new(executable: recorder, env: neither)) ==
+      assert words(Server.new(executable: echo(), env: neither)) ==
                ["-N", "-u", "list-sessions"]
     end
 
-    test "let an explicit :socket ignore both variables", %{recorder: recorder} do
+    test "let an explicit :socket ignore both variables" do
       env = %{"LIBTMUX_SOCKET_PATH" => "/other/path.sock", "LIBTMUX_SOCKET" => "other"}
-      server = Server.new(executable: recorder, socket: @path, env: env)
+      server = Server.new(executable: echo(), socket: @path, env: env)
 
-      assert sent(server) == ["-N", "-u", "-S", @path, "list-sessions"]
+      assert words(server) == ["-N", "-u", "-S", @path, "list-sessions"]
     end
 
-    test "let an explicit :socket_name ignore both variables", %{recorder: recorder} do
+    test "let an explicit :socket_name ignore both variables" do
       env = %{"LIBTMUX_SOCKET_PATH" => "/other/path.sock", "LIBTMUX_SOCKET" => "other"}
-      server = Server.new(executable: recorder, socket_name: "work", env: env)
+      server = Server.new(executable: echo(), socket_name: "work", env: env)
 
-      assert sent(server) == ["-N", "-u", "-L", "work", "list-sessions"]
+      assert words(server) == ["-N", "-u", "-L", "work", "list-sessions"]
     end
 
-    test "never turn the TMUX socket into a socket argument", %{recorder: recorder} do
-      assert sent(Server.new(executable: recorder, env: @inside_tmux)) ==
+    test "never turn the TMUX socket into a socket argument" do
+      assert words(Server.new(executable: echo(), env: @inside_tmux)) ==
                ["-N", "-u", "list-sessions"]
     end
   end
@@ -281,13 +268,22 @@ defmodule LibTmux.ServerSocketTest do
     end
   end
 
-  defp sent(server, options \\ []), do: lines(server, :stdout, options)
+  # `echo` prints the arguments it gets on one line.
+  defp echo, do: System.find_executable("echo") || raise("echo is not on PATH")
+
+  defp words(server), do: server |> run() |> Map.fetch!(:stdout) |> String.split()
+
+  defp sent(server, options), do: lines(server, :stdout, options)
   defp arrived(server, options \\ []), do: lines(server, :stderr, options)
 
   defp lines(server, stream, options) do
+    server |> run(options) |> Map.fetch!(stream) |> String.split("\n", trim: true)
+  end
+
+  defp run(server, options \\ []) do
     {:ok, result} =
       Server.run(server, Command.new("list-sessions", []), [timeout: 2000] ++ options)
 
-    result |> Map.fetch!(stream) |> String.split("\n", trim: true)
+    result
   end
 end

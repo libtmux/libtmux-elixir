@@ -21,6 +21,12 @@ defmodule LibTmux.Test.Processes do
     await(identities, deadline, 1)
   end
 
+  @doc "Waits until the process is stopped by a signal, or returns `{:running, state}`."
+  def await_stopped(pid, milliseconds \\ 750) do
+    deadline = System.monotonic_time(:millisecond) + milliseconds
+    await_state(pid, deadline, 1)
+  end
+
   @doc "Names a native helper and the client it owns, and fingerprints their executables."
   def watch_native(helper, client) do
     helper = identity!(helper)
@@ -52,6 +58,32 @@ defmodule LibTmux.Test.Processes do
       {:alive, pids} ->
         raise "owned client/helper did not exit within 750ms: #{inspect(pids)}"
     end
+  end
+
+  defp await_state(pid, deadline, delay) do
+    state = state(pid)
+
+    cond do
+      state == "T" ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:running, state}
+
+      true ->
+        receive do
+        after
+          delay -> await_state(pid, deadline, min(delay * 2, 16))
+        end
+    end
+  end
+
+  # The state letter follows the command name, which is parenthesised and may
+  # itself contain parentheses.
+  defp state(pid) do
+    stat = File.read!("/proc/#{pid}/stat")
+    [_, letter] = Regex.run(~r/^.*\) (.)/s, stat)
+    letter
   end
 
   defp sha256(pid),

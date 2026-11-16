@@ -15,7 +15,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
   }
 
   alias LibTmux.Control.Births
-  alias LibTmux.Test.{Fifo, OwnedTmux}
+  alias LibTmux.Test.{Child, Fifo, OwnedTmux}
   @moduletag :integration
   @moduletag reason: "Qualifies literal input, exact membership and domain actions on owned tmux"
 
@@ -420,22 +420,15 @@ defmodule LibTmux.DomainActionsIntegrationTest do
 
       # A raw pane: it reports in over the named pipe, asks tmux for the cursor
       # position and forwards every byte it receives.
-      program = ~S"""
-      stty raw -echo
-      exec 3>"$1"
-      printf R >&3
-      printf '%%begin 9 8 1\r\n%%end 9 8 1\r\n\033[6n'
-      exec cat >&3
-      """
+      program = Child.argv([{:raw_pane, path}])
+      started = Child.deadline(750)
 
       try do
         with_lane(lane, server, fn connection ->
           assert {:ok, %{outcome: :completed, value: %{id: id, ref: created_ref}}} =
-                   Pane.split(connection, pane,
-                     command: {:argv, ["/bin/sh", "-c", program, "pane", path]}
-                   )
+                   Pane.split(connection, pane, command: {:argv, program})
 
-          assert {:ok, "R"} = Fifo.recv(peer, 1, 750)
+          assert {:ok, "R"} = Fifo.recv(peer, 1, started)
           assert {:ok, "\e[3;1R"} = Fifo.recv(peer, 6, 750)
           target = if lane == :control, do: created_ref, else: ref(:pane, id, instance)
           assert :ok = Pane.send_text!(connection, target, "")

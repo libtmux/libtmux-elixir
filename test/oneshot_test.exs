@@ -1,16 +1,27 @@
 defmodule LibTmux.OneShotTest do
   use ExUnit.Case, async: true
 
+  alias LibTmux.Test.Child
   alias LibTmux.Transport.OneShot
 
   @moduletag :integration
   @moduletag reason: "Qualifies owned external process I/O, limits and retirement on Linux"
 
+  # Measure the child start before any test arms a deadline.
+  setup_all do
+    Child.start_ms()
+    :ok
+  end
+
+  defp run(steps, options) do
+    [executable | arguments] = Child.argv(steps)
+    OneShot.run(executable, arguments, options)
+  end
+
   test "stdout, stderr and process exit remain separate byte evidence" do
     assert {:ok, result} =
-             OneShot.run(
-               "/bin/sh",
-               ["-c", ~S(printf 'out\000\377'; printf err >&2; exit 7)],
+             run(
+               [{:stdout, <<"out", 0, 255>>}, {:stderr, "err"}, {:exit, 7}],
                max_stdout_bytes: 5,
                max_stderr_bytes: 3,
                max_chunks: 2
@@ -23,15 +34,9 @@ defmodule LibTmux.OneShotTest do
   end
 
   test "output overload retains a bounded prefix and retires the producer" do
-    assert {:error, error} =
-             OneShot.run(
-               "/bin/sh",
-               [
-                 "-c",
-                 ~S(exec yes xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
-               ],
-               max_stdout_bytes: 64
-             )
+    flood = [{:flood, :stdout, String.duplicate("x", 64)}, :hold]
+
+    assert {:error, error} = run(flood, max_stdout_bytes: 64)
 
     assert error.kind == :resource_limit
     assert error.certainty == :unknown
@@ -41,12 +46,7 @@ defmodule LibTmux.OneShotTest do
   end
 
   test "a combined byte budget bounds stdout and stderr together" do
-    assert {:error, error} =
-             OneShot.run(
-               "/bin/sh",
-               ["-c", ~S(printf out; printf err >&2)],
-               max_total_bytes: 5
-             )
+    assert {:error, error} = run([{:stdout, "out"}, {:stderr, "err"}], max_total_bytes: 5)
 
     assert error.kind == :resource_limit
     assert error.details.reason == :total_bytes
@@ -55,30 +55,13 @@ defmodule LibTmux.OneShotTest do
   end
 
   test "one deadline returns partial bytes without treating them as success" do
-    root =
-      Path.join(
-        System.tmp_dir!(),
-        "ltx-timeout-#{System.pid()}-#{System.unique_integer([:positive])}"
-      )
-
-    File.mkdir!(root)
-    on_exit(fn -> File.rm_rf!(root) end)
-    fifo = Path.join(root, "gate")
-    {"", 0} = System.cmd(System.find_executable("mkfifo"), [fifo])
-
     assert {:error,
             %{
               kind: :timeout,
               phase: :capture,
               certainty: :unknown,
               details: %{stdout: "ready", cleanup: :retired}
-            }} =
-             OneShot.run(
-               "/bin/sh",
-               ["-c", ~S(printf ready; exec /bin/cat < "$1"), "fixture", fifo],
-               timeout: 150,
-               env: %{}
-             )
+            }} = run([{:stdout, "ready"}, :hold], timeout: Child.deadline(150), env: %{})
   end
 
   test "failed exec proves that the selected program did not start" do
@@ -116,9 +99,7 @@ defmodule LibTmux.OneShotTest do
 
   test "target environments preserve empty, Unicode and raw byte values" do
     assert {:ok, result} =
-             OneShot.run(
-               "/bin/sh",
-               ["-c", ~S(printf '%s\000%s\000%s' "$EMPTY" "$UNICODE" "$RAW")],
+             run([{:env, ["EMPTY", "UNICODE", "RAW"]}],
                env: %{
                  "EMPTY" => "",
                  "UNICODE" => "é日本語",
@@ -128,18 +109,18 @@ defmodule LibTmux.OneShotTest do
              )
 
     assert result.exit_status == 0
-    assert result.stdout == <<0, "é日本語", 0, 255>>
+    assert result.stdout == <<"EMPTY=", 0, "UNICODE=é日本語", 0, "RAW=", 255>>
     assert String.contains?(result.stderr, "LD_PRELOAD")
   end
 
   test "TMUX and TMUX_PANE are removed from the target unless the caller keeps them" do
     env = %{"TMUX" => "/run/libtmux-test/followed.sock,1,0", "TMUX_PANE" => "%0"}
-    arrived = ~S(printf '%s|%s' "${TMUX+set}" "${TMUX_PANE+set}")
+    steps = [{:env, ["TMUX", "TMUX_PANE"]}]
 
-    assert {:ok, %{stdout: "|"}} = OneShot.run("/bin/sh", ["-c", arrived], env: env)
+    assert {:ok, %{stdout: ""}} = run(steps, env: env)
 
-    assert {:ok, %{stdout: "set|set"}} =
-             OneShot.run("/bin/sh", ["-c", arrived], env: env, keep_tmux_context: true)
+    assert {:ok, %{stdout: "TMUX=/run/libtmux-test/followed.sock,1,0" <> <<0, "TMUX_PANE=%0">>}} =
+             run(steps, env: env, keep_tmux_context: true)
   end
 
   test "an expired admission retains no-write certainty" do

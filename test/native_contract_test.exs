@@ -1,22 +1,24 @@
 defmodule LibTmux.NativeContractTest do
   use ExUnit.Case, async: true
 
-  alias LibTmux.Test.{HelperPeer, Processes}
+  alias LibTmux.Test.{Child, HelperPeer, Processes}
   alias LibTmux.Transport.Native
 
   @moduletag :integration
   @moduletag reason: "Qualifies the private helper protocol, credits and retirement under faults"
 
-  @pause "exec sleep 1000"
-  @ignore_term ~S(trap '' TERM; exec sleep 1000)
+  @pause [:hold]
+  @ignore_term [:ignore_term, :hold]
+  @flood [{:flood, :stdout, "xxxxxxxx"}, :hold]
 
-  # A shell child that outlives its parent: it detaches, ignores SIGTERM and
-  # reports its pid on stdout. The shell itself keeps running as the direct child.
-  @detached ~S(setsid -f sh -c 'trap "" TERM; echo $$; exec sleep 1000'; exec sleep 1000)
-
-  defp sh(script), do: ["/bin/sh", "-c", script]
+  # A child that outlives its parent: it detaches a grandchild in its own
+  # session that ignores SIGTERM and reports its pid on stdout. The child itself
+  # keeps running as the direct child.
+  @detached [{:detach, [:ignore_term, :pid, :hold]}, :hold]
 
   setup_all do
+    Child.start_ms()
+
     directory =
       Path.join(
         System.tmp_dir!(),
@@ -52,7 +54,9 @@ defmodule LibTmux.NativeContractTest do
   end
 
   test "stdout, stderr and the exit status stay separate bytes" do
-    peer = HelperPeer.start(sh(~S(printf 'out\000\377'; printf err >&2; exit 7)))
+    peer =
+      HelperPeer.start(Child.argv([{:stdout, <<"out", 0, 255>>}, {:stderr, "err"}, {:exit, 7}]))
+
     {output, terminal} = HelperPeer.drain(peer)
 
     assert output == %{1 => <<"out", 0, 255>>, 2 => "err"}
@@ -85,7 +89,8 @@ defmodule LibTmux.NativeContractTest do
   end
 
   test "output moves only against credit and a write that cannot finish is partial" do
-    peer = HelperPeer.start(sh(~S(yes yyyyyyyy >&2 & exec yes xxxxxxxx)), stdin: true)
+    flood = [{:flood, :stderr, "yyyyyyyy"}, {:flood, :stdout, "xxxxxxxx"}, :hold]
+    peer = HelperPeer.start(Child.argv(flood), stdin: true)
     HelperPeer.grant(peer, 1)
     HelperPeer.grant(peer, 2)
     first = [HelperPeer.receive_frame(peer), HelperPeer.receive_frame(peer)]
@@ -125,15 +130,15 @@ defmodule LibTmux.NativeContractTest do
   end
 
   test "a child that ignores SIGTERM is killed at its deadline" do
-    peer = HelperPeer.start(sh(@ignore_term), timeout: 80)
+    peer = HelperPeer.start(Child.argv(@ignore_term), timeout: Child.deadline(80))
 
     assert HelperPeer.receive_frame(peer) == <<?E, 2, 137::32>>
     HelperPeer.finish(peer)
   end
 
   test "a write after the child exited is refused with a failed acknowledgement" do
-    script = ~S(dd bs=1 count=1 of=/dev/null 2>/dev/null; printf exit; exit 7)
-    peer = HelperPeer.start(sh(script), timeout: 0, stdin: true)
+    program = [:read, {:stdout, "exit"}, {:exit, 7}]
+    peer = HelperPeer.start(Child.argv(program), timeout: 0, stdin: true)
     child = Processes.identity!(peer.pid)
 
     HelperPeer.grant(peer, 1)
@@ -153,7 +158,7 @@ defmodule LibTmux.NativeContractTest do
   end
 
   test "malformed headers, a missing cwd and a missing program fail without skipping the acknowledgement" do
-    cwd_failure = HelperPeer.open_frame([System.find_executable("sh")], cwd: "/missing-cwd")
+    cwd_failure = HelperPeer.open_frame(Child.argv(@pause), cwd: "/missing-cwd")
     exec_failure = HelperPeer.open_frame(["/missing-executable"], timeout: 500)
 
     for frame <- [
@@ -176,7 +181,7 @@ defmodule LibTmux.NativeContractTest do
   end
 
   test "a second credit for a stream that still holds one is a protocol failure" do
-    peer = HelperPeer.start(sh(@pause))
+    peer = HelperPeer.start(Child.argv(@pause))
     HelperPeer.grant(peer, 1)
     HelperPeer.grant(peer, 1)
 
@@ -187,7 +192,7 @@ defmodule LibTmux.NativeContractTest do
   test "a startup that races cancellation and a late credit still ends with proof" do
     for timeout <- [1, 2, 10, 40] do
       peer = HelperPeer.bare()
-      init = HelperPeer.open_frame(sh(@pause), timeout: timeout)
+      init = HelperPeer.open_frame(Child.argv(@pause), timeout: timeout)
 
       # One burst: open, cancel, then a credit after the cancel.
       HelperPeer.send_raw(
@@ -204,79 +209,72 @@ defmodule LibTmux.NativeContractTest do
   end
 
   test "a reader that closes its end retires the child and ends the helper with status 0", c do
-    marker = "1000.#{System.unique_integer([:positive])}"
     status = Path.join(c.directory, "closed-reader-status")
-    # The reader takes one byte, which is the start of the helper's first frame,
-    # and exits. Closing it earlier would end the helper before it starts a child.
-    script = ~S({ "$0"; echo $? >"$1"; } | head -c 1 >/dev/null)
-    port = shell_port(script, [Native.executable(), status])
-    send_open(port, sh("exec sleep " <> marker))
+    helper_vm = Child.argv([{:helper_status, Native.executable(), status}])
+    reader = start_vm([{:read_first_frame, helper_vm}, :hold], [{:line, 1024}])
+    {:os_pid, reader_pid} = Port.info(reader, :os_pid)
 
-    assert_receive {^port, {:exit_status, 0}}, 750
-    assert File.read!(status) == "0\n"
-    assert processes_running(marker) == []
+    try do
+      true = Port.command(reader, with_header(HelperPeer.open_frame(Child.argv(@pause))))
+
+      # The reader takes the helper's first frame, which names the child, and
+      # closes while stdin stays open. Closing it earlier would end the helper
+      # before it starts a child.
+      assert_receive {^reader, {:data, {:eol, "reader " <> names}}}, Child.deadline(750)
+      names = names |> Base.decode16!() |> :erlang.binary_to_term()
+
+      assert Processes.await_exit(names) == :ok
+      assert File.read!(status) == "0\n"
+    after
+      kill(reader_pid)
+    end
   end
 
   test "a reader that stops reading stalls the helper, which then fails its delivery", c do
-    status = Path.join(c.directory, "stalled-reader-status")
-    # The reader stops itself, so nothing drains the helper's stdout pipe.
-    script =
-      ~S({ "$0"; echo "status $?" >&2; } | { sh -c 'echo "reader $$" >&2; kill -STOP $$'; })
-
-    port = shell_port(script, [c.small_pipe_helper, status])
-    send_open(port, sh("exec yes xxxxxxxx"), timeout: 80)
+    reader = start_vm([{:read_helper, c.small_pipe_helper}], [{:line, 256}])
+    {:os_pid, reader_pid} = Port.info(reader, :os_pid)
 
     try do
-      assert receive_stalled_report(port) == "124"
+      assert_receive {^reader, {:data, {:eol, "helper " <> helper_pid}}}, Child.deadline(750)
+      helper = helper_pid |> String.to_integer() |> Processes.identity!()
+      frame = HelperPeer.open_frame(Child.argv(@flood), timeout: Child.deadline(80))
+      true = Port.command(reader, with_header(frame))
+      assert_receive {^reader, {:data, {:eol, "started"}}}, Child.deadline(750)
+
+      # The reader stops before the helper has output, so nothing drains the
+      # helper's stdout pipe. One credit is all the helper will ever send.
+      {_, 0} = System.cmd("kill", ["-STOP", Integer.to_string(reader_pid)])
+      assert Processes.await_stopped(reader_pid) == :ok
+      true = Port.command(reader, credit())
+
+      assert Processes.await_exit([helper], Child.deadline(2000)) == :ok
+      {_, 0} = System.cmd("kill", ["-CONT", Integer.to_string(reader_pid)])
+      assert_receive {^reader, {:data, {:eol, "status 124"}}}, Child.deadline(750)
     after
-      if reader = Process.get(:stalled_reader), do: System.cmd("kill", ["-KILL", reader])
+      kill(reader_pid)
     end
   end
 
-  defp shell_port(script, arguments) do
-    Port.open({:spawn_executable, "/bin/sh"}, [
-      :binary,
-      :exit_status,
-      :stderr_to_stdout,
-      {:args, ["-c", script | arguments]}
-    ])
+  # A second VM runs the steps. Only the VM that starts the helper holds the
+  # other end of its pipes, so a test closes or suspends a reader through it.
+  defp start_vm(steps, options) do
+    [executable | arguments] = Child.argv(steps)
+
+    Port.open(
+      {:spawn_executable, executable},
+      [:binary, :exit_status, {:args, arguments}] ++ options
+    )
   end
 
-  defp send_open(port, argv, options \\ []) do
-    frame = HelperPeer.open_frame(argv, options)
-    true = Port.command(port, <<byte_size(frame)::16, frame::binary>>)
-    # One credit is all the stalled reader will ever see.
-    true = Port.command(port, <<0, 4, ?R, 1, 0x20, 0>>)
-  end
+  defp kill(pid),
+    do: System.cmd("kill", ["-KILL", Integer.to_string(pid)], stderr_to_stdout: true)
 
-  # The stopped reader never exits on its own, so remember it for the caller to kill.
-  defp receive_stalled_report(port, seen \\ "") do
-    receive do
-      {^port, {:data, data}} ->
-        seen = seen <> data
-        reader = Regex.run(~r/reader (\d+)/, seen)
-        if reader, do: Process.put(:stalled_reader, List.last(reader))
-
-        case Regex.run(~r/status (\d+)/, seen) do
-          [_, status] -> status
-          nil -> receive_stalled_report(port, seen)
-        end
-    after
-      2_000 -> flunk("the stalled helper did not report")
-    end
-  end
-
-  defp processes_running(marker) do
-    for command <- Path.wildcard("/proc/[0-9]*/cmdline"),
-        {:ok, text} <- [File.read(command)],
-        String.contains?(text, marker),
-        do: command
-  end
+  defp credit, do: <<0, 4, ?R, 1, 0x20, 0>>
 
   defp with_header(frame), do: <<byte_size(frame)::16, frame::binary>>
 
   defp detached do
-    peer = HelperPeer.start(sh(@detached), timeout: 0)
+    peer = HelperPeer.start(Child.argv(@detached), timeout: 0)
     HelperPeer.grant(peer, 1)
     <<?D, 1, text::binary>> = HelperPeer.receive_frame(peer)
     {peer, Processes.identity!(text |> String.trim() |> String.to_integer())}
