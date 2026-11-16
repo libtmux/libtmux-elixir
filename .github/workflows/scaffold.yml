@@ -249,8 +249,9 @@ jobs:
       CORE_RESULT: ${{ needs.scaffold.result }}
       NATIVE_RESULT: ${{ needs.native.result }}
     steps:
-      - name: Require every core and native cell
-        run: |
-          test "$PLAN_RESULT" = success
-          test "$CORE_RESULT" = success
-          test "$NATIVE_RESULT" = success
+      - name: Require the plan
+        run: test "$PLAN_RESULT" = success
+      - name: Require the core checks
+        run: test "$CORE_RESULT" = success
+      - name: Require every native cell
+        run: test "$NATIVE_RESULT" = success
