@@ -6,6 +6,11 @@ Notable changes to `libtmux`.
 
 ### Added
 
+- Check the daemon's native tmux prerequisites with `Server.capabilities/2`
+  or `Control.capabilities/2`. Pure `Capabilities.require/2` refuses
+  unsupported primitives before dispatch. See [daemon features](docs/capabilities.md)
+  for bootstrap requirements and observation limits.
+  ([#81](https://github.com/libtmux/libtmux-elixir/issues/81))
 - Start a private tmux server with `LibTmux.Server.start/1` and stop it with
   `LibTmux.Server.stop/2`. The server runs in a mode-700 directory below
   `:root`, with a private `TMUX_TMPDIR`, no inherited `TMUX` or `TMUX_PANE`
