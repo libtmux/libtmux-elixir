@@ -551,6 +551,20 @@ defmodule LibTmux.Server do
   def valid_socket?(%__MODULE__{}), do: false
 
   @doc """
+  Observes named native tmux prerequisites without attaching or creating resources.
+
+  The bounded report contains the daemon's version and observed OS instance,
+  not the client executable's version. This descriptor remains unbound: a later
+  call can reach a replacement daemon. Reports do not authorize later mutations.
+  Unknown release profiles and uncertain or changed evidence return an error.
+  See `LibTmux.Capabilities` for pure checks and the native-primitive scope.
+  """
+  @spec capabilities(t(), [LibTmux.Capabilities.option()]) ::
+          {:ok, LibTmux.Capabilities.t()} | {:error, Error.t()}
+  def capabilities(%__MODULE__{} = server, options \\ []),
+    do: LibTmux.Capabilities.observe(server, options)
+
+  @doc """
   Captures a new graph explicitly, with bounded work and read retries.
 
   See the [worked example](first-task.html).

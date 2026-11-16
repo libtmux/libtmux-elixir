@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "profiles": {
+    "3.3": "87fe00e8b44901240fc22d7120c1b31e4331f6f5",
+    "3.3a": "0b355ae8114511e1ff6359272b164f1cdf718e80",
+    "3.4": "9ae69c3795ab5ef6b4d760f6398cd9281151f632",
+    "3.5": "ac44566c9c7e3e94d23be6def4c7ae83472543f5",
+    "3.5a": "549c35b06165f6ae023115eb76f83f2cbf945395",
+    "3.6": "0dac7fe434d029a4f0b819cba8eb7963df291990",
+    "3.6a": "cc117b5048f77a4842820f8ebbe3a86e5c077224",
+    "3.6b": "0623d1e968423ad0c192e0d8debf1258671063d5",
+    "3.7": "81f88f8517c9fc5371b56cf117530c6b477c96ac",
+    "3.7a": "0e418b62d259ce8da8970f75732cc6632ee4c3a0",
+    "3.7b": "e802909de06012a4df6209d55e86487c56223163",
+    "3.7c": "e476c1230b958df0cb12977517d24b3dc931375b",
+    "3.8": "7f2a35ad3321f9ba57a1062ca73b1f3ff26aca53"
+  },
+  "features": [
+    {
+      "id": "event-wait",
+      "scope": "tmux_primitive",
+      "since": "3.8",
+      "handling": "refuse",
+      "summary": "Register or list native tmux event waiters.",
+      "source": "https://github.com/tmux/tmux/blob/7f2a35ad3321f9ba57a1062ca73b1f3ff26aca53/cmd-wait-for.c",
+      "commands": [
+        {
+          "name": "wait-for",
+          "flags": [
+            "-E",
+            "-F",
+            "-l"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "event-wait-claim",
+      "scope": "tmux_primitive",
+      "since": "3.8",
+      "handling": "refuse",
+      "summary": "Consume a named pending event waiter, refusing an absent waiter.",
+      "source": "https://github.com/tmux/tmux/blob/7f2a35ad3321f9ba57a1062ca73b1f3ff26aca53/cmd-wait-for.c",
+      "commands": [
+        {
+          "name": "wait-for",
+          "flags": [
+            "-E",
+            "-w"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "format-argument-quote",
+      "scope": "tmux_primitive",
+      "since": "3.7",
+      "handling": "refuse",
+      "summary": "Encode a format value as one native tmux argument token.",
+      "source": "https://github.com/tmux/tmux/blob/81f88f8517c9fc5371b56cf117530c6b477c96ac/format.c",
+      "commands": []
+    },
+    {
+      "id": "capture-trim-blank-cells",
+      "scope": "tmux_primitive",
+      "since": "3.4",
+      "handling": "refuse",
+      "summary": "Capture through the last used cell with capture-pane -T.",
+      "source": "https://github.com/tmux/tmux/blob/9ae69c3795ab5ef6b4d760f6398cd9281151f632/cmd-capture-pane.c",
+      "commands": [
+        {
+          "name": "capture-pane",
+          "flags": [
+            "-T"
+          ]
+        }
+      ]
+    }
+  ]
+}

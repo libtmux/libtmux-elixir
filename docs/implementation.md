@@ -29,11 +29,19 @@ a release runs them all. Add versions when an introduced feature or regression n
 evidence. macOS remains optional. Missing required prerequisites fail a
 required cell; they cannot become successful skips.
 
+Capability discovery qualifies matched tmux 3.3 and 3.8 client/daemon pairs.
+One-shot discovery also observes a 3.3 daemon through a 3.8 client. That mixed
+pair currently fails to establish the existing control connection before
+discovery can run; [control qualification](https://github.com/libtmux/libtmux-elixir/issues/5)
+retains that limitation. `Control.capabilities/2` reports only over an already
+established native epoch and does not repair or replace a connection.
+
 ## Public responsibilities
 
 | Surface | Contract and critical proof |
 | --- | --- |
 | `Server` | Explicit executable and environment, a socket by path, by name or left to tmux, and transport. Connect does not create a server; `start/1` and `with_owned/2` start a private one and `stop/2` retires it. Close releases owned clients without killing borrowed sessions. |
+| `Capabilities` | Named native tmux prerequisites from the observed daemon. Server discovery is a bounded one-shot observation; Control discovery preserves its established epoch. Reports are data, not implemented Program APIs or mutation authority. Unknown feature IDs and release profiles refuse. |
 | `Session`, `Window`, `WindowLink`, `Pane`, `Client` | Typed immutable observations with exact IDs. Link context belongs to WindowLink. Preserve counts and reject conflicting repeated physical rows. |
 | `Snapshot` | Indexed graph, incarnation, capture interval and scoped coverage. Differentiate unloaded, unavailable, known nil, empty and invalid data. Capture validates references with bounded retry. |
 | `Selection` | Ordered materialized Enumerable, cached size, ordinary element equality, no I/O. Data filtering and native predicates have separate entrypoints. Checked cardinality stops at the second match. |
