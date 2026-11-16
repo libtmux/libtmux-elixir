@@ -8,6 +8,8 @@ defmodule LibTmux.Test.Child do
   #   {:env, names}          write the named variables as NAME=value, NUL-separated
   #   :pid                   write the VM's OS pid and a newline
   #   :ignore_term           ignore SIGTERM
+  #   :default_term          restore the operating system's handling of SIGTERM, which ends the VM
+  #   {:pid_file, path}      write the VM's OS pid and a newline to the file
   #   :read                  wait for one chunk on stdin
   #   {:flood, stream, line} write the line forever from a separate process
   #   {:detach, steps}       start another such VM in its own session, sharing stdout
@@ -139,6 +141,8 @@ defmodule LibTmux.Test.Child do
   defp step({:stderr, bytes}), do: write(:stderr, bytes)
   defp step(:pid), do: write(:stdout, System.pid() <> "\n")
   defp step(:ignore_term), do: :ok = :os.set_signal(:sigterm, :ignore)
+  defp step(:default_term), do: :ok = :os.set_signal(:sigterm, :default)
+  defp step({:pid_file, path}), do: :ok = :file.write_file(path, System.pid() <> "\n", [:raw])
   defp step(:hold), do: Process.sleep(:infinity)
   defp step({:exit, status}), do: System.halt(status)
 

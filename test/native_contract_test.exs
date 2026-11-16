@@ -230,6 +230,56 @@ defmodule LibTmux.NativeContractTest do
     end
   end
 
+  # The helper signals the child's own process group. A descendant that left
+  # it and ignores SIGTERM is ended only by the helper's SIGKILL of the
+  # children it adopted, so the reader's departure must lead to a hard kill of
+  # everything the helper owns, not only to a signal for the child.
+  test "a reader that closes its end retires a detached descendant that ignores SIGTERM", c do
+    pid_file = Path.join(c.directory, "reader-closes-descendant")
+    reader = start_vm([{:read_helper, Native.executable()}], [{:line, 256}])
+    {:os_pid, reader_pid} = Port.info(reader, :os_pid)
+
+    try do
+      assert_receive {^reader, {:data, {:eol, "helper " <> helper_pid}}}, Child.deadline(750)
+      Process.put(:reader_closes_helper, String.to_integer(helper_pid))
+      helper = helper_pid |> String.to_integer() |> Processes.identity!()
+      program = [{:detach, [:ignore_term, {:pid_file, pid_file}, :hold]}, :hold]
+
+      true =
+        Port.command(reader, with_header(HelperPeer.open_frame(Child.argv(program), timeout: 0)))
+
+      assert_receive {^reader, {:data, {:eol, "started"}}}, Child.deadline(750)
+
+      # The descendant writes its pid once it ignores SIGTERM, so it is in
+      # place before the reader goes. The helper's stdin stays open.
+      descendant = pid_file |> await_pid() |> Processes.identity!()
+      Process.put(:reader_closes_descendant, elem(descendant, 0))
+      kill(reader_pid)
+
+      assert Processes.await_exit([helper, descendant], Child.deadline(2000)) == :ok
+    after
+      kill(reader_pid)
+
+      kill_leftovers(
+        Process.delete(:reader_closes_helper),
+        Process.delete(:reader_closes_descendant)
+      )
+    end
+  end
+
+  # The helper ends the child with SIGKILL. A child that leaves SIGTERM at its
+  # default would die of the group's SIGTERM instead and report status 143, and
+  # the helper's SIGKILL of its direct children would arrive too late to change
+  # that. One that ignores SIGTERM cannot tell the two apart.
+  test "cancellation ends a child that leaves SIGTERM at its default with SIGKILL" do
+    peer = HelperPeer.start(Child.argv([:default_term, :pid, :hold]), timeout: 0)
+    HelperPeer.grant(peer, 1)
+    # The child reports its pid once SIGTERM is at its default.
+    assert <<?D, 1, _pid::binary>> = HelperPeer.receive_frame(peer)
+
+    assert HelperPeer.cancel(peer) == <<?E, 1, 137::32>>
+  end
+
   test "a reader that stops reading stalls the helper, which then fails its delivery", c do
     reader = start_vm([{:read_helper, c.small_pipe_helper}], [{:line, 256}])
     {:os_pid, reader_pid} = Port.info(reader, :os_pid)
@@ -268,6 +318,43 @@ defmodule LibTmux.NativeContractTest do
 
   defp kill(pid),
     do: System.cmd("kill", ["-KILL", Integer.to_string(pid)], stderr_to_stdout: true)
+
+  # The pid the file holds once its writer has finished, or a failed assertion.
+  defp await_pid(path) do
+    deadline = System.monotonic_time(:millisecond) + Child.deadline(1500)
+    await_pid(path, deadline, 1)
+  end
+
+  defp await_pid(path, deadline, delay) do
+    with {:ok, text} <- File.read(path),
+         true <- String.ends_with?(text, "\n") do
+      text |> String.trim() |> String.to_integer()
+    else
+      _ ->
+        if System.monotonic_time(:millisecond) >= deadline,
+          do: flunk("no pid in #{path}"),
+          else: await_pid_after(path, deadline, delay)
+    end
+  end
+
+  defp await_pid_after(path, deadline, delay) do
+    receive do
+    after
+      delay -> await_pid(path, deadline, min(delay * 2, 16))
+    end
+  end
+
+  # A helper that failed to retire its tree leaves the child and the descendant
+  # running, so end them with it.
+  defp kill_leftovers(helper, descendant) do
+    children =
+      case helper && File.read("/proc/#{helper}/task/#{helper}/children") do
+        {:ok, text} -> text |> String.split() |> Enum.map(&String.to_integer/1)
+        _ -> []
+      end
+
+    for pid <- [helper, descendant | children], pid, do: kill(pid)
+  end
 
   defp credit, do: <<0, 4, ?R, 1, 0x20, 0>>
 
