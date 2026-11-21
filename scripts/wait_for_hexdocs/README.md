@@ -1,8 +1,7 @@
 # wait_for_hexdocs
 
-Waits for a published HexDocs page to answer 200. The `publish` job of
-`release.yml` runs it after Hex completes publication and before it installs
-the package from Hex.
+Waits for a published HexDocs page to answer 200. Run it after Hex approval
+before checking an isolated install of the published package.
 
 ```console
 $ elixir scripts/wait_for_hexdocs/wait_for_hexdocs.exs https://hexdocs.pm/libtmux/0.1.1/ 60

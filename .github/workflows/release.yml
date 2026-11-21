@@ -1,4 +1,4 @@
-name: Publish core
+name: Submit core to Hex
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
     needs: verify
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 5
     environment: hex
     permissions:
       contents: read
@@ -48,7 +48,6 @@ jobs:
       - name: Verify runtime and compiled OTP identity
         run: time elixir scripts/check_runtime/check_runtime.exs tracking
       - name: Validate release metadata
-        id: release
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: elixir scripts/check_release/check_release.exs "$RELEASE_TAG"
@@ -60,16 +59,5 @@ jobs:
         run: mix docs --warnings-as-errors
       - name: Check rendered documentation links
         run: elixir scripts/check_docs_links/check_docs_links.exs
-      - name: Publish core and documentation to Hex
-        timeout-minutes: 10
-        run: mix hex.publish --yes --wait
-      - name: Wait for the documentation
-        env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: >-
-          elixir scripts/wait_for_hexdocs/wait_for_hexdocs.exs
-          "https://hexdocs.pm/libtmux/$RELEASE_VERSION/"
-      - name: Install and execute the public core outside the checkout
-        env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: elixir scripts/check_hex_install.exs "$RELEASE_VERSION"
+      - name: Submit core and documentation to Hex
+        run: mix hex.publish --yes
