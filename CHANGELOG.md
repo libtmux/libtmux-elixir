@@ -4,6 +4,8 @@ Notable changes to `libtmux`.
 
 ## Unreleased
 
+## libtmux 0.1.3-alpha.2 (2026-11-21)
+
 ### Fixed
 
 - Finish release CI once Hex accepts the package and docs. Maintainers can
