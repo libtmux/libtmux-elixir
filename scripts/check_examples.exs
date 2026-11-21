@@ -55,6 +55,7 @@ defmodule LibTmux.ExampleCheck do
           "capture_and_filter",
           "one_shot_actions",
           "managed_control",
+          "capabilities",
           "capture_and_read"
         ] do
       [result] = example(context, Path.join(package, "examples/#{name}.exs"))
@@ -398,6 +399,16 @@ defmodule LibTmux.ExampleCheck do
          "connection_retired" => true
        }),
        do: :ok
+
+  defp check("capabilities", %{
+         "daemon" => version,
+         "event_wait" => decision,
+         "same_instance" => true
+       }) do
+    expected = if version == "3.8", do: "available", else: "refused"
+    true = decision == expected
+    :ok
+  end
 
   defp check("supervised_control", %{
          "supervised_control" => "completed",

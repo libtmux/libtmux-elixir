@@ -52,7 +52,10 @@ defmodule LibTmux.MixProject do
 
     # ExDoc flattens extras; keep repository-relative links in the originals.
     replacements = %{
-      "README.md" => [{"examples/readme.exs", blob <> "examples/readme.exs"}],
+      "README.md" => [
+        {"examples/readme.exs", blob <> "examples/readme.exs"},
+        {"examples/capabilities.exs", blob <> "examples/capabilities.exs"}
+      ],
       ".github/CONTRIBUTING.md" => [
         {"../.tool-versions", blob <> ".tool-versions"},
         {"../mix.exs", blob <> "mix.exs"},
@@ -83,6 +86,7 @@ defmodule LibTmux.MixProject do
       "docs/supervised-control.md",
       "docs/recovery.md",
       "docs/owned-server.md",
+      "docs/capabilities.md",
       "docs/advanced-execution.md",
       "docs/mental-model.md",
       "docs/observations.md",
@@ -152,7 +156,7 @@ defmodule LibTmux.MixProject do
       assets: %{"docs/assets" => "docs/assets"},
       groups_for_extras: [
         Tasks:
-          ~r/(first-task|standalone-demo|one-shot-actions|managed-control|supervised-control|recovery|owned-server|advanced-execution)/,
+          ~r/(first-task|standalone-demo|one-shot-actions|managed-control|supervised-control|recovery|owned-server|capabilities|advanced-execution)/,
         "Concepts and reference": ~r/(mental-model|observations|filtering|schema|api-examples)/,
         "Design and internals": ~r/(ownership|encoding|design|implementation)/,
         Contributing:
@@ -161,6 +165,7 @@ defmodule LibTmux.MixProject do
       groups_for_modules: [
         "Observe and select": [
           LibTmux.Server,
+          LibTmux.Capabilities,
           LibTmux.Snapshot,
           LibTmux.Selection,
           LibTmux.Filter,

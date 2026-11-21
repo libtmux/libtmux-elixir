@@ -384,6 +384,22 @@ defmodule LibTmux.Control do
   def status!(control), do: unwrap(status(control))
 
   @doc """
+  Observes named native tmux prerequisites on this handle's fixed epoch.
+
+  Reads the daemon version through the existing qualified lane and preserves
+  its accepted instance. A closed or replaced epoch refuses; discovery never
+  reconnects or changes transport. The connection must already be established;
+  discovery does not broaden client/server control compatibility. Reports are
+  captured data, not a Program API or new mutation authority. The version read
+  inherits the connection's host qualification for hooks, aliases and writers. See
+  `LibTmux.Capabilities` for pure feature checks.
+  """
+  @spec capabilities(t(), [LibTmux.Capabilities.option()]) ::
+          {:ok, LibTmux.Capabilities.t()} | {:error, Error.t() | ExecutionError.t()}
+  def capabilities(%__MODULE__{} = control, options \\ []),
+    do: LibTmux.Capabilities.observe(control, options)
+
+  @doc """
   Requests whole-epoch closure without claiming an operation or metadata slot.
 
   Repeated requests for the same closing or proven-retired generation return

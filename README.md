@@ -35,6 +35,7 @@ type through domain actions.
 [Try the examples](#try-the-examples) ·
 [Start a server](#start-a-private-server) ·
 [Choose a server](#choose-the-server) ·
+[Daemon features](#check-tmux-features-on-the-daemon) ·
 [Find things](#find-sessions-windows-and-panes) ·
 [Rename](#rename-a-window) ·
 [Control](#split-a-pane-send-input-and-read-the-screen) ·
@@ -192,6 +193,19 @@ IO.puts(
   tmux.
 
 More: [Capture an existing server](docs/first-task.md).
+
+## Check tmux features on the daemon
+
+### [`Server.capabilities/2`][server-capabilities]: decide from the daemon's release
+
+[`Capabilities.require/2`][capabilities-require] returns a supported native
+primitive or a refusal before dispatch. [`Control.capabilities/2`][control-capabilities]
+reads through an established control connection.
+
+Run the [owned program](examples/capabilities.exs) to check event-wait support;
+it prints `"available"` on tmux 3.8 and `"refused"` on tmux 3.3.
+
+More: [Check daemon features](docs/capabilities.md).
 
 ## Find sessions, windows and panes
 
@@ -366,6 +380,7 @@ More: [Recovery](docs/recovery.md), [Mental model](docs/mental-model.md).
 - [One-shot actions](docs/one-shot-actions.md): rename, split, input and
   screen capture.
 - [Managed control](docs/managed-control.md): one connection, many commands.
+- [Daemon features](docs/capabilities.md): release decisions and observation boundaries.
 - [Mental model](docs/mental-model.md): snapshots, references and results.
 - [API reference](https://libtmux.org/en/elixir/latest/reference/): functions
   and types.
@@ -416,6 +431,9 @@ Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
 [snapshot-panes]: https://libtmux.org/en/elixir/latest/reference/libtmux-snapshot-panes-1/
 [server-type]: https://libtmux.org/en/elixir/latest/reference/libtmux-server/
 [server-new]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-new-1/
+[server-capabilities]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-capabilities-2/
+[control-capabilities]: https://libtmux.org/en/elixir/latest/reference/libtmux-control-capabilities-2/
+[capabilities-require]: https://libtmux.org/en/elixir/latest/reference/libtmux-capabilities-require-2/
 [where]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-where-2/
 [filter]: https://libtmux.org/en/elixir/latest/reference/libtmux-selection-filter-2/
 [filter-json]: https://libtmux.org/en/elixir/latest/reference/libtmux-filter-from_json-3/
