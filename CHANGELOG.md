@@ -4,6 +4,8 @@ Notable changes to `libtmux`.
 
 ## Unreleased
 
+## libtmux 0.1.2 (2026-11-21)
+
 ### Added
 
 - Start a private tmux server with `LibTmux.Server.start/1` and stop it with
