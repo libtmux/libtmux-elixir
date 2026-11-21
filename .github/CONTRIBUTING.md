@@ -331,7 +331,7 @@ Pushing a `v<version>` tag runs the required Linux checks at that revision,
 then publishes the core package and its documentation to public Hex. The
 tag must match the root Mix version. The publishing job uses Hex Workload
 Identity in the `hex` GitHub environment. Hex 2.7 or later handles staged
-approval through `mix hex.publish --yes --wait`. The publish step allows 30
+approval through `mix hex.publish --yes --wait`. The publish step allows 10
 minutes for upload and any required approval. Rejection, expiry, or a
 timeout stops the job. Merges and local archive builds do not publish.
 Creating a release tag requires separate authorization.

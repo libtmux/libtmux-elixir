@@ -21,7 +21,7 @@ jobs:
     needs: verify
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 15
     environment: hex
     permissions:
       contents: read
@@ -61,7 +61,7 @@ jobs:
       - name: Check rendered documentation links
         run: elixir scripts/check_docs_links/check_docs_links.exs
       - name: Publish core and documentation to Hex
-        timeout-minutes: 30
+        timeout-minutes: 10
         run: mix hex.publish --yes --wait
       - name: Wait for the documentation
         env:
