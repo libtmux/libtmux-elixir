@@ -4,6 +4,8 @@ Notable changes to `libtmux`.
 
 ## Unreleased
 
+## libtmux 0.1.3-alpha.1 (2026-11-21)
+
 ### Fixed
 
 - Wait for approval of a staged Hex release before verifying its docs and
