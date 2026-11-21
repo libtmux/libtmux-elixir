@@ -4,19 +4,13 @@ Notable changes to `libtmux`.
 
 ## Unreleased
 
-## libtmux 0.1.3-alpha.2 (2026-11-21)
+## libtmux 0.1.3 (2026-11-21)
 
 ### Fixed
 
-- Finish release CI once Hex accepts the package and docs. Maintainers can
-  approve the staged release later using the link in the job log.
-
-## libtmux 0.1.3-alpha.1 (2026-11-21)
-
-### Fixed
-
-- Wait for approval of a staged Hex release before verifying its docs and
-  installation. (#100)
+- Finish the release job once Hex accepts the package and documentation.
+  When approval is required, the job log links to the staged release so
+  maintainers can approve it later. (#100)
 
 ## libtmux 0.1.2 (2026-11-21)
 
