@@ -21,7 +21,7 @@ jobs:
     needs: verify
     if: github.event_name == 'push' && github.ref_type == 'tag'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 35
     environment: hex
     permissions:
       contents: read
@@ -61,14 +61,8 @@ jobs:
       - name: Check rendered documentation links
         run: elixir scripts/check_docs_links/check_docs_links.exs
       - name: Publish core and documentation to Hex
-        run: mix hex.publish --yes
-      - name: Verify the public release
-        env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: >-
-          elixir scripts/check_hex_release/check_hex_release.exs
-          "https://hex.pm/api/packages/libtmux/releases/$RELEASE_VERSION"
-          "$RELEASE_VERSION"
+        timeout-minutes: 30
+        run: mix hex.publish --yes --wait
       - name: Wait for the documentation
         env:
           RELEASE_VERSION: ${{ steps.release.outputs.version }}
