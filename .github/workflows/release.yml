@@ -23,6 +23,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     environment: hex
+    permissions:
+      contents: read
+      id-token: write
     env:
       MIX_ENV: dev
       DOCS_SOURCE_REF: ${{ github.sha }}
@@ -58,8 +61,6 @@ jobs:
       - name: Check rendered documentation links
         run: elixir scripts/check_docs_links/check_docs_links.exs
       - name: Publish core and documentation to Hex
-        env:
-          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
         run: mix hex.publish --yes
       - name: Verify the public release
         env:

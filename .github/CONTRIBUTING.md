@@ -329,8 +329,8 @@ runtime compatibility, performance, or release readiness.
 
 Pushing a `v<version>` tag runs the required Linux checks at that revision,
 then publishes the core package and its documentation to public Hex. The
-tag must match the root Mix version. The publishing job uses `HEX_API_KEY`
-from the GitHub environment named `hex`, then verifies the public release
+tag must match the root Mix version. The publishing job uses Hex Workload
+Identity in the GitHub environment named `hex`, then verifies the public release
 and an installation outside the checkout. Merges and local archive builds
 do not publish. Creating a release tag requires separate authorization.
 Releases are numbered `0.1.N`: `0.1.0`, then `0.1.1`, `0.1.2` and so on, with
