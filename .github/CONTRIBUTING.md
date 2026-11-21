@@ -330,18 +330,34 @@ runtime compatibility, performance, or release readiness.
 Pushing a `v<version>` tag runs the required Linux checks at that revision,
 then publishes the core package and its documentation to public Hex. The
 tag must match the root Mix version. The publishing job uses Hex Workload
-Identity in the GitHub environment named `hex`, then verifies the public release
-and an installation outside the checkout. Merges and local archive builds
-do not publish. Creating a release tag requires separate authorization.
+Identity in the `hex` GitHub environment. Hex 2.7 or later handles staged
+approval through `mix hex.publish --yes --wait`. The publish step allows 10
+minutes for upload and any required approval. Rejection, expiry, or a
+timeout stops the job. Merges and local archive builds do not publish.
+Creating a release tag requires separate authorization.
 Releases are numbered `0.1.N`: `0.1.0`, then `0.1.1`, `0.1.2` and so on, with
 no `-alpha` or other prerelease tag unless the maintainer asks for one.
 
-After upload, verification allows up to 60 seconds for HexDocs readiness,
-with each request limited to five seconds or the remaining wait budget.
+After Hex completes publication, the workflow waits up to 60 seconds for
+the versioned HexDocs page. Each request uses at most five seconds or the
+remaining wait budget.
 Transient responses, including the propagation 404, are retried; permanent
 errors fail promptly. Exhaustion fails verification without republishing.
 The installed-consumer check follows a successful documentation read. Core
 CI exercises this policy against an owned local HTTP fixture.
+
+If approval finishes after the workflow times out, or a public check fails,
+verify the published version from its tagged checkout. For `v0.1.2`, check
+the docs first, then install the package in isolation.
+
+```console
+$ elixir scripts/wait_for_hexdocs/wait_for_hexdocs.exs \
+    https://hexdocs.pm/libtmux/0.1.2/
+```
+
+```console
+$ elixir scripts/check_hex_install.exs 0.1.2
+```
 
 The core keeps a `CHANGELOG.md` that its `files` list ships.
 `scripts/check_release/check_release.exs` refuses a release while it is

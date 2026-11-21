@@ -338,6 +338,22 @@ defmodule CiWorkflowTest do
     assert problems(@scaffold, @release) == []
   end
 
+  test "the release waits for Hex approval before checking public artifacts" do
+    publish = jobs(@release)["publish"]
+
+    assert [_, docs_and_install] =
+             String.split(publish, "run: mix hex.publish --yes --wait\n", parts: 2)
+
+    assert [_, install] =
+             String.split(
+               docs_and_install,
+               "elixir scripts/wait_for_hexdocs/wait_for_hexdocs.exs\n",
+               parts: 2
+             )
+
+    assert install =~ "run: elixir scripts/check_hex_install.exs "
+  end
+
   test "no other workflow opens a debugging session" do
     for path <- Path.wildcard(Path.join(@root, ".github/workflows/*.yml")),
         Path.basename(path) != "scaffold.yml" do

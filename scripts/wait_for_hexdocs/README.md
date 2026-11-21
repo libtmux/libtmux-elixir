@@ -1,7 +1,7 @@
 # wait_for_hexdocs
 
-Waits for a published HexDocs page to answer 200. After `mix hex.publish`, the
-`publish` job of `release.yml` runs it on the versioned page before it installs
+Waits for a published HexDocs page to answer 200. The `publish` job of
+`release.yml` runs it after Hex completes publication and before it installs
 the package from Hex.
 
 ```console

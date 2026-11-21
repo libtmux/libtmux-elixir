@@ -4,6 +4,11 @@ Notable changes to `libtmux`.
 
 ## Unreleased
 
+### Fixed
+
+- Wait for approval of a staged Hex release before verifying its docs and
+  installation. (#100)
+
 ## libtmux 0.1.2 (2026-11-21)
 
 ### Added
