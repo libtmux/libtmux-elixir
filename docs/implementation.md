@@ -21,6 +21,11 @@ The development selectors remain `elixir 1.20` and `erlang 29`. Resolve the
 selected Elixir build for OTP 29 and record its compiled/runtime identity.
 The selectors do not expand the tested support range to OTP 29.0.
 
+On unpatched tmux builds before 3.6 linked with `libutempter`, a retained
+pane's `exit_status` can stay unset and `pane-died` can be delayed until
+another child exits. For timely native exit reporting, use tmux 3.6 or later
+or a build with the [upstream fix](https://github.com/tmux/tmux/commit/fa5f3cef3d651b0eb9abfa77fc37ccade81679b5).
+
 [The support manifest](../priv/tmux/support.json) records the reference
 cells and the tmux releases to build. Required Linux cells are tmux 3.3, 3.3a,
 3.4 and 3.8 on Elixir 1.20.4/OTP 29.1.2, plus the resolved development
