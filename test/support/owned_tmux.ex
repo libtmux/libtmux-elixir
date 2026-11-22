@@ -10,7 +10,7 @@ defmodule LibTmux.Test.OwnedTmux do
   @call_ms 30_000
 
   alias LibTmux.{Command, Server}
-  alias LibTmux.Test.Processes
+  alias LibTmux.Test.{Processes, TmuxPath}
   alias LibTmux.Transport.OneShot
 
   def start_link(options), do: GenServer.start_link(__MODULE__, options)
@@ -35,7 +35,7 @@ defmodule LibTmux.Test.OwnedTmux do
 
   @impl true
   def init(options) do
-    executable = Keyword.get_lazy(options, :executable, &default_executable/0)
+    executable = Keyword.get_lazy(options, :executable, &TmuxPath.executable/0)
     {:ok, server} = Server.start(executable: executable)
 
     {:ok, %{stdout: pane}} =
@@ -125,7 +125,13 @@ defmodule LibTmux.Test.OwnedTmux do
       Port.open({:spawn_executable, state.executable}, [
         :binary,
         :exit_status,
-        {:env, [{~c"TMUX", false}, {~c"TMUX_PANE", false}]},
+        {:env,
+         [
+           {~c"TMUX", false},
+           {~c"TMUX_PANE", false},
+           {~c"LIBTMUX_SOCKET", false},
+           {~c"LIBTMUX_SOCKET_PATH", false}
+         ]},
         {:args,
          ["-N", "-C", "-S", state.server.socket, "attach-session", "-t", "$0", "-f"] ++
            ["no-output,ignore-size"]}
@@ -161,10 +167,5 @@ defmodule LibTmux.Test.OwnedTmux do
     Processes.await_exit([identity])
   end
 
-  defp clean_env, do: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
-
-  defp default_executable do
-    System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux") ||
-      raise "real tmux tests require an explicit tmux binary or tmux on PATH"
-  end
+  defp clean_env, do: TmuxPath.clean_env()
 end

@@ -7,13 +7,20 @@ defmodule LibTmux.ExampleCheck do
 
   alias LibTmux.Transport.OneShot
 
+  @cleared_selectors ["TMUX", "TMUX_PANE", "LIBTMUX_SOCKET", "LIBTMUX_SOCKET_PATH"]
+  @cleared_erl ["ERL_LIBS", "ELIXIR_ERL_OPTIONS", "ERL_AFLAGS", "ERL_ZFLAGS"]
+
+  def executable(env \\ System.get_env(), find_executable \\ &System.find_executable/1) do
+    non_blank(env["LIBTMUX_TEST_TMUX"]) ||
+      non_blank(env["LIBTMUX_TMUX"]) ||
+      find_executable.("tmux") ||
+      raise "packed examples require tmux"
+  end
+
   def run(package, consumer) do
     ebin = Path.join(package, "_build/prod/lib/libtmux/ebin")
     elixir = System.find_executable("elixir") || raise "Elixir is required"
-
-    executable =
-      System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux") ||
-        raise "packed examples require tmux"
+    executable = executable()
 
     code = ~S"""
     [expected, example | arguments] = System.argv()
@@ -106,7 +113,11 @@ defmodule LibTmux.ExampleCheck do
           "--seed",
           "624498"
         ],
-        env: [{"MIX_ENV", "test"}, {"LIBTMUX_QUICKSTART_PACKAGE", package}],
+        env: [
+          {"MIX_ENV", "test"},
+          {"LIBTMUX_QUICKSTART_PACKAGE", package},
+          {"LIBTMUX_TEST_TMUX", executable}
+        ],
         stderr_to_stdout: true
       )
 
@@ -115,16 +126,36 @@ defmodule LibTmux.ExampleCheck do
   end
 
   # The packed library runs in a VM of its own, as a consumer would run it.
-  defp pure_env do
-    Map.drop(System.get_env(), [
-      "TMUX",
-      "TMUX_PANE",
-      "ERL_LIBS",
-      "ELIXIR_ERL_OPTIONS",
-      "ERL_AFLAGS",
-      "ERL_ZFLAGS"
-    ])
+  def pure_env(env \\ System.get_env()) do
+    Map.drop(env, cleared_keys(env))
   end
+
+  def sandbox_env(root, env \\ System.get_env()) do
+    kept =
+      env
+      |> pure_env()
+      |> Map.put("PATH", Path.join(root, "bin") <> ":" <> Map.get(env, "PATH", ""))
+      |> Map.put("TMPDIR", Path.join(root, "tmp"))
+      |> Enum.to_list()
+
+    cleared = Enum.map(cleared_keys(env), &{&1, nil})
+    kept ++ cleared
+  end
+
+  defp cleared_keys(env) do
+    socket_vars =
+      env
+      |> Map.keys()
+      |> Enum.filter(&String.starts_with?(&1, "LIBTMUX_SOCKET"))
+
+    Enum.uniq(@cleared_selectors ++ @cleared_erl ++ socket_vars)
+  end
+
+  defp non_blank(value) when is_binary(value) do
+    if String.trim(value) == "", do: nil, else: value
+  end
+
+  defp non_blank(_value), do: nil
 
   # A fresh TMPDIR and a `tmux` first on PATH, so the program starts the tmux
   # under test and every directory it makes lands where this check can see it.
@@ -140,12 +171,7 @@ defmodule LibTmux.ExampleCheck do
     File.chmod!(root, 0o700)
     File.ln_s!(context.executable, Path.join([root, "bin", "tmux"]))
 
-    env =
-      pure_env()
-      |> Map.put("PATH", Path.join(root, "bin") <> ":" <> System.get_env("PATH", ""))
-      |> Map.put("TMPDIR", Path.join(root, "tmp"))
-
-    %{root: root, tmp: Path.join(root, "tmp"), env: Enum.to_list(env)}
+    %{root: root, tmp: Path.join(root, "tmp"), env: sandbox_env(root)}
   end
 
   # Runs one program as a plain child process and returns its JSON lines. A

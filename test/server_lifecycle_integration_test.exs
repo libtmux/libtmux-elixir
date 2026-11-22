@@ -2,14 +2,13 @@ defmodule LibTmux.ServerLifecycleIntegrationTest do
   use ExUnit.Case, async: true
 
   alias LibTmux.{Command, Error, Server}
-  alias LibTmux.Test.Processes
+  alias LibTmux.Test.{Processes, TmuxPath}
 
   @moduletag :integration
   @moduletag reason: "Starts and stops real tmux servers in private directories"
 
   setup do
-    tmux = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
-    tmux || raise "real tmux tests require an explicit tmux binary or tmux on PATH"
+    tmux = TmuxPath.executable()
 
     root =
       Path.join(

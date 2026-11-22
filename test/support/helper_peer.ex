@@ -19,7 +19,13 @@ defmodule LibTmux.Test.HelperPeer do
       Port.open({:spawn_executable, Keyword.get(options, :helper, Native.executable())}, [
         :binary,
         :exit_status,
-        {:env, [{~c"TMUX", false}, {~c"TMUX_PANE", false}]}
+        {:env,
+         [
+           {~c"TMUX", false},
+           {~c"TMUX_PANE", false},
+           {~c"LIBTMUX_SOCKET", false},
+           {~c"LIBTMUX_SOCKET_PATH", false}
+         ]}
       ])
 
     {:os_pid, os_pid} = Port.info(port, :os_pid)

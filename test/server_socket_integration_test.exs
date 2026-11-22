@@ -3,6 +3,7 @@ defmodule LibTmux.ServerSocketIntegrationTest do
 
   alias LibTmux.{Control, Server, Snapshot}
   alias LibTmux.Control.Request
+  alias LibTmux.Test.TmuxPath
 
   @moduletag :integration
   @moduletag reason:
@@ -12,7 +13,7 @@ defmodule LibTmux.ServerSocketIntegrationTest do
   # that is wrongly chosen or wrongly omitted still cannot reach a server
   # outside it. The decoy servers prove that the right one answered.
   setup do
-    tmux = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    tmux = TmuxPath.executable()
     dir = Path.join(System.tmp_dir!(), "ltx-sock-#{System.unique_integer([:positive])}")
     File.mkdir_p!(dir)
     File.chmod!(dir, 0o700)
@@ -169,7 +170,13 @@ defmodule LibTmux.ServerSocketIntegrationTest do
   end
 
   defp environment(context),
-    do: [{"TMUX_TMPDIR", context.dir}, {"TMUX", nil}, {"TMUX_PANE", nil}]
+    do: [
+      {"TMUX_TMPDIR", context.dir},
+      {"TMUX", nil},
+      {"TMUX_PANE", nil},
+      {"LIBTMUX_SOCKET", nil},
+      {"LIBTMUX_SOCKET_PATH", nil}
+    ]
 
   defp eventually(check, attempts \\ 40) do
     cond do

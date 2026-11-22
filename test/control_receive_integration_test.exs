@@ -12,7 +12,7 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
   test "native exit preserves a queued large reply and its registered waiter" do
     fixture = start_supervised!({OwnedTmux, []})
     %{socket: socket} = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: socket, cwd: "/", env: %{})
     value = String.duplicate("\n", 6000)
     assert {"", 0} = OwnedTmux.command(fixture, ["set-option", "-s", "@receive_tail", value])
@@ -159,7 +159,7 @@ defmodule LibTmux.ControlReceiveIntegrationTest do
     test "#{mode} during queued EOF preserves an established result", %{drain_abort: mode} do
       fixture = start_supervised!({OwnedTmux, []})
       %{socket: socket} = OwnedTmux.info(fixture)
-      executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+      executable = LibTmux.Test.TmuxPath.executable()
       server = Server.new(executable: executable, socket: socket, cwd: "/", env: %{})
       value = String.duplicate("\n", 6000)
       assert {"", 0} = OwnedTmux.command(fixture, ["set-option", "-s", "@receive_tail", value])

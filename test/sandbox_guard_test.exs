@@ -1,7 +1,7 @@
 defmodule LibTmux.SandboxGuardTest do
   use ExUnit.Case, async: true
 
-  alias LibTmux.Test.SandboxGuard
+  alias LibTmux.Test.{SandboxGuard, TmuxPath}
 
   test "the suite runs with no inherited tmux context and a private TMUX_TMPDIR" do
     dir = System.fetch_env!("TMUX_TMPDIR")
@@ -16,6 +16,7 @@ defmodule LibTmux.SandboxGuardTest do
       "TMUX_TMPDIR" => "/x",
       "LIBTMUX_SOCKET" => "x",
       "LIBTMUX_SOCKET_PATH" => "/x",
+      "LIBTMUX_TEST_TMUX" => "/usr/bin/tmux",
       "LIBTMUX_TMUX" => "/usr/bin/tmux",
       "PATH" => "/bin"
     }
@@ -115,7 +116,7 @@ defmodule LibTmux.SandboxGuardTest do
     @describetag reason: "Starts a tmux server with no socket argument, in the sandbox only"
 
     test "lands in the sandbox, and moves with TMUX_TMPDIR" do
-      tmux = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+      tmux = TmuxPath.executable()
       sandbox = System.fetch_env!("TMUX_TMPDIR")
       assert SandboxGuard.verify(System.get_env(), sandbox) == []
 
@@ -126,7 +127,13 @@ defmodule LibTmux.SandboxGuardTest do
 
       bare = fn directory, arguments ->
         System.cmd(tmux, ["-f", "/dev/null"] ++ arguments,
-          env: [{"TMUX_TMPDIR", directory}, {"TMUX", nil}, {"TMUX_PANE", nil}],
+          env: [
+            {"TMUX_TMPDIR", directory},
+            {"TMUX", nil},
+            {"TMUX_PANE", nil},
+            {"LIBTMUX_SOCKET", nil},
+            {"LIBTMUX_SOCKET_PATH", nil}
+          ],
           stderr_to_stdout: true
         )
       end

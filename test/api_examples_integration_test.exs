@@ -2,7 +2,7 @@ defmodule LibTmux.APIExamplesIntegrationTest do
   use ExUnit.Case, async: true
 
   alias LibTmux.{Control, Pane, Ref, Selection, Server, Session, Snapshot, Window}
-  alias LibTmux.Test.OwnedTmux
+  alias LibTmux.Test.{OwnedTmux, TmuxPath}
 
   @moduletag :integration
   @moduletag reason: "Executes the API reference snippets on an owned tmux server"
@@ -13,9 +13,9 @@ defmodule LibTmux.APIExamplesIntegrationTest do
 
     server =
       Server.new(
-        executable: System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux"),
+        executable: TmuxPath.executable(),
         socket: socket,
-        env: Map.drop(System.get_env(), ["TMUX", "TMUX_PANE"])
+        env: TmuxPath.clean_env()
       )
 
     snapshot = Server.snapshot!(server)

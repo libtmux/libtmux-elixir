@@ -108,9 +108,16 @@ defmodule LibTmux.QuickstartExampleIntegrationTest do
         "LC_ALL" => "C.UTF-8"
       })
 
+    cleared = [
+      {"TMUX", nil},
+      {"TMUX_PANE", nil},
+      {"LIBTMUX_SOCKET", nil},
+      {"LIBTMUX_SOCKET_PATH", nil}
+    ]
+
     System.cmd(System.find_executable("elixir"), arguments,
       cd: directory,
-      env: Enum.to_list(environment),
+      env: Enum.to_list(environment) ++ cleared,
       stderr_to_stdout: true
     )
   end

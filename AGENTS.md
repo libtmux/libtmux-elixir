@@ -34,6 +34,6 @@ Each guide is the single home for its subject. `CLAUDE.md` links here.
 ## Shared resources
 
 Future tmux tests and probes must use unique, owned sockets and temporary
-directories, with inherited `TMUX` and `TMUX_PANE` cleared. Never use or
-stop the default server. Clean up only resources owned by the run and
-verify that owned processes exit.
+directories, with inherited `TMUX`, `TMUX_PANE`, `LIBTMUX_SOCKET` and
+`LIBTMUX_SOCKET_PATH` cleared. Never use or stop the default server. Clean up
+only resources owned by the run and verify that owned processes exit.

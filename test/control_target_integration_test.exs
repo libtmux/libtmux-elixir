@@ -10,7 +10,7 @@ defmodule LibTmux.ControlTargetIntegrationTest do
   test "disappeared targets fail while existing empty fields remain successful" do
     fixture = start_supervised!({OwnedTmux, []})
     info = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: info.socket, cwd: "/", env: %{})
 
     assert {ids, 0} =

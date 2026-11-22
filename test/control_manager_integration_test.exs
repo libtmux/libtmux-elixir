@@ -19,7 +19,7 @@ defmodule LibTmux.ControlManagerIntegrationTest do
   test "direct linked startup returns ready info and preserves a failed attachment reason" do
     fixture = start_supervised!({OwnedTmux, []})
     %{socket: socket} = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: socket, cwd: "/", env: %{})
     options = [server: server, session: {:existing, "$0"}, lane: :host_qualified, timeout: 800]
     assert {:ok, root, control} = Control.start_link(options)
@@ -47,7 +47,7 @@ defmodule LibTmux.ControlManagerIntegrationTest do
   test "explicit reconnect waits for old actor/native retirement and preserves the server incarnation" do
     fixture = start_supervised!({OwnedTmux, []})
     %{socket: socket} = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: socket, cwd: "/", env: %{})
 
     parent =

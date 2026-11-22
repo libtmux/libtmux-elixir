@@ -11,7 +11,7 @@ defmodule LibTmux.ControlFinalizationIntegrationTest do
   test "expired reconnect cannot attach after suspended finalization resumes" do
     fixture = start_supervised!({OwnedTmux, []})
     %{socket: socket} = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: socket, cwd: "/", env: %{})
 
     parent =

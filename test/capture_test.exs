@@ -325,7 +325,6 @@ defmodule LibTmux.CaptureTest do
   end
 
   defp server(info) do
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
-    Server.new(executable: executable, socket: info.socket)
+    Server.new(executable: LibTmux.Test.TmuxPath.executable(), socket: info.socket)
   end
 end
