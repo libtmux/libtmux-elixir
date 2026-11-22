@@ -1,8 +1,8 @@
 <!-- libtmux-logo -->
 <div align="center">
   <picture>
-    <source srcset="docs/assets/logo.svg" type="image/svg+xml">
-    <img src="docs/assets/logo-512.png" width="128" height="128" alt="libtmux for Elixir">
+    <source srcset="assets/logo.svg" type="image/svg+xml">
+    <img src="assets/logo.png" width="128" height="128" alt="libtmux for Elixir">
   </picture>
 </div>
 <!-- /libtmux-logo -->
@@ -398,7 +398,7 @@ and [Writing](.github/WRITING.md) for documentation conventions.
 
 Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
 [libtmux ports](https://github.com/libtmux), and [tmux](https://github.com/tmux/tmux).
-[Artwork](docs/branding.md). Licensed under the [MIT License](LICENSE).
+[Artwork](assets/README.md). Licensed under the [MIT License](LICENSE).
 
 [with-owned]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-with_owned-2/
 [start]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-start-1/

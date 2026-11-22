@@ -33,6 +33,7 @@ defmodule LibTmux.MixProject do
           ".github/WRITING.md",
           ".github/SCRIPTS.md",
           "scripts/*/README.md",
+          "assets",
           "docs",
           "priv/tmux"
         ]
@@ -48,11 +49,13 @@ defmodule LibTmux.MixProject do
   defp docs do
     source_ref = System.get_env("DOCS_SOURCE_REF", "main")
     blob = @source_url <> "/blob/" <> source_ref <> "/"
-    tree = @source_url <> "/tree/" <> source_ref <> "/"
 
     # ExDoc flattens extras; keep repository-relative links in the originals.
     replacements = %{
-      "README.md" => [{"examples/readme.exs", blob <> "examples/readme.exs"}],
+      "README.md" => [
+        {"examples/readme.exs", blob <> "examples/readme.exs"},
+        {"assets/README.md", blob <> "assets/README.md"}
+      ],
       ".github/CONTRIBUTING.md" => [
         {"../.tool-versions", blob <> ".tool-versions"},
         {"../mix.exs", blob <> "mix.exs"},
@@ -66,11 +69,7 @@ defmodule LibTmux.MixProject do
         {"../examples/capture_and_read.exs", blob <> "examples/capture_and_read.exs"}
       ],
       "docs/ownership.md" => [{"../c_src/README.md", blob <> "c_src/README.md"}],
-      "docs/first-task.md" => [{"../README.md#installation", "readme.html#installation"}],
-      "docs/branding.md" => [
-        {"assets/", tree <> "docs/assets/"},
-        {"assets/source.json", blob <> "docs/assets/source.json"}
-      ]
+      "docs/first-task.md" => [{"../README.md#installation", "readme.html#installation"}]
     }
 
     extras = [
@@ -93,7 +92,6 @@ defmodule LibTmux.MixProject do
       "docs/encoding.md",
       "docs/design.md",
       "docs/implementation.md",
-      "docs/branding.md",
       "AGENTS.md",
       ".github/CONTRIBUTING.md",
       ".github/WRITING.md",
@@ -148,15 +146,14 @@ defmodule LibTmux.MixProject do
     [
       main: "readme",
       source_ref: source_ref,
-      logo: "docs/assets/logo.svg",
-      assets: %{"docs/assets" => "docs/assets"},
+      logo: "assets/logo.svg",
+      assets: %{"assets" => "assets"},
       groups_for_extras: [
         Tasks:
           ~r/(first-task|standalone-demo|one-shot-actions|managed-control|supervised-control|recovery|owned-server|advanced-execution)/,
         "Concepts and reference": ~r/(mental-model|observations|filtering|schema|api-examples)/,
         "Design and internals": ~r/(ownership|encoding|design|implementation)/,
-        Contributing:
-          ~r/(AGENTS|CONTRIBUTING|WRITING|SCRIPTS|doc_sources\/scripts\/|branding|LICENSE)/
+        Contributing: ~r/(AGENTS|CONTRIBUTING|WRITING|SCRIPTS|doc_sources\/scripts\/|LICENSE)/
       ],
       groups_for_modules: [
         "Observe and select": [
