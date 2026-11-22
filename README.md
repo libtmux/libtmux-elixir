@@ -31,17 +31,6 @@ Drive tmux from Elixir: [capture][snapshot] sessions, windows and panes as an
 immutable snapshot, [filter][where] it with plain data, then rename, split and
 type through domain actions.
 
-**Contents** — [Installation](#installation) ·
-[Try the examples](#try-the-examples) ·
-[Start a server](#start-a-private-server) ·
-[Choose a server](#choose-the-server) ·
-[Find things](#find-sessions-windows-and-panes) ·
-[Rename](#rename-a-window) ·
-[Control](#split-a-pane-send-input-and-read-the-screen) ·
-[Errors](#errors-and-recovery) ·
-[Guides](#guides) · [Support](#support-and-status) ·
-[Leaves out](#what-it-leaves-out)
-
 ## Installation
 
 Add the package to your Mix dependencies:
@@ -117,7 +106,10 @@ Server.with_owned([executable: tmux], fn server ->
 
   :ok = Window.kill!(server, logs_ref)
 
-  remaining = Server.snapshot!(server) |> Snapshot.windows() |> Enum.map(& &1.id)
+  remaining =
+    Server.snapshot!(server)
+    |> Snapshot.windows()
+    |> Enum.map(& &1.id)
 
   IO.puts(
     JSON.encode!(%{
@@ -164,7 +156,8 @@ tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
 by_path = Server.new(executable: tmux, socket: "/run/user/1000/work.sock")
 by_name = Server.new(executable: tmux, socket_name: "work")
 from_variable = Server.new(executable: tmux, env: %{"LIBTMUX_SOCKET" => "work"})
-from_path_variable = Server.new(executable: tmux, env: %{"LIBTMUX_SOCKET_PATH" => "/tmp/w.sock"})
+path_env = %{"LIBTMUX_SOCKET_PATH" => "/tmp/w.sock"}
+from_path_variable = Server.new(executable: tmux, env: path_env)
 default = Server.new(executable: tmux, env: %{})
 
 %Server{socket: "/run/user/1000/work.sock", socket_name: nil} = by_path
@@ -199,7 +192,8 @@ More: [Capture an existing server](docs/first-task.md).
 
 The snippets from here on run inside the function that
 [`Server.with_owned/2`](#start-a-private-server) calls, so `server` is its
-private server. One call captures every session, window and pane as an immutable graph.
+private server. One call captures every session, window and pane as an
+immutable graph.
 [`Snapshot.sessions/1`][snapshot-sessions],
 [`Snapshot.windows/1`][snapshot-windows] and
 [`Snapshot.panes/1`][snapshot-panes] pick a type, and
@@ -311,15 +305,19 @@ bound reference. [`Pane.send_text!/4`][text] sends literal text and
 ```elixir
 alias LibTmux.{Control, Pane, Ref, Selection, Snapshot}
 
-pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
+pane =
+  snapshot
+  |> Snapshot.panes()
+  |> Selection.one!(window_id: window.id, active: true)
+
 {:ok, pane_ref} = Ref.from_observation(pane)
 
 {:ok, {created_id, created}} =
   Control.with_connection(
     [server: server, session: {:existing, session.id}, lane: :host_qualified],
     fn control ->
-      %{id: id, ref: created} =
-        Pane.split!(control, pane_ref, axis: :horizontal, command: {:argv, ["/bin/cat"]})
+      split_opts = [axis: :horizontal, command: {:argv, ["/bin/cat"]}]
+      %{id: id, ref: created} = Pane.split!(control, pane_ref, split_opts)
 
       Pane.send_text!(control, created, "hello")
       Pane.send_keys!(control, created, ["Enter"])
@@ -396,9 +394,11 @@ See the [AI policy](https://libtmux.org/en/meta/ai-policy/), also kept as
 See [Contributing](.github/CONTRIBUTING.md) for development setup and checks,
 and [Writing](.github/WRITING.md) for documentation conventions.
 
-Related projects: [libtmux for Python](https://github.com/tmux-python/libtmux),
-[libtmux ports](https://github.com/libtmux), and [tmux](https://github.com/tmux/tmux).
-[Artwork](assets/README.md). Licensed under the [MIT License](LICENSE).
+Part of the [libtmux.org](https://libtmux.org/) family alongside Python
+[`libtmux`](https://github.com/tmux-python/libtmux), sibling
+[language ports](https://github.com/libtmux), and
+[tmux](https://github.com/tmux/tmux). [Artwork](assets/README.md) ·
+[MIT License](LICENSE).
 
 [with-owned]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-with_owned-2/
 [start]: https://libtmux.org/en/elixir/latest/reference/libtmux-server-start-1/
