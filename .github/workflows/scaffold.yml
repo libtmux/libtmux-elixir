@@ -91,6 +91,8 @@ jobs:
         run: mix deps.get
       - name: Check formatting
         run: time mix format --check-formatted
+      - name: Check example width
+        uses: libtmux/.github/actions/check-example-width@bd3bae79572512da032287202d74c8da03b5967b
       - name: Check executable documentation drift
         run: time elixir scripts/check_example_docs/check_example_docs.exs
       - name: Test the documentation drift check

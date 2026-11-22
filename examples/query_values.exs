@@ -34,7 +34,12 @@ true = Selection.member_id?(sessions, "$0")
 {:ok, nil} = Selection.one_or_nil(sessions, name: "missing")
 nil = Selection.one_or_nil!(sessions, name: "missing")
 ["$0"] = sessions |> Selection.where(attached: true) |> Enum.map(& &1.id)
-[^session] = sessions |> Selection.filter(&String.starts_with?(&1.name, "wo")) |> Enum.to_list()
+
+[^session] =
+  sessions
+  |> Selection.filter(&String.starts_with?(&1.name, "wo"))
+  |> Enum.to_list()
+
 0 = Selection.size(Snapshot.windows(snapshot))
 0 = Selection.size(Snapshot.window_links(snapshot))
 0 = Selection.size(Snapshot.panes(snapshot))

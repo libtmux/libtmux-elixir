@@ -9,10 +9,12 @@ Server.with_owned([executable: tmux], fn server ->
   snapshot = Server.snapshot!(server)
 
   # docs:begin where
+  editors = ["cat", "nvim", "vim"]
+
   active =
     snapshot
     |> Snapshot.panes()
-    |> Selection.where(active: true, current_command: [in: ["cat", "nvim", "vim"]])
+    |> Selection.where(active: true, current_command: [in: editors])
 
   Enum.map(active, & &1.id)
   # docs:end where
@@ -32,13 +34,16 @@ Server.with_owned([executable: tmux], fn server ->
   # docs:begin wire
   alias LibTmux.{Filter, Pane}
 
-  {:ok, filter} = Filter.new(Pane, active: true, current_command: [in: ["nvim", "vim"]])
+  criteria = [active: true, current_command: [in: ["nvim", "vim"]]]
+  {:ok, filter} = Filter.new(Pane, criteria)
   json = filter |> Filter.to_wire() |> JSON.encode!()
   {:ok, ^filter} = Filter.from_json(Pane, json)
   # docs:end wire
 
-  document =
-    ~s({"version":1,"entity":"pane","where":{"active":true,"currentCommand":{"in":["nvim","vim"]}}})
+  document = """
+  {"version":1,"entity":"pane",
+   "where":{"active":true,"currentCommand":{"in":["nvim","vim"]}}}
+  """
 
   true = JSON.decode!(json) == JSON.decode!(document)
   IO.puts(JSON.encode!(%{filtering: "ok"}))

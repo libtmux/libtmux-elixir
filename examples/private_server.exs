@@ -19,7 +19,10 @@ Server.with_owned([executable: tmux], fn server ->
 
   :ok = Window.kill!(server, logs_ref)
 
-  remaining = Server.snapshot!(server) |> Snapshot.windows() |> Enum.map(& &1.id)
+  remaining =
+    Server.snapshot!(server)
+    |> Snapshot.windows()
+    |> Enum.map(& &1.id)
 
   IO.puts(
     JSON.encode!(%{

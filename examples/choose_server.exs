@@ -5,7 +5,8 @@ tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
 by_path = Server.new(executable: tmux, socket: "/run/user/1000/work.sock")
 by_name = Server.new(executable: tmux, socket_name: "work")
 from_variable = Server.new(executable: tmux, env: %{"LIBTMUX_SOCKET" => "work"})
-from_path_variable = Server.new(executable: tmux, env: %{"LIBTMUX_SOCKET_PATH" => "/tmp/w.sock"})
+path_env = %{"LIBTMUX_SOCKET_PATH" => "/tmp/w.sock"}
+from_path_variable = Server.new(executable: tmux, env: path_env)
 default = Server.new(executable: tmux, env: %{})
 
 %Server{socket: "/run/user/1000/work.sock", socket_name: nil} = by_path

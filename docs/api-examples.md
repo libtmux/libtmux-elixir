@@ -52,7 +52,12 @@ true = Selection.member_id?(sessions, "$0")
 {:ok, nil} = Selection.one_or_nil(sessions, name: "missing")
 nil = Selection.one_or_nil!(sessions, name: "missing")
 ["$0"] = sessions |> Selection.where(attached: true) |> Enum.map(& &1.id)
-[^session] = sessions |> Selection.filter(&String.starts_with?(&1.name, "wo")) |> Enum.to_list()
+
+[^session] =
+  sessions
+  |> Selection.filter(&String.starts_with?(&1.name, "wo"))
+  |> Enum.to_list()
+
 0 = Selection.size(Snapshot.windows(snapshot))
 0 = Selection.size(Snapshot.window_links(snapshot))
 0 = Selection.size(Snapshot.panes(snapshot))
@@ -90,14 +95,14 @@ IO.puts(JSON.encode!(%{query_values: "ok"}))
 <!-- example: examples/encoding_values.exs -->
 
 ```elixir
-alias LibTmux.{Codec, Command, Control, Deadline, Format, Protocol, Ref, Server, Wire}
+alias LibTmux.{Codec, Command, Control, Deadline, Format}
+alias LibTmux.{Protocol, Ref, Server, Wire}
 alias LibTmux.Control.Request
 alias LibTmux.Transport.OneShot
 
 server = Server.new(executable: "/unused/tmux", socket: "/unused/socket")
-
-%{id: Control, type: :supervisor} =
-  Control.child_spec(server: server, session: {:existing, "$0"}, lane: :host_qualified)
+spec_opts = [server: server, session: {:existing, "$0"}, lane: :host_qualified]
+%{id: Control, type: :supervisor} = Control.child_spec(spec_opts)
 
 deadline = Deadline.new(100, now: 10)
 75 = Deadline.remaining(deadline, now: 35)
@@ -110,7 +115,8 @@ command = Command.new("display-message", ["-p", Format.literal(~S"#{pid}")])
 ["display-message", "-p", _literal] = Command.argv(command)
 false = String.contains?(Command.render(command), "\n")
 true = String.starts_with?(Format.field("pane_title"), "v1:")
-{:ok, "hello\n"} = Codec.decode_field("v1:hello\\012\n", :string, encoding: :escaped_v1)
+escaped = [encoding: :escaped_v1]
+{:ok, "hello\n"} = Codec.decode_field("v1:hello\\012\n", :string, escaped)
 {:ok, <<0, 255>>} = Codec.decode_output("\\000\\377")
 
 parser = Protocol.new(max_line_bytes: 1024)
@@ -120,14 +126,16 @@ parser = Protocol.new(max_line_bytes: 1024)
 
 :ok = Protocol.finish(parser)
 :ok = Request.verify_reply(Request.field("pane_title"), :ok, ["v1:hello"])
-:ok = Request.verify_reply(Request.set_user_option("@example", "hello"), :ok, [])
+set_option = Request.set_user_option("@example", "hello")
+:ok = Request.verify_reply(set_option, :ok, [])
 {:ok, %{"name" => "work"} = value} = Wire.decode(~s({"name":"work"}))
 {:ok, ^value} = Wire.validate(value)
 
 {:ok, %{stdout: "hello\n", exit_status: 0, cleanup: :retired}} =
   OneShot.run("/bin/echo", ["hello"], max_total_bytes: 6)
 
-%{stdout: "", exit_status: 1, cleanup: :retired} = OneShot.run!("/bin/false", [])
+failed = OneShot.run!("/bin/false", [])
+%{stdout: "", exit_status: 1, cleanup: :retired} = failed
 IO.puts(JSON.encode!(%{encoding_values: "ok"}))
 ```
 

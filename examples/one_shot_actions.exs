@@ -9,7 +9,12 @@ Server.with_owned([executable: tmux], fn server ->
   {:ok, snapshot} = Server.snapshot(server)
   session = snapshot |> Snapshot.sessions() |> Selection.one!(id: session_id)
   window = Session.active_window(snapshot, session)
-  pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
+
+  pane =
+    snapshot
+    |> Snapshot.panes()
+    |> Selection.one!(window_id: window.id, active: true)
+
   {:ok, session_ref} = Ref.from_observation(session)
   {:ok, window_ref} = Ref.from_observation(window)
   {:ok, pane_ref} = Ref.from_observation(pane)
@@ -35,5 +40,11 @@ Server.with_owned([executable: tmux], fn server ->
   {:ok, %{name: "work"}} = Snapshot.fetch(fresh, :session, session.id)
   {:ok, %{name: "editor"}} = Snapshot.fetch(fresh, :window, window.id)
   false = Selection.member_id?(Snapshot.panes(snapshot), created_id)
-  IO.puts(JSON.encode!(%{created_pane: created_id, captured_bytes: byte_size(screen)}))
+
+  IO.puts(
+    JSON.encode!(%{
+      created_pane: created_id,
+      captured_bytes: byte_size(screen)
+    })
+  )
 end)

@@ -60,15 +60,19 @@ Server.with_owned([executable: tmux], fn server ->
   # docs:begin control
   alias LibTmux.{Control, Pane, Ref, Selection, Snapshot}
 
-  pane = snapshot |> Snapshot.panes() |> Selection.one!(window_id: window.id, active: true)
+  pane =
+    snapshot
+    |> Snapshot.panes()
+    |> Selection.one!(window_id: window.id, active: true)
+
   {:ok, pane_ref} = Ref.from_observation(pane)
 
   {:ok, {created_id, created}} =
     Control.with_connection(
       [server: server, session: {:existing, session.id}, lane: :host_qualified],
       fn control ->
-        %{id: id, ref: created} =
-          Pane.split!(control, pane_ref, axis: :horizontal, command: {:argv, ["/bin/cat"]})
+        split_opts = [axis: :horizontal, command: {:argv, ["/bin/cat"]}]
+        %{id: id, ref: created} = Pane.split!(control, pane_ref, split_opts)
 
         Pane.send_text!(control, created, "hello")
         Pane.send_keys!(control, created, ["Enter"])

@@ -1,0 +1,10 @@
+width = 80
+markdown = ["**/*.md"]
+sources = ["examples/**/*.exs"]
+allow_ceiling = 1
+shared_digest = "872d3f4cb1eb2b5cd9c5b7adc9cd140a153e4bbed3cb5bd0b7400a905e6dae4d"
+
+[[allow]]
+path = ".github/WRITING.md"
+line = '  result = snapshot |> Snapshot.panes() |> Selection.where(current_command: [in: ["nvim", "vim"]])'
+reason = "The deliberately wide Bad policy example demonstrates the problem."

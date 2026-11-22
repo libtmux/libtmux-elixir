@@ -1,4 +1,5 @@
-alias LibTmux.{Codec, Command, Control, Format, Operation, Ref, Selection, Server, Snapshot}
+alias LibTmux.{Codec, Command, Control, Format, Operation}
+alias LibTmux.{Ref, Selection, Server, Snapshot}
 alias LibTmux.Control.Request
 
 tmux = System.find_executable("tmux") || raise "tmux is not on PATH"
@@ -19,9 +20,11 @@ Server.with_owned([executable: tmux], fn server ->
     |> Selection.one!()
 
   {:ok, target} = Ref.new(:pane, pane.id, snapshot.server_instance)
-  command = Command.new("display-message", ["-p", "-t", pane.id, Format.field("pane_id")])
+  escaped = [encoding: :escaped_v1]
+  args = ["-p", "-t", pane.id, Format.field("pane_id")]
+  command = Command.new("display-message", args)
   {:ok, %{stdout: stdout, cleanup: :retired}} = Server.run(server, command)
-  {:ok, one_shot_id} = Codec.decode_field(stdout, :string, encoding: :escaped_v1)
+  {:ok, one_shot_id} = Codec.decode_field(stdout, :string, escaped)
   true = one_shot_id == pane.id
 
   {:ok, root, control} =
@@ -36,7 +39,8 @@ Server.with_owned([executable: tmux], fn server ->
 
   control_id =
     try do
-      {:ok, operation} = Control.submit(control, Request.field("pane_id", target), timeout: 800)
+      request = Request.field("pane_id", target)
+      {:ok, operation} = Control.submit(control, request, timeout: 800)
 
       {:ok,
        %{
@@ -49,10 +53,11 @@ Server.with_owned([executable: tmux], fn server ->
       {:ok, %{phase: :ready}} = Control.status(control)
       {:ok, %{result: %{outcome: :completed}}} = Operation.status(operation)
 
-      {:ok, id} = Codec.decode_field(line <> "\n", :string, encoding: :escaped_v1)
+      {:ok, id} = Codec.decode_field(line <> "\n", :string, escaped)
       true = id == pane.id
       :ok = Control.close(control, timeout: 800)
-      {:ok, %{phase: :retired, terminal: %{reason: :closure_requested}}} = Control.status(control)
+      {:ok, %{phase: :retired, terminal: terminal}} = Control.status(control)
+      %{reason: :closure_requested} = terminal
       {:ok, %{outcome: :completed}} = Operation.result(operation)
       :ok = Operation.forget(operation, timeout: 800)
       id
