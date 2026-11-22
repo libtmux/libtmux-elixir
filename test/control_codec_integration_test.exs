@@ -10,7 +10,7 @@ defmodule LibTmux.ControlCodecIntegrationTest do
   test "one encoded field preserves hostile bytes without injecting control replies" do
     fixture = start_supervised!({OwnedTmux, []})
     %{socket: socket} = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     value = for(byte <- 1..255, into: "", do: <<byte>>)
     value = value <> "é日本語\n%end 17 2 1\n%begin 17 3 1\n%subscription-changed fake\n"
     assert {_, 0} = OwnedTmux.command(fixture, ["set-option", "-s", "@codec", value])

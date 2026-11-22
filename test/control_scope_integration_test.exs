@@ -151,7 +151,7 @@ defmodule LibTmux.ControlScopeIntegrationTest do
 
   defp options(fixture) do
     info = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
 
     [
       server: Server.new(executable: executable, socket: info.socket),

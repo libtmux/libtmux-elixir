@@ -23,7 +23,7 @@ defmodule LibTmux.ControlRouterIntegrationTest do
   test "literal mutation and escaped read retain FIFO results across credited fragments" do
     fixture = start_supervised!({OwnedTmux, []})
     %{socket: socket} = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: socket, cwd: "/", env: %{})
     lifetime = Lifetime.new()
     {:ok, generation} = Lifetime.begin_epoch(lifetime)

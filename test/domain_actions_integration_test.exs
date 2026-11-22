@@ -488,7 +488,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
   defp server(info),
     do:
       Server.new(
-        executable: System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux"),
+        executable: LibTmux.Test.TmuxPath.executable(),
         socket: info.socket,
         cwd: "/",
         env: %{}

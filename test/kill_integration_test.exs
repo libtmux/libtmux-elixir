@@ -3,14 +3,13 @@ defmodule LibTmux.KillIntegrationTest do
 
   alias LibTmux.{Command, Error, Pane, Ref, Server, Session, Snapshot, Window}
   alias LibTmux.Action.CompletionError
-  alias LibTmux.Test.Processes
+  alias LibTmux.Test.{Processes, TmuxPath}
 
   @moduletag :integration
   @moduletag reason: "Kills sessions, windows, panes and servers on real private tmux servers"
 
   setup do
-    tmux = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
-    tmux || raise "real tmux tests require an explicit tmux binary or tmux on PATH"
+    tmux = TmuxPath.executable()
 
     root =
       Path.join(

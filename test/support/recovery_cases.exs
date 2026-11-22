@@ -6,6 +6,8 @@ System.argv([])
 Code.require_file(example)
 
 unless Code.ensure_loaded?(LibTmux.Test.OwnedTmux) do
+  Code.require_file("sandbox_guard.ex", __DIR__)
+  Code.require_file("tmux_path.ex", __DIR__)
   Code.require_file("processes.ex", __DIR__)
   Code.require_file("owned_tmux.ex", __DIR__)
 end

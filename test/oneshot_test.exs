@@ -75,7 +75,7 @@ defmodule LibTmux.OneShotTest do
   test "an explicit tmux metadata client leaves its borrowed server alive" do
     fixture = start_supervised!({LibTmux.Test.OwnedTmux, []})
     info = LibTmux.Test.OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
 
     assert {:ok, result} =
              OneShot.run(executable, [

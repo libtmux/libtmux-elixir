@@ -11,7 +11,7 @@ defmodule LibTmux.ControlExecuteIntegrationTest do
   test "caller death reclaims after the operation retires and timeout leaves inspectable work" do
     fixture = start_supervised!({OwnedTmux, []})
     info = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: info.socket)
 
     {:ok, root, control} =
@@ -135,7 +135,7 @@ defmodule LibTmux.ControlExecuteIntegrationTest do
   test "128 sequential executions reclaim operation and receipt capacity before returning" do
     fixture = start_supervised!({OwnedTmux, []})
     info = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: info.socket)
 
     for limits <- [[], [capacity: 1, waiter_capacity: 1, metadata_capacity: 1]] do

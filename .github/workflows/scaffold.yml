@@ -218,7 +218,7 @@ jobs:
       - name: Name the tmux binary
         env:
           TMUX_BINARY: ${{ steps.tmux.outputs.binary }}
-        run: echo "LIBTMUX_TMUX=$TMUX_BINARY" >> "$GITHUB_ENV"
+        run: echo "LIBTMUX_TEST_TMUX=$TMUX_BINARY" >> "$GITHUB_ENV"
       - name: Open a tmate session before the tests
         if: ${{ github.event_name == 'workflow_dispatch' && matrix.tmate == 'before-tests' }}
         uses: mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113 # v3.24

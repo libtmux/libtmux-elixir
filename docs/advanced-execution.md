@@ -20,15 +20,15 @@ $ MIX_ENV=test mix run scripts/check_package.exs --examples
 
 - It needs the toolchain from [Contributing](../.github/CONTRIBUTING.md#setup),
   plus tmux 3.3 or newer on `PATH`.
-- Set `LIBTMUX_TMUX` to an absolute executable to check a particular tmux
+- Set `LIBTMUX_TEST_TMUX` to an absolute executable to check a particular tmux
   build.
 - Hex must already be installed; the check downloads nothing.
 - It builds and extracts a real package, compiles its core in a fresh
   directory and runs the packaged example outside the checkout.
 - An owned fixture supplies a unique socket, an empty configuration and an
-  existing session. It clears inherited `TMUX` and `TMUX_PANE`, verifies that
-  its server, pane, clients and helper exited, and never uses the default
-  server.
+  existing session. It clears inherited `TMUX`, `TMUX_PANE`, `LIBTMUX_SOCKET`
+  and `LIBTMUX_SOCKET_PATH`, verifies that its server, pane, clients and helper
+  exited, and never uses the default server.
 
 ## The complete program
 

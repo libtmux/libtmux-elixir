@@ -12,7 +12,7 @@ defmodule LibTmux.ControlGuardianIntegrationTest do
   test "bootstrap binds a fresh incarnation, preserves environment and retires its borrowed client" do
     fixture = start_supervised!({OwnedTmux, []})
     %{socket: socket, server_pid: server_pid} = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: socket, cwd: "/", env: %{})
 
     assert {_, 0} =

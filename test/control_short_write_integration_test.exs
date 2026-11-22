@@ -102,7 +102,7 @@ defmodule LibTmux.ControlShortWriteIntegrationTest do
     assert :ok = :socket.bind(socket, %{family: :local, path: socket_path})
     fixture = start_supervised!({OwnedTmux, []})
     %{socket: tmux_socket} = OwnedTmux.info(fixture)
-    executable = System.get_env("LIBTMUX_TMUX") || System.find_executable("tmux")
+    executable = LibTmux.Test.TmuxPath.executable()
     server = Server.new(executable: executable, socket: tmux_socket, cwd: "/", env: %{})
 
     parent =

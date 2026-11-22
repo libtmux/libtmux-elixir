@@ -219,10 +219,11 @@ exact process with a short bounded poll
 (`LibTmux.Test.Processes`); it adds no fixed readiness sleep.
 
 Run the real fixture checks in the outer loop with the exact tmux binary
-being qualified:
+being qualified (`LIBTMUX_TMUX` remains accepted as a fallback when
+`LIBTMUX_TEST_TMUX` is unset or blank):
 
 ```console
-$ LIBTMUX_TMUX=/path/to/tmux mix test --include integration
+$ LIBTMUX_TEST_TMUX=/path/to/tmux mix test --include integration
 ```
 
 CI runs the complete existing suite with two ExUnit cases at once and two
@@ -299,9 +300,10 @@ give them a socket of your own, for example `LIBTMUX_SOCKET_PATH` in an
 uncommitted `.env` that your shell loads.
 
 Every tmux fixture uses a unique, owned socket and temporary directory.
-Clear inherited `TMUX` and `TMUX_PANE`. Never connect tests to the default
-server, and only stop servers or remove files owned by that run. Use
-bounded, event-based readiness and verify cleanup on success and failure.
+Clear inherited `TMUX`, `TMUX_PANE`, `LIBTMUX_SOCKET` and
+`LIBTMUX_SOCKET_PATH`. Never connect tests to the default server, and only
+stop servers or remove files owned by that run. Use bounded, event-based
+readiness and verify cleanup on success and failure.
 
 Use ExUnit supervision for BEAM children and explicit teardown for owned OS
 processes. A successful teardown call is not proof that a child exited.

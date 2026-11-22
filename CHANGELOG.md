@@ -4,6 +4,13 @@ Notable changes to `libtmux`.
 
 ## Unreleased
 
+### Development
+
+- Select the test and packed-example tmux executable through
+  `LIBTMUX_TEST_TMUX` before falling back to `LIBTMUX_TMUX` and `PATH`,
+  treating blank values as unset, and clear `LIBTMUX_SOCKET` and
+  `LIBTMUX_SOCKET_PATH` in test and example child environments. (#107)
+
 ## libtmux 0.1.3 (2026-11-21)
 
 ### Fixed
