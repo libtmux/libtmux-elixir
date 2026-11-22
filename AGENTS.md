@@ -11,7 +11,8 @@ small domain action surface. Query/Tracker and planners remain planned.
 - Setup, checks, and pull requests:
   [.github/CONTRIBUTING.md](.github/CONTRIBUTING.md).
 - Documentation, user-facing text, comments, and commits:
-  [.github/WRITING.md](.github/WRITING.md).
+  [.github/WRITING.md](.github/WRITING.md), including
+  [Examples](.github/WRITING.md#examples) for all reader-facing code.
 - Support scripts: what may stay, their language, layout and checks:
   [.github/SCRIPTS.md](.github/SCRIPTS.md).
 - Planned contracts and package boundaries: [docs/design.md](docs/design.md).

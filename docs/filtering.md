@@ -11,10 +11,12 @@ $ mix run examples/filtering.exs
 <!-- example: examples/filtering.exs#where -->
 
 ```elixir
+editors = ["cat", "nvim", "vim"]
+
 active =
   snapshot
   |> Snapshot.panes()
-  |> Selection.where(active: true, current_command: [in: ["cat", "nvim", "vim"]])
+  |> Selection.where(active: true, current_command: [in: editors])
 
 Enum.map(active, & &1.id)
 ```
@@ -96,7 +98,8 @@ clauses can match different panes.
 ```elixir
 alias LibTmux.{Filter, Pane}
 
-{:ok, filter} = Filter.new(Pane, active: true, current_command: [in: ["nvim", "vim"]])
+criteria = [active: true, current_command: [in: ["nvim", "vim"]]]
+{:ok, filter} = Filter.new(Pane, criteria)
 json = filter |> Filter.to_wire() |> JSON.encode!()
 {:ok, ^filter} = Filter.from_json(Pane, json)
 ```
@@ -106,7 +109,14 @@ json = filter |> Filter.to_wire() |> JSON.encode!()
 The document is:
 
 ```json
-{"version":1,"entity":"pane","where":{"active":true,"currentCommand":{"in":["nvim","vim"]}}}
+{
+  "version": 1,
+  "entity": "pane",
+  "where": {
+    "active": true,
+    "currentCommand": {"in": ["nvim", "vim"]}
+  }
+}
 ```
 
 ## Limits

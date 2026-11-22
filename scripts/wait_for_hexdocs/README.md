@@ -4,7 +4,9 @@ Waits for a published HexDocs page to answer 200. Run it after Hex approval
 before checking an isolated install of the published package.
 
 ```console
-$ elixir scripts/wait_for_hexdocs/wait_for_hexdocs.exs https://hexdocs.pm/libtmux/0.1.1/ 60
+$ elixir scripts/wait_for_hexdocs/wait_for_hexdocs.exs \
+    https://hexdocs.pm/libtmux/0.1.1/ \
+    60
 ```
 
 The second argument is the whole budget in seconds, 1 to 120, and defaults to

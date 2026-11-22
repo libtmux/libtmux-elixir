@@ -18,8 +18,11 @@ defmodule ApplicationConnection do
   @impl true
   def init({supervisor, options}) do
     case Supervisor.start_child(supervisor, Control.child_spec(options)) do
-      {:ok, _root, control} -> {:ok, %{supervisor: supervisor, control: control}}
-      {:error, reason} -> {:stop, reason}
+      {:ok, _root, control} ->
+        {:ok, %{supervisor: supervisor, control: control}}
+
+      {:error, reason} ->
+        {:stop, reason}
     end
   end
 
@@ -27,11 +30,15 @@ defmodule ApplicationConnection do
   def handle_call(:connection, _from, %{control: nil} = state),
     do: {:reply, {:error, :connection_unavailable}, state}
 
-  def handle_call(:connection, _from, state), do: {:reply, {:ok, state.control}, state}
+  def handle_call(:connection, _from, state) do
+    {:reply, {:ok, state.control}, state}
+  end
 
   def handle_call(:replace, _from, state) do
-    with :ok <- Supervisor.terminate_child(state.supervisor, Control),
-         {:ok, _root, control} <- Supervisor.restart_child(state.supervisor, Control) do
+    sup = state.supervisor
+
+    with :ok <- Supervisor.terminate_child(sup, Control),
+         {:ok, _root, control} <- Supervisor.restart_child(sup, Control) do
       {:reply, {:ok, control}, %{state | control: control}}
     else
       {:error, _reason} = error -> {:reply, error, %{state | control: nil}}
@@ -87,12 +94,12 @@ Server.with_owned([executable: tmux], fn server ->
       timeout: 900
     ]
 
-    {:ok, owner} =
-      Supervisor.start_child(application, {ApplicationConnection, {connections, options}})
+    child = {ApplicationConnection, {connections, options}}
+    {:ok, owner} = Supervisor.start_child(application, child)
 
-    {:ok, %{outcome: :completed}} =
-      ApplicationConnection.execute(owner, Request.set_user_option("@supervised_example", "once"))
-
+    set_once = Request.set_user_option("@supervised_example", "once")
+    {:ok, result} = ApplicationConnection.execute(owner, set_once)
+    %{outcome: :completed} = result
     # docs:end application
 
     # docs:begin recovery
@@ -105,11 +112,17 @@ Server.with_owned([executable: tmux], fn server ->
     {:ok, %{phase: :retired}} = Control.status(inert)
     {:ok, ready} = ApplicationConnection.reconnect(owner)
 
-    {:ok, %{outcome: :completed}} = ApplicationConnection.execute(owner, Request.field("pid"))
+    {:ok, reply} = ApplicationConnection.execute(owner, Request.field("pid"))
+    %{outcome: :completed} = reply
     :ok = Control.close(ready, timeout: 900)
     # docs:end recovery
 
-    IO.puts(JSON.encode!(%{supervised_control: "completed", explicit_reconnect: true}))
+    IO.puts(
+      JSON.encode!(%{
+        supervised_control: "completed",
+        explicit_reconnect: true
+      })
+    )
   after
     :ok = Supervisor.stop(application, :normal, 950)
 

@@ -39,26 +39,35 @@ Server.with_owned([executable: tmux], fn server ->
   {:ok, %{value: %{id: session_id}}} =
     Server.new_session(server, "demo", command: {:argv, ["/bin/cat"]})
 
+  request = Request.set_user_option("@recovery_example", "recorded")
+
   result =
     CommandRecovery.run(
       [server: server, session: {:existing, session_id}, lane: :host_qualified],
       fn control ->
         control
-        |> Control.execute(Request.set_user_option("@recovery_example", "recorded"))
+        |> Control.execute(request)
         |> CommandRecovery.inspect_execution()
       end
     )
 
   case result do
     {:ok, {:ok, _command_result}} ->
-      IO.puts(JSON.encode!(%{recovery_example: "completed", connection_retired: true}))
+      IO.puts(
+        JSON.encode!(%{
+          recovery_example: "completed",
+          connection_retired: true
+        })
+      )
 
     {:ok, {:error, evidence}} ->
-      IO.inspect(:stderr, evidence, label: "command needs attention; connection retired")
+      label = "command needs attention; connection retired"
+      IO.inspect(:stderr, evidence, label: label)
       System.halt(1)
 
     {:error, {:cleanup, failure}} ->
-      IO.inspect(:stderr, failure, label: "primary outcome and unproved cleanup")
+      label = "primary outcome and unproved cleanup"
+      IO.inspect(:stderr, failure, label: label)
       System.halt(1)
 
     {:error, {:startup, error}} ->
