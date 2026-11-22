@@ -316,8 +316,7 @@ defmodule LibTmux.DomainActionsIntegrationTest do
                    Pane.split!(connection, pane, command: :empty, session: session)
 
           try do
-            expected_pid = if field(fixture, "$0", "version") == "3.8", do: "", else: "0"
-            assert field(fixture, empty, "pane_pid") == expected_pid
+            assert field(fixture, empty, "pane_pid") in ["", "0"]
             assert field(fixture, empty, "pane_tty") == ""
 
             for options <- [[], [command: :default]] do

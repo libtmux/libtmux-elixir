@@ -29,18 +29,6 @@ defmodule LibTmux.CaptureTest do
       pane_id = String.trim(text)
 
       try do
-        assert {version, 0} =
-                 OwnedTmux.command(fixture, ["display-message", "-p", ~S"#{version}"])
-
-        assert {pid_text, 0} =
-                 OwnedTmux.command(fixture, [
-                   "display-message",
-                   "-p",
-                   "-t",
-                   pane_id,
-                   ~S"#{pane_pid}"
-                 ])
-
         if pane_kind == :dead do
           assert {_, 0} =
                    OwnedTmux.command(fixture, [
@@ -62,16 +50,35 @@ defmodule LibTmux.CaptureTest do
                      "wait-for -S capture-pid-dead"
                    ])
 
+          assert {pid_text, 0} =
+                   OwnedTmux.command(fixture, [
+                     "display-message",
+                     "-p",
+                     "-t",
+                     pane_id,
+                     ~S"#{pane_pid}"
+                   ])
+
           watch = OwnedTmux.watch_processes([pid_text |> String.trim() |> String.to_integer()])
           assert {_, 0} = OwnedTmux.command(fixture, ["send-keys", "-t", pane_id, "C-d"])
           assert {_, 0} = OwnedTmux.command(fixture, ["wait-for", "capture-pid-dead"])
           assert :ok = OwnedTmux.await_exit(watch)
         end
 
+        assert {pid_text, 0} =
+                 OwnedTmux.command(fixture, [
+                   "display-message",
+                   "-p",
+                   "-t",
+                   pane_id,
+                   ~S"#{pane_pid}"
+                 ])
+
         expected_pid =
-          if String.trim(version) == "3.8",
-            do: nil,
-            else: pid_text |> String.trim() |> String.to_integer()
+          case String.trim(pid_text) do
+            "" -> nil
+            reported_pid -> String.to_integer(reported_pid)
+          end
 
         assert {:ok, snapshot} = Server.snapshot(server)
         assert snapshot.panes[pane_id].pid === expected_pid
